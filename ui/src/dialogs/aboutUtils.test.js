@@ -7,6 +7,7 @@ import {
   flattenConfig,
   escapeTomlKey,
 } from './aboutUtils'
+import { BRAND_NAME } from '../consts'
 
 describe('formatTomlValue', () => {
   it('handles null and undefined values', () => {
@@ -155,7 +156,7 @@ describe('configToToml', () => {
 
     const result = configToToml(configData, mockTranslate)
 
-    expect(result).toContain('# Navidrome Configuration')
+    expect(result).toContain(`# ${BRAND_NAME} Configuration`)
     expect(result).toContain('# Generated on')
     expect(result).toContain('TestKey = "testValue"')
   })
@@ -273,7 +274,7 @@ describe('configToToml', () => {
 
     const result = configToToml(configData, mockTranslate)
 
-    expect(result).toContain('# Navidrome Configuration')
+    expect(result).toContain(`# ${BRAND_NAME} Configuration`)
     expect(result).not.toContain('Development Flags')
   })
 
@@ -282,7 +283,7 @@ describe('configToToml', () => {
 
     const result = configToToml(configData, mockTranslate)
 
-    expect(result).toContain('# Navidrome Configuration')
+    expect(result).toContain(`# ${BRAND_NAME} Configuration`)
     expect(result).not.toContain('Development Flags')
   })
 

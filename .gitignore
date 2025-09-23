@@ -16,6 +16,7 @@ navidrome.toml
 master.zip
 testDB
 cache/*
+.cache/
 *.swp
 dist
 music

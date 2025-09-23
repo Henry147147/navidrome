@@ -9,6 +9,7 @@ import { LastfmScrobbleToggle } from './LastfmScrobbleToggle'
 import { ListenBrainzScrobbleToggle } from './ListenBrainzScrobbleToggle'
 import config from '../config'
 import { ReplayGainToggle } from './ReplayGainToggle'
+import { BRAND_NAME } from '../consts'
 
 const useStyles = makeStyles({
   root: { marginTop: '1em' },
@@ -20,7 +21,7 @@ const Personal = () => {
 
   return (
     <Card className={classes.root}>
-      <Title title={'Navidrome - ' + translate('menu.personal.name')} />
+      <Title title={`${BRAND_NAME} - ${translate('menu.personal.name')}`} />
       <SimpleForm toolbar={null} variant={'outlined'}>
         <SelectTheme />
         <SelectLanguage />
