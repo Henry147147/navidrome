@@ -329,7 +329,7 @@
   },
   "ra": {
     "auth": {
-      "welcome1": "Thanks for installing Navidrome!",
+      "welcome1": "Thanks for installing Hilberto Music!",
       "welcome2": "To start, create an admin user",
       "confirmPassword": "Confirm Password",
       "buttonCreateAdmin": "Create Admin",
@@ -340,7 +340,7 @@
       "sign_in": "Sign in",
       "sign_in_error": "Authentication failed, please retry",
       "logout": "Logout",
-      "insightsCollectionNote": "Navidrome collects anonymous usage data to\nhelp improve the project. Click [here] to learn\nmore and to opt-out if you want"
+      "insightsCollectionNote": "Hilberto Music collects anonymous usage data to\nhelp improve the project. Click [here] to learn\nmore and to opt-out if you want"
     },
     "validation": {
       "invalidChars": "Please only use letters and numbers",
@@ -475,7 +475,7 @@
   "message": {
     "note": "NOTE",
     "transcodingDisabled": "Changing the transcoding configuration through the web interface is disabled for security reasons. If you would like to change (edit or add) transcoding options, restart the server with the %{config} configuration option.",
-    "transcodingEnabled": "Navidrome is currently running with %{config}, making it possible to run system commands from the transcoding settings using the web interface. We recommend to disable it for security reasons and only enable it when configuring Transcoding options.",
+    "transcodingEnabled": "Hilberto Music is currently running with %{config}, making it possible to run system commands from the transcoding settings using the web interface. We recommend to disable it for security reasons and only enable it when configuring Transcoding options.",
     "songsAddedToPlaylist": "Added 1 song to playlist |||| Added %{smart_count} songs to playlist",
     "noSimilarSongsFound": "No similar songs found",
     "noTopSongsFound": "No top songs found",
@@ -487,7 +487,7 @@
     "remove_all_missing_title": "Remove all missing files",
     "remove_all_missing_content": "Are you sure you want to remove all missing files from the database? This will permanently remove any references to them, including their play counts and ratings.",
     "notifications_blocked": "You have blocked Notifications for this site in your browser's settings",
-    "notifications_not_available": "This browser does not support desktop notifications or you are not accessing Navidrome over https",
+    "notifications_not_available": "This browser does not support desktop notifications or you are not accessing Hilberto Music over https",
     "lastfmLinkSuccess": "Last.fm successfully linked and scrobbling enabled",
     "lastfmLinkFailure": "Last.fm could not be linked",
     "lastfmUnlinkSuccess": "Last.fm unlinked and scrobbling disabled",
@@ -543,7 +543,10 @@
     "albumList": "Albums",
     "playlists": "Playlists",
     "sharedPlaylists": "Shared Playlists",
-    "about": "About"
+    "about": "About",
+    "explore": {
+      "name": "Explore"
+    }
   },
   "player": {
     "playListsText": "Play Queue",
@@ -614,7 +617,7 @@
     "minutesAgo": "%{smart_count} minute ago |||| %{smart_count} minutes ago"
   },
   "help": {
-    "title": "Navidrome Hotkeys",
+    "title": "Hilberto Music Hotkeys",
     "hotkeys": {
       "show_help": "Show This Help",
       "toggle_menu": "Toggle Menu Side Bar",
@@ -625,6 +628,16 @@
       "vol_up": "Volume Up",
       "vol_down": "Volume Down",
       "toggle_love": "Add this track to favourites"
+    }
+  },
+  "pages": {
+    "explore": {
+      "suggested": "Explore Suggested",
+      "suggestedSubtitle": "Kick off your next listening session with a few hand-picked ideas.",
+      "becauseListened": "Because you listened to \"%{song}\" recently",
+      "playlists": "Playlists for you",
+      "playlistsEmpty": "You do not have any playlists yet. Create one to see it here.",
+      "playlistsError": "We could not load playlists right now. Try again later."
     }
   }
 }

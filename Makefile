@@ -110,14 +110,26 @@ setup-git: ##@Development Setup Git hooks (pre-commit and pre-push)
 	@(cd .git/hooks && ln -sf ../../git/* .)
 .PHONY: setup-git
 
-build: check_go_env buildjs ##@Build Build the project
+build: check_go_env buildjs taglib ##@Build Build the project
+	@TAGLIB_DIR=$$(CROSS_TAGLIB_VERSION=$(CROSS_TAGLIB_VERSION) ./scripts/fetch-taglib.sh); \
+	PKG_CONFIG_PATH="$$TAGLIB_DIR/lib/pkgconfig" \
+	CGO_CFLAGS="-I$$TAGLIB_DIR/include" \
+	CGO_LDFLAGS="-L$$TAGLIB_DIR/lib" \
 	go build -ldflags="-X github.com/navidrome/navidrome/consts.gitSha=$(GIT_SHA) -X github.com/navidrome/navidrome/consts.gitTag=$(GIT_TAG)" -tags=netgo
 .PHONY: build
+
+taglib:
+	@CROSS_TAGLIB_VERSION=$(CROSS_TAGLIB_VERSION) ./scripts/fetch-taglib.sh >/dev/null
+.PHONY: taglib
 
 buildall: deprecated build
 .PHONY: buildall
 
-debug-build: check_go_env buildjs ##@Build Build the project (with remote debug on)
+debug-build: check_go_env buildjs taglib ##@Build Build the project (with remote debug on)
+	@TAGLIB_DIR=$$(CROSS_TAGLIB_VERSION=$(CROSS_TAGLIB_VERSION) ./scripts/fetch-taglib.sh); \
+	PKG_CONFIG_PATH="$$TAGLIB_DIR/lib/pkgconfig" \
+	CGO_CFLAGS="-I$$TAGLIB_DIR/include" \
+	CGO_LDFLAGS="-L$$TAGLIB_DIR/lib" \
 	go build -gcflags="all=-N -l" -ldflags="-X github.com/navidrome/navidrome/consts.gitSha=$(GIT_SHA) -X github.com/navidrome/navidrome/consts.gitTag=$(GIT_TAG)" -tags=netgo
 .PHONY: debug-build
 
