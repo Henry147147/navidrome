@@ -1,0 +1,7 @@
+explore suggestions stub wired at ui/src/explore/ExploreSuggestions.jsx
+- static arrays SUGGESTED_COLLECTIONS + HISTORY_RECOMMENDATIONS feeding hero + "because you listened" rows
+- playlists section reuses playlist resource via useQueryWithStore (limit 6, sort updatedAt desc)
+- menu entry added (/explore) and customRoutes hook in ui/src/routes.jsx
+follow up when backend ready: replace static arrays with query, plumb new endpoint + loading skeleton if needed
+installed taglib headers via scripts/fetch-taglib.sh + make changes. make build now auto-downloads cross-taglib release and sets PKG_CONFIG_PATH/CGO flags.
+rebranded UI strings: BRAND_NAME const in ui/src/consts.js, swapped Title/doc titles, login label, about dialog, config export, i18n copy, manifests/index/offline templates. npm run build ok.
