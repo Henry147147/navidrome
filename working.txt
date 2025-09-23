@@ -8,3 +8,28 @@ rebranded UI strings: BRAND_NAME const in ui/src/consts.js, swapped Title/doc ti
 
 Would like to implement this: https://github.com/palonso/MAEST in go
 Need to find go bindings for the python libs this uses?? Work case, call python -m ... some script ... 
+
+Where To Extend
+
+Data Model & Persistence – Add a place to store the computed results. Create a new model (or extend model.MediaFile) plus repository interfaces in model/datastore.go:19. Implement the repository under persistence/ (patterned after persistence/mediafile_repository.go:1) and ship a migration in db/migrations/ to create/update the backing tables. That gives your async job somewhere to persist results through the existing model.DataStore.
+
+Async Worker Service – Build a dedicated worker (e.g. core/analysis/analyzer.go) that accepts a context.Context, a model.MediaFileRepository cursor (persistence/mediafile_repository.go:105 exposes GetCursor) and your new repository for writes. Have it spin up goroutines, throttle/trace work, and expose methods like Enqueue(mediaFile model.MediaFile) or RebuildAll(ctx).
+
+Scanner Integration (per new/changed track) – Phase 1 already streams MediaFile structs through scanner/phase_1_folders.go. After each successful mfRepo.Put(&entry.tracks[i]) in persistChanges (scanner/phase_1_folders.go:354) is the natural hook to enqueue the heavy recomputation. Inject your worker into scannerImpl (see scanner/scanner.go:15) and call analyzer.Enqueue(entry.tracks[i]) outside the DB transaction to keep the scan fast.
+
+Library-wide/Periodic Runs – For backlog or periodic recomputation, register a job with the existing cron runner (scheduler/scheduler.go) from cmd/root.go. Copy the pattern used by schedulePeriodicScan (cmd/root.go:110) to schedule analyzer.RebuildAll(ctx) on demand or nightly.
+
+Dependency Injection – Because everything is wired with Google Wire, update scanner.New’s signature in scanner/controller.go:43 to accept your analyzer, add it to the provider set in cmd/wire_injectors.go, and regenerate cmd/wire_gen.go. Also thread the analyzer through CreateScanner in cmd/wire_gen.go:74 so every scanner instance can queue work.
+
+Configuration / Feature Flags – If the process needs tuning knobs (enable/disable or worker concurrency) add them to the server config (conf/server/*.go) and surface defaults in conf/server/defaults.go.
+
+Tests – Cover the new repository, analyzer worker, and scanner integration. Extend scanner/phase_1_folders_test.go to assert that a put triggers Enqueue, add repo tests under persistence/, and (if you expose an API) add fixtures in tests/.
+
+Flow Summary
+
+Schema + repository to persist computed data.
+Long-running worker service that processes tracks outside of scanner transactions.
+Hook the worker into scanner phase 1 for incremental updates, and use the scheduler (or a manual trigger) for full reprocessing.
+Update DI wiring so the worker is available where needed.
+Configure/test the new path end-to-end.
+With those pieces, you get an asynchronous pipeline that reacts to new tracks, processes them in the background, and stores the results safely.
