@@ -634,6 +634,13 @@
       "success": "Uploaded %{smart_count} file successfully |||| Uploaded %{smart_count} files successfully",
       "error": "We could not upload your files. Please try again.",
       "noFiles": "Select at least one file before uploading."
+    },
+    "progress": {
+      "uploading": "Uploading %{name}",
+      "detail": "%{loaded} / %{total} MB • %{speed} • %{eta}",
+      "speed": "%{value} MB/s",
+      "eta": "~%{time} remaining",
+      "calculating": "Calculating..."
     }
   },
   "help": {
