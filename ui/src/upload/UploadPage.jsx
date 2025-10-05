@@ -59,6 +59,127 @@ const useStyles = makeStyles((theme) => ({
 }))
 
 const MEGABYTE = 1024 * 1024
+const AUDIO_EXTENSIONS = new Set([
+  '.aac',
+  '.aiff',
+  '.aif',
+  '.aifc',
+  '.alac',
+  '.ape',
+  '.dsf',
+  '.dff',
+  '.flac',
+  '.m4a',
+  '.m4b',
+  '.mka',
+  '.mp3',
+  '.mpc',
+  '.ogg',
+  '.opus',
+  '.oga',
+  '.spx',
+  '.tta',
+  '.wav',
+  '.wv',
+  '.wma',
+])
+
+const getFileExtension = (name) => {
+  if (typeof name !== 'string') {
+    return ''
+  }
+  const dotIndex = name.lastIndexOf('.')
+  return dotIndex >= 0 ? name.slice(dotIndex).toLowerCase() : ''
+}
+
+const getFileBaseName = (name) => {
+  if (typeof name !== 'string') {
+    return ''
+  }
+  const dotIndex = name.lastIndexOf('.')
+  return dotIndex >= 0 ? name.slice(0, dotIndex) : name
+}
+
+const isCueFile = (file) => getFileExtension(file?.name) === '.cue'
+
+const isAudioFile = (file) => AUDIO_EXTENSIONS.has(getFileExtension(file?.name))
+
+const getFileKey = (file) => `${file.name}-${file.lastModified}`
+
+const createGroup = (primary, companions = []) => {
+  const files = [primary, ...companions]
+  const fileKeys = files.map(getFileKey)
+  return {
+    id: fileKeys.join('|'),
+    primary,
+    companions,
+    files,
+    fileKeys,
+  }
+}
+
+const buildUploadGroups = (fileList) => {
+  const baseMap = new Map()
+  const groupByFileKey = new Map()
+
+  fileList.forEach((file) => {
+    if (!file) {
+      return
+    }
+    if (isCueFile(file) || isAudioFile(file)) {
+      const baseKey = getFileBaseName(file.name).toLowerCase()
+      const entry = baseMap.get(baseKey) || { audio: [], cues: [] }
+      if (isCueFile(file)) {
+        entry.cues.push(file)
+      } else {
+        entry.audio.push(file)
+      }
+      baseMap.set(baseKey, entry)
+    }
+  })
+
+  baseMap.forEach((entry) => {
+    const remainingCues = [...entry.cues]
+
+    entry.audio.forEach((audioFile) => {
+      const companions = remainingCues.length ? [remainingCues.shift()] : []
+      const group = createGroup(audioFile, companions)
+      group.files.forEach((file) => {
+        groupByFileKey.set(getFileKey(file), group)
+      })
+    })
+
+    remainingCues.forEach((cueFile) => {
+      const group = createGroup(cueFile)
+      group.files.forEach((file) => {
+        groupByFileKey.set(getFileKey(file), group)
+      })
+    })
+  })
+
+  const orderedGroups = []
+  const seenGroupIds = new Set()
+
+  fileList.forEach((file) => {
+    if (!file) {
+      return
+    }
+    const fileKey = getFileKey(file)
+    let group = groupByFileKey.get(fileKey)
+    if (!group) {
+      group = createGroup(file)
+      group.files.forEach((member) => {
+        groupByFileKey.set(getFileKey(member), group)
+      })
+    }
+    if (!seenGroupIds.has(group.id)) {
+      orderedGroups.push(group)
+      seenGroupIds.add(group.id)
+    }
+  })
+
+  return orderedGroups
+}
 
 const formatFileSize = (bytes) => {
   if (bytes === 0) return '0 B'
@@ -95,7 +216,7 @@ const formatDuration = (seconds) => {
   return `${remainingSeconds}s`
 }
 
-const uploadSingleFile = (file, onProgress) => {
+const uploadFileGroup = (files, onProgress) => {
   const url = baseUrl('/api/upload')
 
   return new Promise((resolve, reject) => {
@@ -116,15 +237,19 @@ const uploadSingleFile = (file, onProgress) => {
     }
 
     const formData = new FormData()
-    formData.append('file', file, file.name)
+    const fileArray = Array.isArray(files) ? files : [files]
+    fileArray.forEach((file) => {
+      formData.append('file', file, file.name)
+    })
 
     const startTime = Date.now()
+    const totalBytes = fileArray.reduce((sum, current) => sum + current.size, 0)
 
     if (onProgress) {
       onProgress({
         loaded: 0,
-        total: file.size,
-        lengthComputable: file.size > 0,
+        total: totalBytes,
+        lengthComputable: totalBytes > 0,
         speed: 0,
         eta: null,
       })
@@ -142,7 +267,7 @@ const uploadSingleFile = (file, onProgress) => {
           : null
       onProgress({
         loaded: event.loaded,
-        total: event.lengthComputable ? event.total : file.size,
+        total: event.lengthComputable ? event.total : totalBytes,
         lengthComputable: event.lengthComputable,
         speed,
         eta,
@@ -234,33 +359,49 @@ const UploadPage = () => {
     setIsUploading(true)
     setFeedbackMessage('')
 
-    const queue = [...files]
+    const queue = buildUploadGroups(files)
     let uploadedCount = 0
 
     while (queue.length) {
-      const currentFile = queue[0]
+      const currentGroup = queue[0]
+      const groupTotalSize = currentGroup.files.reduce(
+        (sum, file) => sum + file.size,
+        0,
+      )
 
       setCurrentProgress({
-        name: currentFile.name,
+        id: currentGroup.id,
+        fileKeys: currentGroup.fileKeys,
+        displayName: currentGroup.primary.name,
         loaded: 0,
-        total: currentFile.size,
-        lengthComputable: currentFile.size > 0,
+        total: groupTotalSize,
+        lengthComputable: groupTotalSize > 0,
         speed: 0,
         eta: null,
       })
 
       try {
-        await uploadSingleFile(currentFile, (progress) => {
+        await uploadFileGroup(currentGroup.files, (progress) => {
           setCurrentProgress((prev) => {
-            if (!prev || prev.name !== currentFile.name) {
+            if (!prev || prev.id !== currentGroup.id) {
               return prev
             }
-            return { ...prev, ...progress }
+            const nextTotal = progress.lengthComputable
+              ? progress.total
+              : prev.total
+            return {
+              ...prev,
+              ...progress,
+              total: nextTotal,
+            }
           })
         })
-        uploadedCount += 1
+        uploadedCount += currentGroup.files.length
         queue.shift()
-        setFiles(queue.slice())
+        const completedKeys = new Set(currentGroup.fileKeys)
+        setFiles((prev) =>
+          prev.filter((file) => !completedKeys.has(getFileKey(file))),
+        )
       } catch (error) {
         const defaultMessage = translate('upload.notifications.error')
         const message =
@@ -329,8 +470,9 @@ const UploadPage = () => {
               </Typography>
               <List dense>
                 {files.map((file) => {
+                  const fileKey = getFileKey(file)
                   const isCurrent =
-                    isUploading && currentProgress?.name === file.name
+                    isUploading && currentProgress?.fileKeys?.includes(fileKey)
                   const progress = isCurrent ? currentProgress : null
                   const progressTotalBytes = progress?.lengthComputable
                     ? progress.total
@@ -357,10 +499,7 @@ const UploadPage = () => {
                     : null
 
                   return (
-                    <ListItem
-                      key={`${file.name}-${file.lastModified}`}
-                      divider
-                    >
+                    <ListItem key={fileKey} divider>
                       <ListItemText
                         primary={file.name}
                         secondary={
