@@ -66,6 +66,7 @@ func (n *Router) routes() http.Handler {
 		n.addMissingFilesRoute(r)
 		n.addKeepAliveRoute(r)
 		n.addInsightsRoute(r)
+		n.addUploadRoute(r)
 
 		r.With(adminOnlyMiddleware).Group(func(r chi.Router) {
 			n.addInspectRoute(r)

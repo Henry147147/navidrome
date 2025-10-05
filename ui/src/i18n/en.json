@@ -546,6 +546,9 @@
     "about": "About",
     "explore": {
       "name": "Explore"
+    },
+    "upload": {
+      "name": "Upload"
     }
   },
   "player": {
@@ -615,6 +618,23 @@
     "title": "Now Playing",
     "empty": "Nothing playing",
     "minutesAgo": "%{smart_count} minute ago |||| %{smart_count} minutes ago"
+  },
+  "upload": {
+    "title": "Upload Music",
+    "description": "Select audio files from your device and send them to the server.",
+    "actions": {
+      "select": "Choose Files",
+      "upload": "Upload Files",
+      "clear": "Clear Selection"
+    },
+    "selectedCount": "%{smart_count} file selected |||| %{smart_count} files selected",
+    "totalSize": "Total size: %{size}",
+    "emptySelection": "No files selected yet.",
+    "notifications": {
+      "success": "Uploaded %{smart_count} file successfully |||| Uploaded %{smart_count} files successfully",
+      "error": "We could not upload your files. Please try again.",
+      "noFiles": "Select at least one file before uploading."
+    }
   },
   "help": {
     "title": "Hilberto Music Hotkeys",
