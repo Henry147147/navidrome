@@ -6,6 +6,7 @@ import { useTranslate, MenuItemLink, getResources } from 'react-admin'
 import ViewListIcon from '@material-ui/icons/ViewList'
 import AlbumIcon from '@material-ui/icons/Album'
 import ExploreIcon from '@material-ui/icons/Explore'
+import CloudUploadIcon from '@material-ui/icons/CloudUpload'
 import SubMenu from './SubMenu'
 import { humanize, pluralize } from 'inflection'
 import albumLists from '../album/albumLists'
@@ -119,6 +120,15 @@ const Menu = ({ dense = false }) => {
         activeClassName={classes.active}
         primaryText={translate('menu.explore.name', { _: 'Explore' })}
         leftIcon={<ExploreIcon />}
+        sidebarIsOpen={open}
+        dense={dense}
+      />
+      <MenuItemLink
+        to="/upload"
+        exact
+        activeClassName={classes.active}
+        primaryText={translate('menu.upload.name', { _: 'Upload' })}
+        leftIcon={<CloudUploadIcon />}
         sidebarIsOpen={open}
         dense={dense}
       />
