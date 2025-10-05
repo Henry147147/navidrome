@@ -33,19 +33,18 @@ func (n *Router) addUploadRoute(r chi.Router) {
 			http.Error(w, "no file in upload payload", http.StatusBadRequest)
 			return
 		}
-		if len(fileHeaders) > 1 {
-			log.Warn(req.Context(), "Received multiple files in single upload request", "count", len(fileHeaders))
-			http.Error(w, "only one file per request is supported", http.StatusBadRequest)
-			return
-		}
 
-		header := fileHeaders[0]
-		log.Info(req.Context(), "Received stub upload request", "filename", header.Filename, "size", header.Size)
+		filenames := make([]string, 0, len(fileHeaders))
+		for _, header := range fileHeaders {
+			filenames = append(filenames, header.Filename)
+			log.Info(req.Context(), "Received stub upload file", "filename", header.Filename, "size", header.Size)
+		}
+		log.Info(req.Context(), "Received upload request", "fileCount", len(fileHeaders))
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(uploadResponse{
 			Message: "Upload received",
-			Files:   []string{header.Filename},
+			Files:   filenames,
 		}); err != nil {
 			log.Error(req.Context(), "Failed to encode upload response", err)
 		}
