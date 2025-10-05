@@ -20,23 +20,32 @@ func (n *Router) addUploadRoute(r chi.Router) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if req.MultipartForm == nil {
+			http.Error(w, "no file in upload payload", http.StatusBadRequest)
+			return
+		}
+		defer func() {
+			_ = req.MultipartForm.RemoveAll()
+		}()
 
-		var filenames []string
-		if req.MultipartForm != nil {
-			if fileHeaders, ok := req.MultipartForm.File["files"]; ok {
-				filenames = make([]string, 0, len(fileHeaders))
-				for _, header := range fileHeaders {
-					filenames = append(filenames, header.Filename)
-				}
-			}
+		fileHeaders, ok := req.MultipartForm.File["file"]
+		if !ok || len(fileHeaders) == 0 {
+			http.Error(w, "no file in upload payload", http.StatusBadRequest)
+			return
+		}
+		if len(fileHeaders) > 1 {
+			log.Warn(req.Context(), "Received multiple files in single upload request", "count", len(fileHeaders))
+			http.Error(w, "only one file per request is supported", http.StatusBadRequest)
+			return
 		}
 
-		log.Info(req.Context(), "Received stub upload request", "fileCount", len(filenames), "files", filenames)
+		header := fileHeaders[0]
+		log.Info(req.Context(), "Received stub upload request", "filename", header.Filename, "size", header.Size)
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(uploadResponse{
 			Message: "Upload received",
-			Files:   filenames,
+			Files:   []string{header.Filename},
 		}); err != nil {
 			log.Error(req.Context(), "Failed to encode upload response", err)
 		}

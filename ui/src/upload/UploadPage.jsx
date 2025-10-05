@@ -91,46 +91,58 @@ const UploadPage = () => {
   }
 
   const handleUpload = async () => {
-    if (!files.length) {
-      const message = translate('upload.notifications.noFiles')
-      setFeedbackMessage(message)
-      notify(message, 'warning')
+    if (!files.length || isUploading) {
+      if (!isUploading) {
+        const message = translate('upload.notifications.noFiles')
+        setFeedbackMessage(message)
+        notify(message, 'warning')
+      }
       return
     }
 
     setIsUploading(true)
     setFeedbackMessage('')
 
-    const formData = new FormData()
-    files.forEach((file) => {
-      formData.append('files', file, file.name)
-    })
+    const queue = [...files]
+    let uploadedCount = 0
 
-    try {
-      const headers = new Headers({ Accept: 'application/json' })
-      const response = await httpClient('/api/upload', {
-        method: 'POST',
-        body: formData,
-        headers,
-      })
+    while (queue.length) {
+      const currentFile = queue[0]
+      const formData = new FormData()
+      formData.append('file', currentFile, currentFile.name)
 
-      const uploadedCount = response?.json?.files?.length || files.length
+      try {
+        await httpClient('/api/upload', {
+          method: 'POST',
+          body: formData,
+          headers: new Headers({ Accept: 'application/json' }),
+        })
+        uploadedCount += 1
+        queue.shift()
+        setFiles(queue.slice())
+      } catch (error) {
+        const defaultMessage = translate('upload.notifications.error')
+        const message =
+          (error?.body && error.body.message) || error?.message || defaultMessage
+        setFeedbackMessage(message)
+        notify(defaultMessage, 'warning')
+        break
+      }
+    }
+
+    if (!queue.length && uploadedCount > 0) {
       notify(
         translate('upload.notifications.success', {
           smart_count: uploadedCount,
         }),
         'info',
       )
-      clearSelection()
-    } catch (error) {
-      const defaultMessage = translate('upload.notifications.error')
-      const message =
-        (error?.body && error.body.message) || error?.message || defaultMessage
-      setFeedbackMessage(message)
-      notify(defaultMessage, 'warning')
-    } finally {
-      setIsUploading(false)
+      if (inputRef.current) {
+        inputRef.current.value = ''
+      }
     }
+
+    setIsUploading(false)
   }
 
   return (
