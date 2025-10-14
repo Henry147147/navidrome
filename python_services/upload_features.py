@@ -4,15 +4,16 @@ Utilities for applying upload settings to embedding payloads.
 This module centralizes all upload-related features for the embedding server,
 keeping python_embed_server.py focused on socket orchestration and model logic.
 """
+
 import json
 import logging
 import os
+from pathlib import Path
 import re
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from urllib import error, request
 
-from python_services.models import _REASONING_LEVELS, SongEmbedding, UploadSettings
+from models import _REASONING_LEVELS, SongEmbedding, UploadSettings
 
 LOGGER = logging.getLogger("navidrome.upload_features")
 
@@ -45,8 +46,8 @@ class OpenAiRenamer:
         self.reasoning_level = (
             reasoning_level if reasoning_level in _REASONING_LEVELS else "default"
         )
-        self.api_key = (
-            os.getenv("NAVIDROME_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+        self.api_key = os.getenv("NAVIDROME_OPENAI_API_KEY") or os.getenv(
+            "OPENAI_API_KEY"
         )
         if not self.api_key:
             self.logger.info(
@@ -55,16 +56,13 @@ class OpenAiRenamer:
                 "require a bearer token (LM Studio servers typically do not)."
             )
 
-    def rename_segments(
-        self, name: str, system_prompt: str
-    ) -> str:
+    def rename_segments(self, name: str, system_prompt: str) -> str:
         prompt = system_prompt.strip() if system_prompt else ""
         context_lines = [name]
-        
+
         system_messages = [
             "You are helping rename uploaded music track segments.",
-            "Respond ONLY with compact JSON following this schema: "
-            '{"title": title}'
+            "Respond ONLY with compact JSON following this schema: " '{"title": title}',
         ]
         if prompt:
             system_messages.append(
@@ -134,7 +132,7 @@ class OpenAiRenamer:
         except json.JSONDecodeError:
             pass
 
-        match = re.search(r"\{.*\}", content, flags=re.DOTALL)
+        match = re.search(r"\{.*}", content, flags=re.DOTALL)
         if not match:
             return None
         try:
@@ -155,8 +153,10 @@ class SimilaritySearchStub:
         self.logger = logger
 
     def identify_duplicates(
-        self, embedding_payload: Dict[str, Any], threshold: float
-    ) -> List[int]:
+        self, embedding_payload: SongEmbedding, threshold: float
+    ) -> List[str]:
+        print(embedding_payload)
+        return []
         segments = embedding_payload.get("segments")
         if not isinstance(segments, list):
             return []
@@ -186,26 +186,35 @@ class UploadFeaturePipeline:
         )
 
     def rename(self, name, settings: UploadSettings) -> str:
-        new_name = name
+        name_path = Path(name)
+        name_suffix = name_path.suffix
+        name = name_path.stem
         if settings.rename_enabled:
             new_name = self._apply_renaming(name, settings)
             self.logger.info(f"Renamed {name} to {new_name} via OpenAI endpoint.")
-        return new_name
+            return str(Path(new_name).with_suffix(name_suffix))
             
-    def scan_for_dups(self, embeddings: List[SongEmbedding], settings: UploadSettings) -> List[str]:
+        return str(name_path)
+
+    def scan_for_dups(
+        self, embeddings: List[SongEmbedding], settings: UploadSettings
+    ) -> List[str]:
         removed_list = []
-        if settings.similarity_search_enabled:
-            for embed in embeddings:
-                removed = self._apply_similarity_filter(embed, settings)
-                if removed:
-                    self.logger.info("Marked {removed} embedding as duplicate.")
-                    removed_list.append(embed.name)
+        if not settings.similarity_search_enabled:
+            return removed_list
+
+        for embed in embeddings:
+            duplicates = self._apply_similarity_filter(embed, settings)
+            if duplicates:
+                removed_list.append(embed.name)
+                self.logger.info(
+                    "Embedding %s flagged as duplicate of %s",
+                    embed.name,
+                    ", ".join(duplicates),
+                )
         return removed_list
-    
-    
-    def _apply_renaming(
-        self, name: str, settings: UploadSettings
-    ) -> str:
+
+    def _apply_renaming(self, name: str, settings: UploadSettings) -> str:
         renamer = OpenAiRenamer(
             endpoint=settings.openai_endpoint,
             model=settings.openai_model,
@@ -218,6 +227,9 @@ class UploadFeaturePipeline:
 
     def _apply_similarity_filter(
         self, embedding_payload: SongEmbedding, settings: UploadSettings
-    ) -> bool:
-        # TODO
-        return False
+    ) -> List[str]:
+        duplicates = self.similarity_searcher.identify_duplicates(
+            embedding_payload,
+            settings.dedup_threshold,
+        )
+        return duplicates

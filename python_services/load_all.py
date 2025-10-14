@@ -11,6 +11,7 @@ QUERY_BATCH = 2_000
 MAIN = "embedding"
 COLLECTIONS = [MAIN, "clustered", "chunked_embedding"]
 
+
 def fetch_all_embeddings(client: MilvusClient, collections: List[str]):
     for collection in collections:
         client.load_collection(collection)
@@ -25,12 +26,11 @@ def fetch_all_embeddings(client: MilvusClient, collections: List[str]):
                 it.close()
                 break
 
+
 def get_all_names(client: MilvusClient):
     client.load_collection(MAIN)
     it = client.query_iterator(
-        collection_name=MAIN,
-        batch_size=QUERY_BATCH,
-        output_fields=["name"]
+        collection_name=MAIN, batch_size=QUERY_BATCH, output_fields=["name"]
     )
     names = []
     while True:
@@ -42,19 +42,13 @@ def get_all_names(client: MilvusClient):
             names.append(row["name"])
     return names
 
-def _get_all_from_it(iterator):
-    result = []
-    while True:
-        batch = iterator.next()
-        if not batch:
-            iterator.close()
-            break
-        result.extend(batch)
-    return result
 
 def find_closest_vector(client: MilvusClient, song: str, embedding: list, top_k: int):
     client.load_collection(MAIN)
-    search_params = {"metric_type": "COSINE", "params": {"ef": max(64, top_k)}}  # if IVF_* use {"nprobe": 16}
+    search_params = {
+        "metric_type": "COSINE",
+        "params": {"ef": max(64, top_k)},
+    }  # if IVF_* use {"nprobe": 16}
 
     res = client.search(
         collection_name=MAIN,
@@ -75,7 +69,7 @@ def find_duplicates(client: MilvusClient, threshold=0.999):
     all_embeddings = []
     client.load_collection(MAIN)
     for start in range(0, len(songs), BATCH_SIZE):
-        batch_songs = songs[start:start + BATCH_SIZE]
+        batch_songs = songs[start : start + BATCH_SIZE]
         if not batch_songs:
             continue
         batch_embeddings = get_song_embedding(client, batch_songs, ensure_loaded=False)
@@ -88,7 +82,12 @@ def find_duplicates(client: MilvusClient, threshold=0.999):
             continue
         embedding = song_embedding["embedding"]
         closest_songs = find_closest_vector(client, song, embedding, top_k=100)[0]
-        matching_songs = list(map(lambda s: s["name"], filter(lambda data: data["distance"] >= threshold, closest_songs)))
+        matching_songs = list(
+            map(
+                lambda s: s["name"],
+                filter(lambda data: data["distance"] >= threshold, closest_songs),
+            )
+        )
         if len(matching_songs) > 0:
             for song in matching_songs:
                 duplicate_set.add(song)
@@ -97,7 +96,9 @@ def find_duplicates(client: MilvusClient, threshold=0.999):
     return duplicate_songs
 
 
-def search_songs(songs: List[str], name_filters: List[str], match_lower=True, matcher=all):
+def search_songs(
+    songs: List[str], name_filters: List[str], match_lower=True, matcher=all
+):
     matched = filter(
         lambda song: matcher(
             name_filter in (song if not match_lower else song.lower())
@@ -107,7 +108,10 @@ def search_songs(songs: List[str], name_filters: List[str], match_lower=True, ma
     )
     return list(matched)
 
-def get_song_embedding(client: MilvusClient, songs: List[str], ensure_loaded: bool = True):
+
+def get_song_embedding(
+    client: MilvusClient, songs: List[str], ensure_loaded: bool = True
+):
     if ensure_loaded:
         client.load_collection(MAIN)
     if not songs:
@@ -120,10 +124,13 @@ def get_song_embedding(client: MilvusClient, songs: List[str], ensure_loaded: bo
     )
     return result
 
+
 def main():
     client = MilvusClient(uri=MILVUS_URI)
     names = get_all_names(client)
-    songs = ["Orchestre de la Suisse Romande & Ernest Ansermet - The Nutcracker, op. 71_ Act II, Tableau 3. No. 14 Pas de deux"]
+    songs = [
+        "Orchestre de la Suisse Romande & Ernest Ansermet - The Nutcracker, op. 71_ Act II, Tableau 3. No. 14 Pas de deux"
+    ]
     beach_b = search_songs(names, ["beach", "bunny"])
     songs.extend(search_songs(beach_b, ["good", "girls"]))
     songs.extend(search_songs(beach_b, ["nice", "guys"]))
@@ -146,9 +153,9 @@ def main():
     if False:
         print("dups")
         import json
+
         with open("dedupe_scan.json", "w") as file:
             json.dump(find_duplicates(client), file)
-
 
         embeddings = {}
 

@@ -6,6 +6,7 @@ import torch
 _TRUTHY_STRINGS: Set[str] = {"1", "true", "yes", "on"}
 _REASONING_LEVELS: Set[str] = {"none", "low", "medium", "high", "default"}
 
+
 @dataclass
 class SongEmbedding:
     name: str
@@ -24,6 +25,8 @@ class ChunkedEmbedding:
     start_seconds: float
     end_seconds: float
     embedding: torch.FloatTensor
+
+
 @dataclass
 class TrackSegment:
     index: int
@@ -36,7 +39,6 @@ class TrackSegment:
         if self.end is None:
             return None
         return max(self.end - self.start, 0.0)
-    
 
 
 @dataclass

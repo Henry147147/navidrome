@@ -8,7 +8,7 @@ import os
 import shlex
 import socket
 from hashlib import sha224
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Thread
@@ -23,8 +23,9 @@ import torchaudio
 from pymilvus import MilvusClient
 from muq import MuQMuLan
 from cueparser import CueSheet
-from python_services.models import TrackSegment
+from models import TrackSegment, ChunkedEmbedding, SongEmbedding
 from upload_features import UploadFeaturePipeline, UploadSettings
+from database_query import MilvusSimilaritySearcher
 
 
 SAMPLE_RATE = 24_000
@@ -37,6 +38,7 @@ SOCKET_PATH = "/tmp/navidrome_embed.sock"
 
 
 logger = logging.getLogger("navidrome.embed_server")
+
 
 def cue_time_to_seconds(time_str: str) -> float:
     minute, second, frame = time_str.split(":")
@@ -81,7 +83,9 @@ def parse_cuesheet_tracks(
         removed_leading += 1
     if removed_leading:
         logger.debug(
-            "Stripped %d leading blank lines from cuesheet %s", removed_leading, cue_path
+            "Stripped %d leading blank lines from cuesheet %s",
+            removed_leading,
+            cue_path,
         )
     if not lines:
         logger.debug("Cuesheet %s contains no data after normalization", cue_path)
@@ -222,7 +226,9 @@ def load_audio_segment(
         info = info_fn(str(music_file))
         source_sr = info.sample_rate
     except Exception:
-        logger.exception("Unable to inspect %s with torchaudio, using librosa", music_file)
+        logger.exception(
+            "Unable to inspect %s with torchaudio, using librosa", music_file
+        )
         return _load_audio_with_librosa(music_file, offset=offset, duration=duration)
 
     frame_offset = max(int(offset * source_sr), 0)
@@ -387,7 +393,10 @@ class ClassifierModel:
 
         for segment in segments:
             logger.info(
-                "Embedding segment %s (%s) starting at %ss", segment.index, segment.title, segment.start
+                "Embedding segment %s (%s) starting at %ss",
+                segment.index,
+                segment.title,
+                segment.start,
             )
             offset = float(segment.start)
             duration = segment.duration
@@ -484,7 +493,9 @@ class ClassifierModel:
             raise RuntimeError("Unable to generate embeddings for the provided audio.")
 
         logger.info(
-            "Generated embeddings for %d segments of %s", len(segment_payloads), music_file
+            "Generated embeddings for %d segments of %s",
+            len(segment_payloads),
+            music_file,
         )
         return {
             "music_file": str(music_path),
@@ -497,7 +508,9 @@ class ClassifierModel:
             "segments": segment_payloads,
         }
 
-    def embed_music(self, music_file: str, music_name: str, cue_file: Optional[str] = None):
+    def embed_music(
+        self, music_file: str, music_name: str, cue_file: Optional[str] = None
+    ):
         self.ensure_model_loaded()
         return self.run_inference(music_file, music_name, cue_file)
 
@@ -508,7 +521,13 @@ class EmbedSocketServer:
         self.logger = logger
         self.model = ClassifierModel()
         self.milvus_client: MilvusClient = MilvusClient("http://localhost:19530")
-        self.feature_pipeline = UploadFeaturePipeline(logger=self.logger)
+        self.similarity_searcher = MilvusSimilaritySearcher(
+            self.milvus_client, logger=self.logger
+        )
+        self.feature_pipeline = UploadFeaturePipeline(
+            similarity_searcher=self.similarity_searcher,
+            logger=self.logger,
+        )
         self.logger.debug("EmbedSocketServer initialized for %s", self.socket_path)
         self.upload_feature_pipeline = UploadFeaturePipeline()
 
@@ -562,27 +581,31 @@ class EmbedSocketServer:
             hash_obj = sha224()
             hash_obj.update(id_to_hash_str)
             hash_bytes = hash_obj.digest()
-            _id = np.frombuffer(hash_bytes[:8], dtype=np.int64)[0] # type: ignore
+            _id = np.frombuffer(hash_bytes[:8], dtype=np.int64)[0]  # type: ignore
             current_chunk_data = []
-            for chunk_embedding, chunk_metadata in zip(song["chunk_embeddings"], song["chunk_metadata"]):
+            for chunk_embedding, chunk_metadata in zip(
+                song["chunk_embeddings"], song["chunk_metadata"]
+            ):
                 chunk_index = chunk_metadata["index"]
                 chunk_start_seconds = chunk_metadata["start_seconds"]
                 chunk_end_seconds = chunk_metadata["end_seconds"]
                 chunk_hash_key = f"{name}\n{chunk_index}\n{chunk_start_seconds}\n{chunk_end_seconds}".encode(
-                "utf-8"
+                    "utf-8"
                 )
                 hash_obj = sha224()
                 hash_obj.update(chunk_hash_key)
                 hash_bytes = hash_obj.digest()
                 chunk_id = np.frombuffer(hash_bytes[:8], dtype=np.int64)[0]
-                current_chunk_data.append(ChunkedEmbedding(
-                    id=chunk_id,
-                    parent_id=_id,
-                    start_seconds=chunk_start_seconds,
-                    end_seconds=chunk_end_seconds,
-                    embedding=chunk_embedding
-                ))
-            
+                current_chunk_data.append(
+                    ChunkedEmbedding(
+                        id=chunk_id,
+                        parent_id=_id,
+                        start_seconds=chunk_start_seconds,
+                        end_seconds=chunk_end_seconds,
+                        embedding=chunk_embedding,
+                    )
+                )
+
             song_embed = SongEmbedding(
                 name=name,
                 embedding=song["centroid"],
@@ -594,34 +617,33 @@ class EmbedSocketServer:
             )
             chunk_data.extend(current_chunk_data)
             song_data.append(song_embed)
-            
+
         return song_data, chunk_data
-    
-    
-            
+
     def add_embedding_to_db(self, file_name, embedding: dict, settings: UploadSettings):
         self.logger.info(
             "Uploading embedding for %s to Milvus", embedding.get("music_file")
         )
         self.logger.debug("Received upload settings: %s", asdict(settings))
-        try:
-            embedding = self.feature_pipeline.apply(embedding, settings)
-        except Exception:
-            self.logger.exception("Failed to apply upload feature pipeline; continuing with raw payload.")
         self.milvus_client.load_collection("embedding")
-        songs, embeddings = self.load_from_json(embedding)
-        songs = list(map(asdict, songs))
-        embeddings = list(map(asdict, embeddings))
-        new_name = self.upload_feature_pipeline.rename(file_name, settings)
+        songs, chunk_embeddings = self.load_from_json(embedding)
         duplicates = self.feature_pipeline.scan_for_dups(songs, settings)
-
-        #self.milvus_client.upsert("embedding", list(map(asdict, songs)))
+        songs_payload = list(map(asdict, songs))
+        chunk_payload = list(map(asdict, chunk_embeddings))
+        new_name = self.upload_feature_pipeline.rename(file_name, settings)
         
-        #self.milvus_client.upsert("chunked_embedding", list(map(asdict, embeddings)))
-        #self.milvus_client.flush("embedding")
-        #self.milvus_client.flush("chunked_embedding")
-        self.logger.debug(f"Embedding payload uploaded to milvus client. Songs=[{len(songs)}], embeddings=[{len(embeddings)}]")
 
+        # self.milvus_client.upsert("embedding", songs_payload)
+        #
+        # self.milvus_client.upsert("chunked_embedding", chunk_payload)
+        # self.milvus_client.flush("embedding")
+        # self.milvus_client.flush("chunked_embedding")
+        self.logger.debug(
+            "Prepared embedding payload for Milvus. Songs=%d, chunks=%d, duplicates=%d",
+            len(songs),
+            len(chunk_embeddings),
+            len(duplicates),
+        )
 
     def handle_connection(self, conn: socket.socket) -> None:
         with conn:
@@ -662,10 +684,12 @@ class EmbedSocketServer:
 
                 try:
                     result = self.model.embed_music(music_file, music_name, cue_file)
-                    self.add_embedding_to_db(result, settings)
+                    self.add_embedding_to_db(music_name, result, settings)
                 except Exception as exc:  # pragma: no cover - propagate to client
                     self.logger.exception("Embedding failed for %s", music_file)
-                    self._write_response(writer, {"status": "error", "message": str(exc)})
+                    self._write_response(
+                        writer, {"status": "error", "message": str(exc)}
+                    )
                     return
 
                 self._write_response(writer, {"status": "ok"})
@@ -687,7 +711,9 @@ def main() -> None:
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        logging.getLogger("navidrome.embed_server").info("Embedding server shutting down")
+        logging.getLogger("navidrome.embed_server").info(
+            "Embedding server shutting down"
+        )
 
 
 if __name__ == "__main__":
