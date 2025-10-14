@@ -4,86 +4,17 @@ Utilities for applying upload settings to embedding payloads.
 This module centralizes all upload-related features for the embedding server,
 keeping python_embed_server.py focused on socket orchestration and model logic.
 """
-
-from __future__ import annotations
-
 import json
 import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
+from typing import Any, Dict, List, Optional
 from urllib import error, request
 
+from python_services.models import _REASONING_LEVELS, SongEmbedding, UploadSettings
+
 LOGGER = logging.getLogger("navidrome.upload_features")
-
-_TRUTHY_STRINGS: Set[str] = {"1", "true", "yes", "on"}
-_REASONING_LEVELS: Set[str] = {"none", "low", "medium", "high", "default"}
-
-
-@dataclass
-class UploadSettings:
-    rename_enabled: bool = False
-    renaming_prompt: str = ""
-    openai_endpoint: str = ""
-    openai_model: str = ""
-    similarity_search_enabled: bool = False
-    dedup_threshold: float = 0.85
-    reasoning_level: str = "default"
-
-    @classmethod
-    def from_payload(cls, payload: Optional[dict]) -> "UploadSettings":
-        if not isinstance(payload, dict):
-            return cls()
-
-        defaults = cls()
-
-        def _coerce_string(value: Any) -> str:
-            if value is None:
-                return ""
-            return str(value).strip()
-
-        def _coerce_bool(value: Any) -> bool:
-            if isinstance(value, str):
-                return value.strip().lower() in _TRUTHY_STRINGS
-            return bool(value)
-
-        raw_threshold = payload.get("dedupThreshold", defaults.dedup_threshold)
-        try:
-            dedup_threshold = float(raw_threshold)
-        except (TypeError, ValueError):
-            dedup_threshold = defaults.dedup_threshold
-        else:
-            dedup_threshold = min(max(dedup_threshold, 0.0), 1.0)
-
-        raw_reasoning = payload.get("reasoningLevel", defaults.reasoning_level)
-        reasoning = cls._normalize_reasoning(raw_reasoning, defaults.reasoning_level)
-
-        return cls(
-            rename_enabled=_coerce_bool(payload.get("renameEnabled")),
-            renaming_prompt=_coerce_string(payload.get("renamingPrompt")),
-            openai_endpoint=_coerce_string(payload.get("openAiEndpoint")),
-            openai_model=_coerce_string(payload.get("openAiModel")),
-            similarity_search_enabled=_coerce_bool(
-                payload.get("similaritySearchEnabled")
-            ),
-            dedup_threshold=dedup_threshold,
-            reasoning_level=reasoning,
-        )
-
-    @staticmethod
-    def _normalize_reasoning(value: Any, default: str) -> str:
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if not normalized:
-                return default
-            if normalized in _REASONING_LEVELS:
-                return normalized
-            if normalized in {"off", "disabled"}:
-                return "none"
-            if normalized in {"standard", "normal"}:
-                return "default"
-        return default
 
 
 class OpenAiRenamer:
@@ -102,8 +33,8 @@ class OpenAiRenamer:
     ) -> None:
         self.logger = logger
         self.timeout = timeout
-        self.model = model or "gpt-4o-mini"
-        base_endpoint = endpoint.strip() or "https://api.openai.com"
+        self.model = model
+        base_endpoint = endpoint.strip()
         base_endpoint = base_endpoint.rstrip("/")
         if base_endpoint.endswith("/v1/chat/completions"):
             self.url = base_endpoint
@@ -118,49 +49,22 @@ class OpenAiRenamer:
             os.getenv("NAVIDROME_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
         )
         if not self.api_key:
-            self.logger.warning(
-                "OpenAI API key not found in NAVIDROME_OPENAI_API_KEY or OPENAI_API_KEY; "
-                "automatic renaming will be skipped."
+            self.logger.info(
+                "OpenAI API key not found in NAVIDROME_OPENAI_API_KEY or OPENAI_API_KEY. "
+                "Continuing without authentication headers; ensure your endpoint does not "
+                "require a bearer token (LM Studio servers typically do not)."
             )
 
     def rename_segments(
-        self, segments: Sequence[dict], system_prompt: str
-    ) -> Dict[int, str]:
-        if not segments:
-            self.logger.debug("No segments supplied for renaming; skipping request.")
-            return {}
-
-        if not self.api_key:
-            return {}
-
+        self, name: str, system_prompt: str
+    ) -> str:
         prompt = system_prompt.strip() if system_prompt else ""
-        context_lines = []
-        for segment in segments:
-            index = segment.get("index")
-            title = segment.get("title") or f"Track {index}"
-            duration = segment.get("duration_seconds")
-            duration_text = ""
-            if isinstance(duration, (int, float)) and duration > 0:
-                duration_text = f" ({duration:.0f}s)"
-            context_lines.append(f"{index}: {title}{duration_text}")
-
-        reasoning_text = ""
-        if self.reasoning_level == "none":
-            reasoning_text = (
-                "The caller does not want additional reasoning beyond following the instructions."
-            )
-        elif self.reasoning_level in {"low", "medium", "high"}:
-            reasoning_text = (
-                f"Apply approximately {self.reasoning_level} reasoning effort while crafting the names."
-            )
-        else:
-            reasoning_text = "Use the model's default reasoning behaviour."
-
+        context_lines = [name]
+        
         system_messages = [
             "You are helping rename uploaded music track segments.",
             "Respond ONLY with compact JSON following this schema: "
-            '{"tracks": [{"index": number, "title": string}]}.',
-            reasoning_text,
+            '{"title": title}'
         ]
         if prompt:
             system_messages.append(
@@ -176,65 +80,33 @@ class OpenAiRenamer:
                 {"role": "user", "content": user_message},
             ],
             "temperature": 0.2,
-            "max_tokens": 400,
+            "max_tokens": 40000,
         }
 
         response = self._perform_request(request_body)
         if not response:
-            return {}
+            return name
 
         choices = response.get("choices")
         if not choices:
             self.logger.warning("OpenAI response contained no choices: %s", response)
-            return {}
+            return name
 
         first_choice = choices[0]
         message = first_choice.get("message") or {}
         content = message.get("content")
         if not isinstance(content, str):
             self.logger.warning("Unexpected OpenAI response content field: %s", content)
-            return {}
 
-        parsed = self._parse_response_content(content)
-        if not parsed:
-            self.logger.warning("Unable to parse OpenAI rename response as JSON.")
-            return {}
-
-        tracks = parsed.get("tracks")
-        if not isinstance(tracks, list):
-            self.logger.warning("OpenAI rename response missing 'tracks' array.")
-            return {}
-
-        rename_map: Dict[int, str] = {}
-        for item in tracks:
-            if not isinstance(item, dict):
-                continue
-            try:
-                index = int(item.get("index"))
-            except (TypeError, ValueError):
-                continue
-            title = item.get("title")
-            if not isinstance(title, str):
-                continue
-            cleaned = title.strip()
-            if not cleaned:
-                continue
-            rename_map[index] = cleaned
-
-        missing = {segment.get("index") for segment in segments} - rename_map.keys()
-        if missing:
-            self.logger.debug(
-                "OpenAI rename response omitted %d tracks; original titles retained.",
-                len(missing),
-            )
-        return rename_map
+        parsed = self._parse_response_content(content or "{}") or {}
+        new_name = parsed.get("title", name).strip()
+        return new_name
 
     def _perform_request(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         data = json.dumps(payload).encode("utf-8")
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
-        }
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         req = request.Request(self.url, data=data, headers=headers, method="POST")
         try:
             with request.urlopen(req, timeout=self.timeout) as resp:
@@ -313,30 +185,27 @@ class UploadFeaturePipeline:
             self.logger
         )
 
-    def apply(self, embedding_payload: Dict[str, Any], settings: UploadSettings) -> Dict[str, Any]:
-        if not isinstance(embedding_payload, dict):
-            raise TypeError("embedding_payload must be a dictionary.")
-
-        segments = embedding_payload.get("segments")
-        if not isinstance(segments, list):
-            self.logger.debug("Embedding payload missing segments array; skipping.")
-            return embedding_payload
-
+    def rename(self, name, settings: UploadSettings) -> str:
+        new_name = name
         if settings.rename_enabled:
-            rename_count = self._apply_renaming(segments, settings)
-            if rename_count:
-                self.logger.info("Renamed %d segments via OpenAI.", rename_count)
-
+            new_name = self._apply_renaming(name, settings)
+            self.logger.info(f"Renamed {name} to {new_name} via OpenAI endpoint.")
+        return new_name
+            
+    def scan_for_dups(self, embeddings: List[SongEmbedding], settings: UploadSettings) -> List[str]:
+        removed_list = []
         if settings.similarity_search_enabled:
-            removed = self._apply_similarity_filter(embedding_payload, settings)
-            if removed:
-                self.logger.info("Removed %d duplicate segments.", removed)
-
-        return embedding_payload
-
+            for embed in embeddings:
+                removed = self._apply_similarity_filter(embed, settings)
+                if removed:
+                    self.logger.info("Marked {removed} embedding as duplicate.")
+                    removed_list.append(embed.name)
+        return removed_list
+    
+    
     def _apply_renaming(
-        self, segments: List[dict], settings: UploadSettings
-    ) -> int:
+        self, name: str, settings: UploadSettings
+    ) -> str:
         renamer = OpenAiRenamer(
             endpoint=settings.openai_endpoint,
             model=settings.openai_model,
@@ -344,57 +213,11 @@ class UploadFeaturePipeline:
             logger=self.logger,
         )
 
-        rename_map = renamer.rename_segments(segments, settings.renaming_prompt)
-        if not rename_map:
-            return 0
-
-        updated = 0
-        for segment in segments:
-            try:
-                index = int(segment.get("index"))
-            except (TypeError, ValueError):
-                continue
-            new_title = rename_map.get(index)
-            if not new_title:
-                continue
-            original_title = segment.get("title")
-            if original_title == new_title:
-                continue
-            if original_title and "original_title" not in segment:
-                segment["original_title"] = original_title
-            segment["title"] = new_title
-            segment["generated_title"] = new_title
-            updated += 1
-
-        return updated
+        new_name = renamer.rename_segments(name, settings.renaming_prompt)
+        return new_name
 
     def _apply_similarity_filter(
-        self, embedding_payload: Dict[str, Any], settings: UploadSettings
-    ) -> int:
-        duplicates = self.similarity_searcher.identify_duplicates(
-            embedding_payload, settings.dedup_threshold
-        )
-        if not duplicates:
-            return 0
-
-        segments = embedding_payload.get("segments")
-        if not isinstance(segments, list):
-            return 0
-
-        duplicate_indexes: Set[int] = set()
-        for value in duplicates:
-            try:
-                duplicate_indexes.add(int(value))
-            except (TypeError, ValueError):
-                continue
-
-        if not duplicate_indexes:
-            return 0
-
-        original_count = len(segments)
-        embedding_payload["segments"] = [
-            segment
-            for segment in segments
-            if int(segment.get("index", -1)) not in duplicate_indexes
-        ]
-        return original_count - len(embedding_payload["segments"])
+        self, embedding_payload: SongEmbedding, settings: UploadSettings
+    ) -> bool:
+        # TODO
+        return False

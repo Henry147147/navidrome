@@ -8,7 +8,7 @@ import os
 import shlex
 import socket
 from hashlib import sha224
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Thread
@@ -23,6 +23,7 @@ import torchaudio
 from pymilvus import MilvusClient
 from muq import MuQMuLan
 from cueparser import CueSheet
+from python_services.models import TrackSegment
 from upload_features import UploadFeaturePipeline, UploadSettings
 
 
@@ -36,38 +37,6 @@ SOCKET_PATH = "/tmp/navidrome_embed.sock"
 
 
 logger = logging.getLogger("navidrome.embed_server")
-
-@dataclass
-class SongEmbedding:
-    name: str
-    embedding: torch.FloatTensor
-    window: int
-    hop: int
-    sample_rate: int
-    offset: float
-    chunk_ids: list
-
-
-@dataclass
-class ChunkedEmbedding:
-    id: int
-    parent_id: str
-    start_seconds: float
-    end_seconds: float
-    embedding: torch.FloatTensor
-@dataclass
-class TrackSegment:
-    index: int
-    title: str
-    start: float
-    end: Optional[float]
-
-    @property
-    def duration(self) -> Optional[float]:
-        if self.end is None:
-            return None
-        return max(self.end - self.start, 0.0)
-
 
 def cue_time_to_seconds(time_str: str) -> float:
     minute, second, frame = time_str.split(":")
@@ -541,6 +510,7 @@ class EmbedSocketServer:
         self.milvus_client: MilvusClient = MilvusClient("http://localhost:19530")
         self.feature_pipeline = UploadFeaturePipeline(logger=self.logger)
         self.logger.debug("EmbedSocketServer initialized for %s", self.socket_path)
+        self.upload_feature_pipeline = UploadFeaturePipeline()
 
     def serve_forever(self) -> None:
         if os.path.exists(self.socket_path):
@@ -629,7 +599,7 @@ class EmbedSocketServer:
     
     
             
-    def add_embedding_to_db(self, embedding: dict, settings: UploadSettings):
+    def add_embedding_to_db(self, file_name, embedding: dict, settings: UploadSettings):
         self.logger.info(
             "Uploading embedding for %s to Milvus", embedding.get("music_file")
         )
@@ -640,10 +610,16 @@ class EmbedSocketServer:
             self.logger.exception("Failed to apply upload feature pipeline; continuing with raw payload.")
         self.milvus_client.load_collection("embedding")
         songs, embeddings = self.load_from_json(embedding)
-        
+        songs = list(map(asdict, songs))
+        embeddings = list(map(asdict, embeddings))
+        new_name = self.upload_feature_pipeline.rename(file_name, settings)
+        duplicates = self.feature_pipeline.scan_for_dups(songs, settings)
+
         #self.milvus_client.upsert("embedding", list(map(asdict, songs)))
         
         #self.milvus_client.upsert("chunked_embedding", list(map(asdict, embeddings)))
+        #self.milvus_client.flush("embedding")
+        #self.milvus_client.flush("chunked_embedding")
         self.logger.debug(f"Embedding payload uploaded to milvus client. Songs=[{len(songs)}], embeddings=[{len(embeddings)}]")
 
 
