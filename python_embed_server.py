@@ -20,6 +20,7 @@ from pymilvus import MilvusClient
 import torch
 import torchaudio
 from muq import MuQMuLan
+from cueparser import CueSheet
 
 
 SAMPLE_RATE = 24_000
@@ -74,9 +75,20 @@ def parse_cuesheet_tracks(cue_path: Path, music_file: str) -> List[TrackSegment]
         cuesheet = cue_path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         cuesheet = cue_path.read_text(encoding="cp1252", errors="ignore")
-    current_file = None
-    current_track = None
-    tracks = []
+    sheet = CueSheet()
+    sheet.setOutputFormat("", "%title%")
+    sheet.setData(cuesheet)
+    try:
+        sheet.parse()
+    except Exception as exc:  # pragma: no cover - defensive
+        logging.getLogger(__name__).warning(
+            "Failed to parse cuesheet %s: %s", cue_path, exc
+        )
+        return []
+
+    track_contexts = []
+    current_file: Optional[str] = None
+    current_track: Optional[dict] = None
     for raw_line in cuesheet.splitlines():
         line = raw_line.strip()
         if not line or line.startswith(";"):
@@ -91,42 +103,60 @@ def parse_cuesheet_tracks(cue_path: Path, music_file: str) -> List[TrackSegment]
         if keyword == "FILE" and len(parts) >= 2:
             current_file = Path(parts[1]).name.lower()
         elif keyword == "TRACK" and len(parts) >= 2:
-            if current_file != target_name:
-                current_track = None
-                continue
             try:
-                number = int(parts[1])
+                track_number = int(parts[1])
             except ValueError:
-                current_track = None
-                continue
-            current_track = {"number": number, "title": None}
-        elif keyword == "TITLE" and len(parts) >= 2:
-            if current_track is not None:
-                current_track["title"] = parts[1]
-        elif keyword == "INDEX" and len(parts) >= 3 and parts[1] == "01":
-            if current_track is None or current_file != target_name:
-                continue
-            try:
-                start = cue_time_to_seconds(parts[2])
-            except ValueError:
-                continue
-            tracks.append(
-                {
-                    "number": current_track["number"],
-                    "title": current_track.get("title"),
-                    "start": start,
-                }
-            )
-            current_track = None
-    ordered = [t for t in tracks if t.get("start") is not None]
-    ordered.sort(key=lambda t: t["start"])
+                track_number = None
+            current_track = {"number": track_number, "file": current_file}
+            track_contexts.append(current_track)
+        elif (
+            keyword == "TITLE"
+            and len(parts) >= 2
+            and current_track is not None
+            and current_track.get("title") is None
+        ):
+            current_track["title"] = parts[1]
+
+    if len(track_contexts) != len(sheet.tracks):
+        logging.getLogger(__name__).debug(
+            "Cuesheet %s track count mismatch: parsed %d tracks, context %d",
+            cue_path,
+            len(sheet.tracks),
+            len(track_contexts),
+        )
+
+    collected: List[dict] = []
+    for track, context in zip(sheet.tracks, track_contexts):
+        if context.get("file") != target_name:
+            continue
+        if not track.offset:
+            continue
+        try:
+            start = cue_time_to_seconds(track.offset)
+        except ValueError:
+            continue
+        title = track.title or context.get("title")
+        context_number = context.get("number")
+        number = context_number if context_number is not None else track.number
+        collected.append(
+            {
+                "number": int(number) if number is not None else track.number,
+                "title": title,
+                "start": start,
+            }
+        )
+
+    collected.sort(key=lambda entry: entry["start"])
     result: List[TrackSegment] = []
-    for idx, track in enumerate(ordered):
-        end = ordered[idx + 1]["start"] if idx + 1 < len(ordered) else None
-        title = track.get("title") or f"Track {track['number']:02d}"
+    for idx, entry in enumerate(collected):
+        end = collected[idx + 1]["start"] if idx + 1 < len(collected) else None
+        title = entry["title"] or f"Track {entry['number']:02d}"
         result.append(
             TrackSegment(
-                index=track["number"], title=title, start=track["start"], end=end
+                index=entry["number"],
+                title=title,
+                start=entry["start"],
+                end=end,
             )
         )
     return result
