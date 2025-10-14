@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,14 +13,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/navidrome/navidrome/log"
 )
-
-const embedSocketPath = "/tmp/navidrome_embed.sock"
-
-type embedRequest struct {
-	Name      string `json:"name"`
-	MusicFile string `json:"music_file"`
-	CueFile   string `json:"cue_file,omitempty"`
-}
 
 func isCueFile(name string) bool {
 	return strings.EqualFold(filepath.Ext(name), ".cue")
@@ -60,34 +51,6 @@ func saveUploadedFile(header *multipart.FileHeader, dir string) (string, error) 
 	return tmp.Name(), nil
 }
 
-func callEmbedServer(musicPath, cuePath string) (map[string]any, error) {
-	conn, err := net.Dial("unix", embedSocketPath)
-	if err != nil {
-		return nil, fmt.Errorf("dial embed server: %w", err)
-	}
-	defer func() { _ = conn.Close() }()
-
-	reqPayload := embedRequest{MusicFile: musicPath}
-	if cuePath != "" {
-		reqPayload.CueFile = cuePath
-	}
-
-	if err := json.NewEncoder(conn).Encode(&reqPayload); err != nil {
-		return nil, fmt.Errorf("send request to embed server: %w", err)
-	}
-
-	if unixConn, ok := conn.(*net.UnixConn); ok {
-		_ = unixConn.CloseWrite()
-	}
-
-	var resp map[string]any
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
-		return nil, fmt.Errorf("read response from embed server: %w", err)
-	}
-
-	return resp, nil
-}
-
 func (n *Router) addUploadRoute(r chi.Router) {
 	r.With(adminOnlyMiddleware).Post("/upload", func(w http.ResponseWriter, req *http.Request) {
 		if err := req.ParseMultipartForm(0); err != nil {
@@ -117,6 +80,8 @@ func (n *Router) addUploadRoute(r chi.Router) {
 
 		var musicPath string
 		var cuePath string
+		var musicName string
+		var cueName string
 
 		for _, header := range fileHeaders {
 			savedPath, err := saveUploadedFile(header, tempDir)
@@ -132,7 +97,8 @@ func (n *Router) addUploadRoute(r chi.Router) {
 					continue
 				}
 				cuePath = savedPath
-				log.Info(req.Context(), "Stored cue file for embedding", "filename", header.Filename, "path", cuePath)
+				cueName = header.Filename
+				log.Info(req.Context(), "Stored cue file for embedding", "filename", cueName, "path", cuePath)
 				continue
 			}
 
@@ -143,6 +109,7 @@ func (n *Router) addUploadRoute(r chi.Router) {
 			}
 
 			musicPath = savedPath
+			musicName = header.Filename
 			log.Info(req.Context(), "Stored music file for embedding", "filename", header.Filename, "path", musicPath)
 		}
 
@@ -151,7 +118,7 @@ func (n *Router) addUploadRoute(r chi.Router) {
 			return
 		}
 
-		respPayload, err := callEmbedServer(musicPath, cuePath)
+		respPayload, err := embedClient.Embed(musicPath, musicName, cuePath)
 		if err != nil {
 			log.Error(req.Context(), "Failed to contact embedding server", err)
 			http.Error(w, "failed to contact embedding server", http.StatusBadGateway)
@@ -164,6 +131,8 @@ func (n *Router) addUploadRoute(r chi.Router) {
 				statusCode = http.StatusBadGateway
 			}
 		}
+
+		var _ = cueName
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(statusCode)
