@@ -234,30 +234,27 @@ class ClassifierModel:
     def run_inference(
         self,
         music_file: str,
+        music_name: str,
         cue_file: Optional[str],
     ):
+        print(f"run_inference({self, music_file, music_name, cue_file})")
         if self._model is None:
             raise RuntimeError("Model is not loaded. Call ensure_model_loaded() first.")
 
         self._model_used_now()
-
+        
         music_path = Path(music_file)
-        if not music_path.exists():
-            raise FileNotFoundError(f"Music file not found: {music_file}")
-
-        cue_path: Optional[Path] = None
-        if cue_file:
-            cue_path = Path(cue_file)
-            if not cue_path.exists():
-                raise FileNotFoundError(f"Cue file not found: {cue_file}")
+        cue_path: Optional[Path] = Path(cue_file) if cue_file is not None else None
 
         segments: List[TrackSegment] = []
         if cue_path is not None:
             segments = parse_cuesheet_tracks(cue_path, str(music_path))
+            
         if not segments:
             segments = [
-                TrackSegment(index=1, title=music_path.stem, start=0.0, end=None),
+                TrackSegment(index=1, title=music_name, start=0.0, end=None),
             ]
+        print(f"segments: {segments}")
 
         segment_payloads = []
         param_iter = iter(self._model.parameters())
@@ -372,9 +369,9 @@ class ClassifierModel:
             "segments": segment_payloads,
         }
 
-    def embed_music(self, music_file: str, cue_file: Optional[str] = None):
+    def embed_music(self, music_file: str, music_name: str, cue_file: Optional[str] = None):
         self.ensure_model_loaded()
-        return self.run_inference(music_file, cue_file)
+        return self.run_inference(music_file, music_name, cue_file)
 
 
 class EmbedSocketServer:
@@ -410,10 +407,11 @@ class EmbedSocketServer:
     
     @staticmethod
     def load_from_json(data: dict) -> Tuple[SongEmbedding, List[ChunkedEmbedding]]:
-        breakpoint()
         print(data.keys())
-        
-
+        f = open("test.json", "w")
+        json.dump(data, fp=f)
+        f.close()
+            
         return None
         window_seconds = data["window_seconds"]
         hop_seconds = data["hop_seconds"]
@@ -479,6 +477,7 @@ class EmbedSocketServer:
                     return
 
                 music_file = payload.get("music_file")
+                music_name = payload.get("name")
                 cue_file = payload.get("cue_file") or None
                 logging.error(f"Got payload: {payload}")
 
@@ -487,7 +486,7 @@ class EmbedSocketServer:
                     return
 
                 try:
-                    result = self.model.embed_music(music_file, cue_file)
+                    result = self.model.embed_music(music_file, music_name, cue_file)
                     self.add_embedding_to_db(result)
                 except Exception as exc:  # pragma: no cover - propagate to client
                     self.logger.exception("Embedding failed for %s", music_file)
