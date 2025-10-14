@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from threading import Thread
 from time import sleep
-from typing import List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
 import librosa
 
 import numpy as np
@@ -30,6 +30,9 @@ STORAGE_DTYPE = torch.float32
 MODEL_ID = "OpenMuQ/MuQ-MuLan-large"
 DEVICE = "cuda"
 SOCKET_PATH = "/tmp/navidrome_embed.sock"
+
+
+logger = logging.getLogger("navidrome.embed_server")
 
 
 @dataclass
@@ -69,27 +72,69 @@ def cue_time_to_seconds(time_str: str) -> float:
     return int(minute) * 60 + int(second) + int(frame) / 75.0
 
 
-def parse_cuesheet_tracks(cue_path: Path, music_file: str) -> List[TrackSegment]:
-    target_name = Path(music_file).name.lower()
+def parse_cuesheet_tracks(
+    cue_path: Path,
+    music_file: str,
+    *,
+    candidate_names: Optional[Iterable[str]] = None,
+) -> List[TrackSegment]:
+    target_path = Path(music_file)
+    target_name = target_path.name.lower()
+    target_stem = target_path.stem.lower()
+    candidate_name_set = {target_name}
+    candidate_stem_set = {target_stem}
+    if candidate_names:
+        for name in candidate_names:
+            if not name:
+                continue
+            candidate_name_set.add(Path(name).name.lower())
+            candidate_stem_set.add(Path(name).stem.lower())
+    logger.debug(
+        "Parsing cuesheet %s for target file %s (candidates=%s)",
+        cue_path,
+        target_name,
+        sorted(candidate_name_set),
+    )
     try:
-        cuesheet = cue_path.read_text(encoding="utf-8")
+        raw_text = cue_path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        cuesheet = cue_path.read_text(encoding="cp1252", errors="ignore")
+        logger.debug("Failed to decode %s as UTF-8, retrying with cp1252", cue_path)
+        raw_text = cue_path.read_text(encoding="cp1252", errors="ignore")
+    normalized = raw_text.lstrip("\ufeff")
+    if normalized != raw_text:
+        logger.debug("Removed UTF-8 BOM from cuesheet %s", cue_path)
+    lines = normalized.splitlines()
+    removed_leading = 0
+    while lines and not lines[0].strip():
+        lines.pop(0)
+        removed_leading += 1
+    if removed_leading:
+        logger.debug(
+            "Stripped %d leading blank lines from cuesheet %s", removed_leading, cue_path
+        )
+    if not lines:
+        logger.debug("Cuesheet %s contains no data after normalization", cue_path)
+        return []
+    cuesheet = "\n".join(lines)
     sheet = CueSheet()
     sheet.setOutputFormat("", "%title%")
     sheet.setData(cuesheet)
     try:
         sheet.parse()
     except Exception as exc:  # pragma: no cover - defensive
-        logging.getLogger(__name__).warning(
-            "Failed to parse cuesheet %s: %s", cue_path, exc
-        )
+        logger.warning("Failed to parse cuesheet %s: %s", cue_path, exc)
         return []
+    logger.debug(
+        "cueparser extracted %d tracks for %s (sheet file=%s)",
+        len(sheet.tracks),
+        target_name,
+        (sheet.file or "").lower(),
+    )
 
     track_contexts = []
     current_file: Optional[str] = None
     current_track: Optional[dict] = None
-    for raw_line in cuesheet.splitlines():
+    for raw_line in lines:
         line = raw_line.strip()
         if not line or line.startswith(";"):
             continue
@@ -118,7 +163,7 @@ def parse_cuesheet_tracks(cue_path: Path, music_file: str) -> List[TrackSegment]
             current_track["title"] = parts[1]
 
     if len(track_contexts) != len(sheet.tracks):
-        logging.getLogger(__name__).debug(
+        logger.debug(
             "Cuesheet %s track count mismatch: parsed %d tracks, context %d",
             cue_path,
             len(sheet.tracks),
@@ -127,13 +172,35 @@ def parse_cuesheet_tracks(cue_path: Path, music_file: str) -> List[TrackSegment]
 
     collected: List[dict] = []
     for track, context in zip(sheet.tracks, track_contexts):
-        if context.get("file") != target_name:
-            continue
+        context_file = context.get("file")
+        if context_file:
+            context_name = Path(context_file).name.lower()
+            context_stem = Path(context_file).stem.lower()
+            if (
+                context_name not in candidate_name_set
+                and context_stem not in candidate_stem_set
+            ):
+                logger.debug(
+                    "Skipping track %s due to file mismatch (context=%s, targets=%s)",
+                    context.get("number") or track.number,
+                    context_file,
+                    sorted(candidate_name_set),
+                )
+                continue
         if not track.offset:
+            logger.debug(
+                "Skipping track %s because no offset present in cuesheet",
+                context.get("number") or track.number,
+            )
             continue
         try:
             start = cue_time_to_seconds(track.offset)
         except ValueError:
+            logger.debug(
+                "Skipping track %s due to invalid offset format: %s",
+                context.get("number") or track.number,
+                track.offset,
+            )
             continue
         title = track.title or context.get("title")
         context_number = context.get("number")
@@ -159,6 +226,7 @@ def parse_cuesheet_tracks(cue_path: Path, music_file: str) -> List[TrackSegment]
                 end=end,
             )
         )
+    logger.debug("Parsed %d cue tracks for %s", len(result), target_name)
     return result
 
 
@@ -168,14 +236,22 @@ def load_audio_segment(
     offset: float = 0.0,
     duration: Optional[float] = None,
 ) -> np.ndarray:
+    logger.debug(
+        "Loading audio segment from %s (offset=%s, duration=%s)",
+        music_file,
+        offset,
+        duration,
+    )
     info_fn = getattr(torchaudio, "info", None)
     if info_fn is None:
+        logger.debug("torchaudio.info unavailable, falling back to librosa")
         return _load_audio_with_librosa(music_file, offset=offset, duration=duration)
 
     try:
         info = info_fn(str(music_file))
         source_sr = info.sample_rate
     except Exception:
+        logger.exception("Unable to inspect %s with torchaudio, using librosa", music_file)
         return _load_audio_with_librosa(music_file, offset=offset, duration=duration)
 
     frame_offset = max(int(offset * source_sr), 0)
@@ -191,6 +267,7 @@ def load_audio_segment(
             num_frames=num_frames,
         )
     except Exception:
+        logger.exception("torchaudio.load failed for %s, using librosa", music_file)
         return _load_audio_with_librosa(music_file, offset=offset, duration=duration)
 
     if waveform.numel() == 0:
@@ -203,8 +280,12 @@ def load_audio_segment(
         waveform = waveform.squeeze(0)
 
     if sr != SAMPLE_RATE:
+        logger.debug("Resampling audio from %s Hz to %s Hz", sr, SAMPLE_RATE)
         waveform = torchaudio.functional.resample(waveform, sr, SAMPLE_RATE)
 
+    logger.debug(
+        "Loaded audio segment with %d samples (channels collapsed)", waveform.numel()
+    )
     return waveform.contiguous().cpu().numpy()
 
 
@@ -213,6 +294,12 @@ def _load_audio_with_librosa(
 ) -> np.ndarray:
     safe_offset = max(float(offset), 0.0)
     safe_duration = None if duration is None else max(float(duration), 0.0)
+    logger.debug(
+        "Loading audio with librosa from %s (offset=%s, duration=%s)",
+        music_file,
+        safe_offset,
+        safe_duration,
+    )
     audio, _ = librosa.load(
         music_file,
         sr=SAMPLE_RATE,
@@ -221,7 +308,9 @@ def _load_audio_with_librosa(
         duration=safe_duration,
     )
     if audio.size == 0:
+        logger.warning("Loaded empty audio buffer for %s", music_file)
         return np.zeros(0, dtype=np.float32)
+    logger.debug("Loaded %d samples using librosa", audio.size)
     return audio.astype(np.float32, copy=False)
 
 
@@ -232,9 +321,13 @@ class ClassifierModel:
         self.timeout = timeout
         self.timeout_thread = self.model_unloader()
         self.timeout_thread.start()
+        logger.debug(
+            "ClassifierModel initialized with timeout %s seconds", self.timeout
+        )
 
     def _model_used_now(self):
         self._last_used = datetime.now(UTC)
+        logger.debug("Model usage timestamp updated to %s", self._last_used)
 
     def model_unloader(self):
         def _run():
@@ -244,10 +337,14 @@ class ClassifierModel:
                 else:
                     delta = datetime.now(UTC) - self._last_used
                     if delta.seconds > self.timeout:
+                        logger.info(
+                            "Model idle for %s seconds, releasing from memory", delta
+                        )
                         del self._model
                         self._model = None
                         try:
                             torch.cuda.empty_cache()
+                            logger.debug("torch.cuda cache cleared")
                         except:
                             pass
                 sleep(5)
@@ -256,9 +353,12 @@ class ClassifierModel:
 
     def ensure_model_loaded(self):
         if self._model is None:
+            logger.info("Loading MuQMuLan model %s onto %s", MODEL_ID, DEVICE)
             self._model = (
                 MuQMuLan.from_pretrained(MODEL_ID).to(DEVICE).to(STORAGE_DTYPE).eval()
             )
+        else:
+            logger.debug("Model already loaded; skipping reload")
         self._model_used_now()
 
     def run_inference(
@@ -267,24 +367,35 @@ class ClassifierModel:
         music_name: str,
         cue_file: Optional[str],
     ):
-        print(f"run_inference({self, music_file, music_name, cue_file})")
+        logger.info(
+            "Running inference for %s (name=%s, cue=%s)",
+            music_file,
+            music_name,
+            cue_file,
+        )
         if self._model is None:
             raise RuntimeError("Model is not loaded. Call ensure_model_loaded() first.")
 
         self._model_used_now()
-        
+
         music_path = Path(music_file)
         cue_path: Optional[Path] = Path(cue_file) if cue_file is not None else None
 
         segments: List[TrackSegment] = []
         if cue_path is not None:
-            segments = parse_cuesheet_tracks(cue_path, str(music_path))
-            
+            logger.debug("Attempting to load cuesheet %s", cue_path)
+            segments = parse_cuesheet_tracks(
+                cue_path,
+                str(music_path),
+                candidate_names=[music_name],
+            )
+
         if not segments:
+            logger.debug("No cue segments detected; processing entire track")
             segments = [
                 TrackSegment(index=1, title=music_name, start=0.0, end=None),
             ]
-        print(f"segments: {segments}")
+        logger.debug("Prepared %d segments for inference", len(segments))
 
         segment_payloads = []
         param_iter = iter(self._model.parameters())
@@ -293,6 +404,7 @@ class ClassifierModel:
             model_device = first_param.device
         else:
             model_device = torch.device(DEVICE if torch.cuda.is_available() else "cpu")
+        logger.debug("Using model device %s", model_device)
         empty_cache = (
             torch.cuda.empty_cache if model_device.type == "cuda" else (lambda: None)
         )
@@ -303,6 +415,9 @@ class ClassifierModel:
             raise ValueError("Invalid chunk or hop size configuration.")
 
         for segment in segments:
+            logger.info(
+                "Embedding segment %s (%s) starting at %ss", segment.index, segment.title, segment.start
+            )
             offset = float(segment.start)
             duration = segment.duration
             audio = load_audio_segment(
@@ -311,6 +426,9 @@ class ClassifierModel:
                 duration=duration,
             )
             if audio.size == 0:
+                logger.warning(
+                    "Segment %s produced empty audio buffer; skipping", segment.index
+                )
                 continue
 
             total_samples = audio.shape[0]
@@ -338,6 +456,7 @@ class ClassifierModel:
                 )
 
             if not chunk_arrays:
+                logger.warning("No audio chunks produced for segment %s", segment.index)
                 continue
 
             chunk_matrix = np.stack(chunk_arrays, axis=0)
@@ -357,6 +476,10 @@ class ClassifierModel:
 
             centroid_cpu = centroid.detach().to("cpu", dtype=STORAGE_DTYPE)
             chunk_cpu = segment_embeddings.detach().to("cpu", dtype=STORAGE_DTYPE)
+
+            logger.debug(
+                "Segment %s produced %d chunks", segment.index, chunk_cpu.shape[0]
+            )
 
             computed_duration: Optional[float] = (
                 float(duration)
@@ -384,10 +507,14 @@ class ClassifierModel:
 
             del chunk_tensor, segment_embeddings
             empty_cache()
+            logger.debug("Cleared temporary tensors for segment %s", segment.index)
 
         if not segment_payloads:
             raise RuntimeError("Unable to generate embeddings for the provided audio.")
 
+        logger.info(
+            "Generated embeddings for %d segments of %s", len(segment_payloads), music_file
+        )
         return {
             "music_file": str(music_path),
             "cue_file": str(cue_path) if cue_path is not None else None,
@@ -407,12 +534,14 @@ class ClassifierModel:
 class EmbedSocketServer:
     def __init__(self, socket_path: str = SOCKET_PATH):
         self.socket_path = socket_path
-        self.logger = logging.getLogger("navidrome.embed_server")
+        self.logger = logger
         self.model = ClassifierModel()
         self.milvus_client: MilvusClient = MilvusClient("http://localhost:19530")
+        self.logger.debug("EmbedSocketServer initialized for %s", self.socket_path)
 
     def serve_forever(self) -> None:
         if os.path.exists(self.socket_path):
+            self.logger.debug("Removing existing socket at %s", self.socket_path)
             os.unlink(self.socket_path)
 
         server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -423,25 +552,30 @@ class EmbedSocketServer:
             self.logger.info("Embedding server listening on %s", self.socket_path)
 
             while True:
+                self.logger.debug("Waiting for incoming connection")
                 conn, _ = server_sock.accept()
+                self.logger.debug("Accepted new connection")
                 try:
                     self.handle_connection(conn)
                 except Exception:  # pragma: no cover - defensive logging
                     self.logger.exception("Unexpected error handling connection")
         finally:
             server_sock.close()
+            self.logger.debug("Server socket closed")
             try:
                 os.unlink(self.socket_path)
             except FileNotFoundError:
                 pass
-    
+
     @staticmethod
-    def load_from_json(data: dict) -> Tuple[SongEmbedding, List[ChunkedEmbedding]]:
-        print(data.keys())
-        f = open("test.json", "w")
-        json.dump(data, fp=f)
-        f.close()
-            
+    def load_from_json(
+        data: dict,
+    ) -> Optional[Tuple[SongEmbedding, List[ChunkedEmbedding]]]:
+        logger.debug("Loading embedding data with keys: %s", list(data.keys()))
+        with open("test.json", "w") as f:
+            json.dump(data, fp=f)
+        logger.debug("Persisted embedding payload snapshot to test.json")
+
         return None
         window_seconds = data["window_seconds"]
         hop_seconds = data["hop_seconds"]
@@ -487,9 +621,13 @@ class EmbedSocketServer:
     
             
     def add_embedding_to_db(self, embedding: dict):
+        self.logger.info(
+            "Uploading embedding for %s to Milvus", embedding.get("music_file")
+        )
         self.milvus_client.load_collection("embedding")
         self.load_from_json(embedding)
-    
+        self.logger.debug("Embedding payload forwarded to loader")
+
 
     def handle_connection(self, conn: socket.socket) -> None:
         with conn:
@@ -498,21 +636,31 @@ class EmbedSocketServer:
             try:
                 line = reader.readline()
                 if not line:
+                    self.logger.debug("Received empty request; closing connection")
                     return
 
                 try:
                     payload = json.loads(line)
                 except json.JSONDecodeError as exc:
-                    self._write_response(writer, {"status": "error", "message": f"invalid json: {exc}"})
+                    self.logger.error("Invalid JSON payload: %s", exc)
+                    self._write_response(
+                        writer, {"status": "error", "message": f"invalid json: {exc}"}
+                    )
                     return
 
                 music_file = payload.get("music_file")
                 music_name = payload.get("name")
                 cue_file = payload.get("cue_file") or None
-                logging.error(f"Got payload: {payload}")
+                self.logger.debug(
+                    "Received embedding request for %s (cue=%s)", music_file, cue_file
+                )
 
                 if not music_file:
-                    self._write_response(writer, {"status": "error", "message": "music_file is required"})
+                    self.logger.error("Request missing music_file field")
+                    self._write_response(
+                        writer,
+                        {"status": "error", "message": "music_file is required"},
+                    )
                     return
 
                 try:
@@ -525,17 +673,19 @@ class EmbedSocketServer:
 
                 self._write_response(writer, {"status": "ok"})
             finally:
+                self.logger.debug("Closing connection")
                 writer.close()
                 reader.close()
 
     def _write_response(self, writer, payload) -> None:
+        self.logger.debug("Sending response: %s", payload)
         writer.write(json.dumps(payload))
         writer.write("\n")
         writer.flush()
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
     server = EmbedSocketServer()
     try:
         server.serve_forever()
