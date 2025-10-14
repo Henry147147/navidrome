@@ -70,6 +70,20 @@ func (n *Router) addUploadRoute(r chi.Router) {
 			return
 		}
 
+		var settings map[string]any
+		if rawSettings, found := req.MultipartForm.Value["settings"]; found && len(rawSettings) > 0 {
+			if strings.TrimSpace(rawSettings[0]) != "" {
+				var parsed map[string]any
+				if err := json.Unmarshal([]byte(rawSettings[0]), &parsed); err != nil {
+					log.Error(req.Context(), "Invalid upload settings payload", err)
+					http.Error(w, "invalid settings payload", http.StatusBadRequest)
+					return
+				}
+				settings = parsed
+				log.Debug(req.Context(), "Parsed upload settings", "settings", settings)
+			}
+		}
+
 		tempDir, err := os.MkdirTemp("", "navidrome-upload-*")
 		if err != nil {
 			log.Error(req.Context(), "Failed to create temp directory for upload", err)
@@ -118,7 +132,7 @@ func (n *Router) addUploadRoute(r chi.Router) {
 			return
 		}
 
-		respPayload, err := embedClient.Embed(musicPath, musicName, cuePath)
+		respPayload, err := embedClient.Embed(musicPath, musicName, cuePath, settings)
 		if err != nil {
 			log.Error(req.Context(), "Failed to contact embedding server", err)
 			http.Error(w, "failed to contact embedding server", http.StatusBadGateway)

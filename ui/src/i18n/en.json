@@ -622,10 +622,42 @@
   "upload": {
     "title": "Upload Music",
     "description": "Select audio files from your device and send them to the server.",
+    "tabs": {
+      "label": "Upload sections",
+      "upload": "Upload",
+      "settings": "Settings"
+    },
     "actions": {
       "select": "Choose Files",
       "upload": "Upload Files",
       "clear": "Clear Selection"
+    },
+    "settings": {
+      "renameTitle": "Renaming",
+      "renameToggle": "Enable automatic renaming",
+      "systemPromptLabel": "Renaming system prompt",
+      "systemPromptPlaceholder": "Describe how the uploaded tracks should be renamed.",
+      "systemPromptHelper": "This prompt is used when renaming uploaded files.",
+      "openAiTitle": "OpenAI",
+      "endpointLabel": "Endpoint",
+      "endpointPlaceholder": "https://api.openai.com",
+      "endpointHelper": "Leave blank to use the default OpenAI endpoint.",
+      "modelLabel": "Model",
+      "modelPlaceholder": "gpt-4o-mini",
+      "modelHelper": "Select the model that will handle renaming requests.",
+      "reasoningLabel": "Reasoning level",
+      "reasoningHelper": "Select how much reasoning the rename model should apply.",
+      "reasoningOptions": {
+        "none": "None",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "default": "Default"
+      },
+      "similarityTitle": "Similarity Search",
+      "similarityToggle": "Enable similarity search",
+      "thresholdLabel": "Deduplication threshold",
+      "thresholdHelper": "Similar tracks at or above this value (0-1) are treated as duplicates."
     },
     "selectedCount": "%{smart_count} file selected |||| %{smart_count} files selected",
     "totalSize": "Total size: %{size}",

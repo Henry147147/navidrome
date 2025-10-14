@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
   Card,
@@ -9,12 +9,18 @@ import {
   List,
   ListItem,
   ListItemText,
+  MenuItem,
+  Tabs,
+  Tab,
   Typography,
 } from '@material-ui/core'
 import { makeStyles } from '@material-ui/core/styles'
 import CloudUploadIcon from '@material-ui/icons/CloudUpload'
 import AttachFileIcon from '@material-ui/icons/AttachFile'
 import ClearIcon from '@material-ui/icons/Clear'
+import Switch from '@material-ui/core/Switch'
+import TextField from '@material-ui/core/TextField'
+import FormControlLabel from '@material-ui/core/FormControlLabel'
 import { Title, useNotify, useTranslate } from 'react-admin'
 import { BRAND_NAME } from '../consts'
 import { baseUrl } from '../utils'
@@ -43,6 +49,26 @@ const useStyles = makeStyles((theme) => ({
     flexWrap: 'wrap',
     gap: theme.spacing(2),
   },
+  tabs: {
+    marginTop: theme.spacing(2),
+  },
+  tabPanel: {
+    marginTop: theme.spacing(2),
+  },
+  settingsContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(3),
+    maxWidth: 640,
+  },
+  settingsGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(2),
+  },
+  settingsDivider: {
+    margin: theme.spacing(1, 0, 0.5),
+  },
   itemProgress: {
     marginTop: theme.spacing(1),
   },
@@ -57,6 +83,71 @@ const useStyles = makeStyles((theme) => ({
     marginTop: theme.spacing(2),
   },
 }))
+
+const SETTINGS_STORAGE_KEY = 'upload.settings'
+
+const REASONING_LEVEL_OPTIONS = ['none', 'low', 'medium', 'high', 'default']
+const ALLOWED_REASONING_LEVELS = new Set(REASONING_LEVEL_OPTIONS)
+
+const defaultUploadSettings = {
+  renameEnabled: false,
+  renamingPrompt: '',
+  openAiEndpoint: '',
+  openAiModel: '',
+  similaritySearchEnabled: false,
+  dedupThreshold: '0.85',
+  reasoningLevel: 'default',
+}
+
+const normalizeUploadSettings = (settings = {}) => {
+  const merged = {
+    ...defaultUploadSettings,
+    ...settings,
+  }
+
+  if (
+    merged.dedupThreshold === undefined ||
+    merged.dedupThreshold === null ||
+    merged.dedupThreshold === ''
+  ) {
+    merged.dedupThreshold = defaultUploadSettings.dedupThreshold
+  } else {
+    merged.dedupThreshold = `${merged.dedupThreshold}`
+  }
+
+  const rawReasoning = `${merged.reasoningLevel || ''}`.toLowerCase()
+  merged.reasoningLevel = ALLOWED_REASONING_LEVELS.has(rawReasoning)
+    ? rawReasoning
+    : defaultUploadSettings.reasoningLevel
+
+  return merged
+}
+
+const clampDeduplicationThreshold = (value) => {
+  const parsed = parseFloat(value)
+  if (!Number.isFinite(parsed)) {
+    return defaultUploadSettings.dedupThreshold
+  }
+  const clamped = Math.min(Math.max(parsed, 0), 1)
+  return clamped.toFixed(6)
+}
+
+const loadStoredSettings = () => {
+  if (typeof window === 'undefined' || !window?.localStorage) {
+    return normalizeUploadSettings()
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY)
+    if (!raw) {
+      return normalizeUploadSettings()
+    }
+    const parsed = JSON.parse(raw)
+    return normalizeUploadSettings(parsed)
+  } catch (error) {
+    return normalizeUploadSettings()
+  }
+}
 
 const MEGABYTE = 1024 * 1024
 const AUDIO_EXTENSIONS = new Set([
@@ -216,7 +307,7 @@ const formatDuration = (seconds) => {
   return `${remainingSeconds}s`
 }
 
-const uploadFileGroup = (files, onProgress) => {
+const uploadFileGroup = (files, onProgress, settings) => {
   const url = baseUrl('/api/upload')
 
   return new Promise((resolve, reject) => {
@@ -241,6 +332,9 @@ const uploadFileGroup = (files, onProgress) => {
     fileArray.forEach((file) => {
       formData.append('file', file, file.name)
     })
+    if (settings) {
+      formData.append('settings', JSON.stringify(settings))
+    }
 
     const startTime = Date.now()
     const totalBytes = fileArray.reduce((sum, current) => sum + current.size, 0)
@@ -325,6 +419,44 @@ const UploadPage = () => {
   const [isUploading, setIsUploading] = useState(false)
   const [feedbackMessage, setFeedbackMessage] = useState('')
   const [currentProgress, setCurrentProgress] = useState(null)
+  const [activeTab, setActiveTab] = useState(0)
+  const [settings, setSettings] = useState(() => loadStoredSettings())
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window?.localStorage) {
+      return
+    }
+    window.localStorage.setItem(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify(settings),
+    )
+  }, [settings])
+
+  const handleTabChange = (_, value) => {
+    setActiveTab(value)
+  }
+
+  const updateSetting = (key, value) => {
+    setSettings((prev) => ({
+      ...prev,
+      [key]: value,
+    }))
+  }
+
+  const handleToggleSetting = (key) => (_, checked) => {
+    updateSetting(key, checked)
+  }
+
+  const handleTextSettingChange = (key) => (event) => {
+    updateSetting(key, event.target.value)
+  }
+
+  const handleDedupThresholdBlur = () => {
+    setSettings((prev) => ({
+      ...prev,
+      dedupThreshold: clampDeduplicationThreshold(prev.dedupThreshold),
+    }))
+  }
 
   const totalSize = useMemo(
     () => files.reduce((sum, file) => sum + file.size, 0),
@@ -354,6 +486,34 @@ const UploadPage = () => {
         notify(message, 'warning')
       }
       return
+    }
+
+    const dedupValue = clampDeduplicationThreshold(settings.dedupThreshold)
+    if (dedupValue !== settings.dedupThreshold) {
+      setSettings((prev) => ({
+        ...prev,
+        dedupThreshold: dedupValue,
+      }))
+    }
+
+    const trimmedEndpoint = settings.openAiEndpoint.trim()
+    const trimmedModel = settings.openAiModel.trim()
+    if (
+      trimmedEndpoint !== settings.openAiEndpoint ||
+      trimmedModel !== settings.openAiModel
+    ) {
+      setSettings((prev) => ({
+        ...prev,
+        openAiEndpoint: trimmedEndpoint,
+        openAiModel: trimmedModel,
+      }))
+    }
+
+    const uploadSettings = {
+      ...settings,
+      dedupThreshold: parseFloat(dedupValue),
+      openAiEndpoint: trimmedEndpoint,
+      openAiModel: trimmedModel,
     }
 
     setIsUploading(true)
@@ -395,7 +555,7 @@ const UploadPage = () => {
               total: nextTotal,
             }
           })
-        })
+        }, uploadSettings)
         uploadedCount += currentGroup.files.length
         queue.shift()
         const completedKeys = new Set(currentGroup.fileKeys)
@@ -439,151 +599,294 @@ const UploadPage = () => {
           {translate('upload.description')}
         </Typography>
 
-        <input
-          ref={inputRef}
-          className={classes.input}
-          id="upload-files-input"
-          type="file"
-          multiple
-          onChange={handleFileSelection}
-        />
-        <label htmlFor="upload-files-input">
-          <Button
-            startIcon={<AttachFileIcon />}
-            variant="outlined"
-            color="default"
-            component="span"
-            disabled={isUploading}
-          >
-            {translate('upload.actions.select')}
-          </Button>
-        </label>
+        <Tabs
+          value={activeTab}
+          onChange={handleTabChange}
+          indicatorColor="primary"
+          textColor="primary"
+          aria-label={translate('upload.tabs.label')}
+          className={classes.tabs}
+        >
+          <Tab
+            label={translate('upload.tabs.upload')}
+            id="upload-tab"
+            aria-controls="upload-tabpanel"
+          />
+          <Tab
+            label={translate('upload.tabs.settings')}
+            id="upload-settings-tab"
+            aria-controls="upload-settings-tabpanel"
+          />
+        </Tabs>
 
-        <div className={classes.fileList}>
-          {files.length ? (
-            <>
-              <Typography variant="subtitle1">
-                {translate('upload.selectedCount', { smart_count: files.length })}
-              </Typography>
-              <Typography variant="body2" color="textSecondary">
-                {translate('upload.totalSize', { size: formatFileSize(totalSize) })}
-              </Typography>
-              <List dense>
-                {files.map((file) => {
-                  const fileKey = getFileKey(file)
-                  const isCurrent =
-                    isUploading && currentProgress?.fileKeys?.includes(fileKey)
-                  const progress = isCurrent ? currentProgress : null
-                  const progressTotalBytes = progress?.lengthComputable
-                    ? progress.total
-                    : file.size
-                  const progressPercent = progress?.lengthComputable
-                    ? (progress.loaded / Math.max(progressTotalBytes, 1)) * 100
-                    : 0
-                  const speedText = progress && progress.speed > 0
-                    ? translate('upload.progress.speed', {
-                        value: formatMegabytes(progress.speed, 2),
-                      })
-                    : translate('upload.progress.calculating')
-                  const etaDuration = formatDuration(progress?.eta)
-                  const etaText = etaDuration
-                    ? translate('upload.progress.eta', { time: etaDuration })
-                    : translate('upload.progress.calculating')
-                  const detailText = progress
-                    ? translate('upload.progress.detail', {
-                        loaded: formatMegabytes(progress.loaded, 2),
-                        total: formatMegabytes(progressTotalBytes, 2),
-                        speed: speedText,
-                        eta: etaText,
-                      })
-                    : null
+        <div
+          role="tabpanel"
+          id="upload-tabpanel"
+          aria-labelledby="upload-tab"
+          hidden={activeTab !== 0}
+          className={classes.tabPanel}
+        >
+          <input
+            ref={inputRef}
+            className={classes.input}
+            id="upload-files-input"
+            type="file"
+            multiple
+            onChange={handleFileSelection}
+          />
+          <label htmlFor="upload-files-input">
+            <Button
+              startIcon={<AttachFileIcon />}
+              variant="outlined"
+              color="default"
+              component="span"
+              disabled={isUploading}
+            >
+              {translate('upload.actions.select')}
+            </Button>
+          </label>
 
-                  return (
-                    <ListItem key={fileKey} divider>
-                      <ListItemText
-                        primary={file.name}
-                        secondary={
-                          <>
-                            {`${formatFileSize(file.size)} • ${new Date(
-                              file.lastModified,
-                            ).toLocaleString()}`}
-                            {progress && (
-                              <div className={classes.itemProgress}>
-                                <LinearProgress
-                                  className={classes.itemProgressBar}
-                                  variant={
-                                    progress.lengthComputable
-                                      ? 'determinate'
-                                      : 'indeterminate'
-                                  }
-                                  value={
-                                    progress.lengthComputable
-                                      ? Math.min(progressPercent, 100)
-                                      : undefined
-                                  }
-                                />
-                                <Typography
-                                  variant="caption"
-                                  color="textSecondary"
-                                  className={classes.itemProgressText}
-                                >
-                                  {translate('upload.progress.uploading', {
-                                    name: file.name,
-                                  })}
-                                </Typography>
-                                <Typography
-                                  variant="caption"
-                                  color="textSecondary"
-                                  className={classes.itemProgressText}
-                                >
-                                  {detailText}
-                                </Typography>
-                              </div>
-                            )}
-                          </>
-                        }
-                      />
-                    </ListItem>
-                  )
-                })}
-              </List>
-            </>
-          ) : (
-            <Typography variant="body2" className={classes.emptyState}>
-              {translate('upload.emptySelection')}
+          <div className={classes.fileList}>
+            {files.length ? (
+              <>
+                <Typography variant="subtitle1">
+                  {translate('upload.selectedCount', { smart_count: files.length })}
+                </Typography>
+                <Typography variant="body2" color="textSecondary">
+                  {translate('upload.totalSize', { size: formatFileSize(totalSize) })}
+                </Typography>
+                <List dense>
+                  {files.map((file) => {
+                    const fileKey = getFileKey(file)
+                    const isCurrent =
+                      isUploading && currentProgress?.fileKeys?.includes(fileKey)
+                    const progress = isCurrent ? currentProgress : null
+                    const progressTotalBytes = progress?.lengthComputable
+                      ? progress.total
+                      : file.size
+                    const progressPercent = progress?.lengthComputable
+                      ? (progress.loaded / Math.max(progressTotalBytes, 1)) * 100
+                      : 0
+                    const speedText = progress && progress.speed > 0
+                      ? translate('upload.progress.speed', {
+                          value: formatMegabytes(progress.speed, 2),
+                        })
+                      : translate('upload.progress.calculating')
+                    const etaDuration = formatDuration(progress?.eta)
+                    const etaText = etaDuration
+                      ? translate('upload.progress.eta', { time: etaDuration })
+                      : translate('upload.progress.calculating')
+                    const detailText = progress
+                      ? translate('upload.progress.detail', {
+                          loaded: formatMegabytes(progress.loaded, 2),
+                          total: formatMegabytes(progressTotalBytes, 2),
+                          speed: speedText,
+                          eta: etaText,
+                        })
+                      : null
+
+                    return (
+                      <ListItem key={fileKey} divider>
+                        <ListItemText
+                          primary={file.name}
+                          secondary={
+                            <>
+                              {`${formatFileSize(file.size)} • ${new Date(
+                                file.lastModified,
+                              ).toLocaleString()}`}
+                              {progress && (
+                                <div className={classes.itemProgress}>
+                                  <LinearProgress
+                                    className={classes.itemProgressBar}
+                                    variant={
+                                      progress.lengthComputable
+                                        ? 'determinate'
+                                        : 'indeterminate'
+                                    }
+                                    value={
+                                      progress.lengthComputable
+                                        ? Math.min(progressPercent, 100)
+                                        : undefined
+                                    }
+                                  />
+                                  <Typography
+                                    variant="caption"
+                                    color="textSecondary"
+                                    className={classes.itemProgressText}
+                                  >
+                                    {translate('upload.progress.uploading', {
+                                      name: file.name,
+                                    })}
+                                  </Typography>
+                                  <Typography
+                                    variant="caption"
+                                    color="textSecondary"
+                                    className={classes.itemProgressText}
+                                  >
+                                    {detailText}
+                                  </Typography>
+                                </div>
+                              )}
+                            </>
+                          }
+                        />
+                      </ListItem>
+                    )
+                  })}
+                </List>
+              </>
+            ) : (
+              <Typography variant="body2" className={classes.emptyState}>
+                {translate('upload.emptySelection')}
+              </Typography>
+            )}
+          </div>
+          {feedbackMessage && (
+            <Typography
+              variant="body2"
+              color="error"
+              className={classes.feedback}
+              role="alert"
+            >
+              {feedbackMessage}
             </Typography>
           )}
         </div>
-        {feedbackMessage && (
-          <Typography
-            variant="body2"
-            color="error"
-            className={classes.feedback}
-            role="alert"
-          >
-            {feedbackMessage}
-          </Typography>
-        )}
+
+        <div
+          role="tabpanel"
+          id="upload-settings-tabpanel"
+          aria-labelledby="upload-settings-tab"
+          hidden={activeTab !== 1}
+          className={classes.tabPanel}
+        >
+          <div className={classes.settingsContainer}>
+            <div className={classes.settingsGroup}>
+              <Typography variant="h6">
+                {translate('upload.settings.renameTitle')}
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    color="primary"
+                    checked={settings.renameEnabled}
+                    onChange={handleToggleSetting('renameEnabled')}
+                    name="upload-settings-rename-enabled"
+                  />
+                }
+                label={translate('upload.settings.renameToggle')}
+              />
+              <TextField
+                label={translate('upload.settings.systemPromptLabel')}
+                placeholder={translate('upload.settings.systemPromptPlaceholder')}
+                value={settings.renamingPrompt}
+                onChange={handleTextSettingChange('renamingPrompt')}
+                variant="outlined"
+                fullWidth
+                multiline
+                rows={3}
+                disabled={!settings.renameEnabled}
+                helperText={translate('upload.settings.systemPromptHelper')}
+              />
+            </div>
+
+            <Divider className={classes.settingsDivider} />
+
+            <div className={classes.settingsGroup}>
+              <Typography variant="h6">
+                {translate('upload.settings.openAiTitle')}
+              </Typography>
+              <TextField
+                label={translate('upload.settings.endpointLabel')}
+                placeholder={translate('upload.settings.endpointPlaceholder')}
+                value={settings.openAiEndpoint}
+                onChange={handleTextSettingChange('openAiEndpoint')}
+                variant="outlined"
+                fullWidth
+                helperText={translate('upload.settings.endpointHelper')}
+              />
+              <TextField
+                label={translate('upload.settings.modelLabel')}
+                placeholder={translate('upload.settings.modelPlaceholder')}
+                value={settings.openAiModel}
+                onChange={handleTextSettingChange('openAiModel')}
+                variant="outlined"
+                fullWidth
+                helperText={translate('upload.settings.modelHelper')}
+              />
+              <TextField
+                label={translate('upload.settings.reasoningLabel')}
+                value={settings.reasoningLevel}
+                onChange={handleTextSettingChange('reasoningLevel')}
+                variant="outlined"
+                select
+                fullWidth
+                helperText={translate('upload.settings.reasoningHelper')}
+              >
+                {REASONING_LEVEL_OPTIONS.map((option) => (
+                  <MenuItem key={option} value={option}>
+                    {translate(`upload.settings.reasoningOptions.${option}`)}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </div>
+
+            <Divider className={classes.settingsDivider} />
+
+            <div className={classes.settingsGroup}>
+              <Typography variant="h6">
+                {translate('upload.settings.similarityTitle')}
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    color="primary"
+                    checked={settings.similaritySearchEnabled}
+                    onChange={handleToggleSetting('similaritySearchEnabled')}
+                    name="upload-settings-similarity-enabled"
+                  />
+                }
+                label={translate('upload.settings.similarityToggle')}
+              />
+              <TextField
+                label={translate('upload.settings.thresholdLabel')}
+                value={settings.dedupThreshold}
+                onChange={handleTextSettingChange('dedupThreshold')}
+                onBlur={handleDedupThresholdBlur}
+                type="number"
+                variant="outlined"
+                fullWidth
+                inputProps={{ step: 0.01, min: 0, max: 1 }}
+                disabled={!settings.similaritySearchEnabled}
+                helperText={translate('upload.settings.thresholdHelper')}
+              />
+            </div>
+          </div>
+        </div>
       </CardContent>
-      <Divider />
-      <CardActions className={classes.actions}>
-        <Button
-          startIcon={<CloudUploadIcon />}
-          variant="contained"
-          color="primary"
-          onClick={handleUpload}
-          disabled={!files.length || isUploading}
-        >
-          {translate('upload.actions.upload')}
-        </Button>
-        <Button
-          startIcon={<ClearIcon />}
-          onClick={clearSelection}
-          disabled={!files.length || isUploading}
-        >
-          {translate('upload.actions.clear')}
-        </Button>
-      </CardActions>
+      {activeTab === 0 && (
+        <>
+          <Divider />
+          <CardActions className={classes.actions}>
+            <Button
+              startIcon={<CloudUploadIcon />}
+              variant="contained"
+              color="primary"
+              onClick={handleUpload}
+              disabled={!files.length || isUploading}
+            >
+              {translate('upload.actions.upload')}
+            </Button>
+            <Button
+              startIcon={<ClearIcon />}
+              onClick={clearSelection}
+              disabled={!files.length || isUploading}
+            >
+              {translate('upload.actions.clear')}
+            </Button>
+          </CardActions>
+        </>
+      )}
     </Card>
   )
 }

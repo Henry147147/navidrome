@@ -9,13 +9,14 @@ import (
 const embedSocketPath = "/tmp/navidrome_embed.sock"
 
 type embedRequest struct {
-	MusicName string `json:"name"`
-	MusicFile string `json:"music_file"`
-	CueFile   string `json:"cue_file,omitempty"`
+	MusicName string         `json:"name"`
+	MusicFile string         `json:"music_file"`
+	CueFile   string         `json:"cue_file,omitempty"`
+	Settings  map[string]any `json:"settings,omitempty"`
 }
 
 type EmbedClient interface {
-	Embed(musicPath, musicName, cuePath string) (map[string]any, error)
+	Embed(musicPath, musicName, cuePath string, settings map[string]any) (map[string]any, error)
 }
 
 type embedSocketClient struct {
@@ -26,13 +27,17 @@ func NewEmbedSocketClient(socketPath string) EmbedClient {
 	return &embedSocketClient{socketPath: socketPath}
 }
 
-func (c *embedSocketClient) Embed(musicPath, musicName, cuePath string) (map[string]any, error) {
+func (c *embedSocketClient) Embed(musicPath, musicName, cuePath string, settings map[string]any) (map[string]any, error) {
 	conn, err := net.Dial("unix", c.socketPath)
 	if err != nil {
 		return nil, fmt.Errorf("dial embed server: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
-	reqPayload := embedRequest{MusicFile: musicPath, MusicName: musicName}
+	reqPayload := embedRequest{
+		MusicFile: musicPath,
+		MusicName: musicName,
+		Settings:  settings,
+	}
 	if cuePath != "" {
 		reqPayload.CueFile = cuePath
 	}
