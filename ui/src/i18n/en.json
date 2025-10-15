@@ -635,6 +635,8 @@
     "settings": {
       "renameTitle": "Renaming",
       "renameToggle": "Enable automatic renaming",
+      "useMetadataToggle": "Use embedded metadata hints",
+      "useMetadataHelper": "Tag metadata may be polluted; disable this if it leads to inaccurate titles.",
       "systemPromptLabel": "Renaming system prompt",
       "systemPromptPlaceholder": "Describe how the uploaded tracks should be renamed.",
       "systemPromptHelper": "This prompt is used when renaming uploaded files.",
@@ -665,7 +667,10 @@
     "notifications": {
       "success": "Uploaded %{smart_count} file successfully |||| Uploaded %{smart_count} files successfully",
       "error": "We could not upload your files. Please try again.",
-      "noFiles": "Select at least one file before uploading."
+      "noFiles": "Select at least one file before uploading.",
+      "allDuplicates": "%{name} was not copied because every segment matched existing music.",
+      "copyConflict": "Skipped copying %{files} because file(s) with the same name already exist in the library.",
+      "copyError": "Failed to copy %{name} into the music library. Check the server logs."
     },
     "progress": {
       "uploading": "Uploading %{name}",

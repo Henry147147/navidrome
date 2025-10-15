@@ -47,6 +47,7 @@ class UploadSettings:
     renaming_prompt: str = ""
     openai_endpoint: str = ""
     openai_model: str = ""
+    use_metadata: bool = True
     similarity_search_enabled: bool = False
     dedup_threshold: float = 0.85
     reasoning_level: str = "default"
@@ -79,11 +80,18 @@ class UploadSettings:
         raw_reasoning = payload.get("reasoningLevel", defaults.reasoning_level)
         reasoning = cls._normalize_reasoning(raw_reasoning, defaults.reasoning_level)
 
+        raw_use_metadata = payload.get("useMetadata")
+        if raw_use_metadata is None:
+            use_metadata = defaults.use_metadata
+        else:
+            use_metadata = _coerce_bool(raw_use_metadata)
+
         return cls(
             rename_enabled=_coerce_bool(payload.get("renameEnabled")),
             renaming_prompt=_coerce_string(payload.get("renamingPrompt")),
             openai_endpoint=_coerce_string(payload.get("openAiEndpoint")),
             openai_model=_coerce_string(payload.get("openAiModel")),
+            use_metadata=use_metadata,
             similarity_search_enabled=_coerce_bool(
                 payload.get("similaritySearchEnabled")
             ),

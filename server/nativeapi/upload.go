@@ -2,6 +2,7 @@ package nativeapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -11,11 +12,68 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/log"
 )
 
 func isCueFile(name string) bool {
 	return strings.EqualFold(filepath.Ext(name), ".cue")
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = out.Close() }()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Close()
+}
+
+func fileExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
+}
+
+func toStringSlice(value any) []string {
+	switch v := value.(type) {
+	case nil:
+		return nil
+	case []string:
+		return v
+	case []any:
+		result := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok && s != "" {
+				result = append(result, s)
+			}
+		}
+		return result
+	default:
+		if s, ok := value.(string); ok && s != "" {
+			return []string{s}
+		}
+	}
+	return nil
 }
 
 // TODO: Change saveUploadFile function to save to absoluteLibPath with the original file name given.
@@ -146,7 +204,115 @@ func (n *Router) addUploadRoute(r chi.Router) {
 			}
 		}
 
-		var _ = cueName
+		duplicates := toStringSlice(respPayload["duplicates"])
+		if duplicates == nil {
+			duplicates = []string{}
+		}
+		respPayload["duplicates"] = duplicates
+
+		renamedFile := ""
+		if value, ok := respPayload["renamedFile"]; ok {
+			if s, ok := value.(string); ok {
+				renamedFile = strings.TrimSpace(s)
+			}
+		}
+		if renamedFile == "" {
+			renamedFile = musicName
+		}
+		respPayload["renamedFile"] = renamedFile
+
+		allDuplicates := false
+		if raw, ok := respPayload["allDuplicates"]; ok {
+			if flag, ok := raw.(bool); ok {
+				allDuplicates = flag
+			}
+		}
+		respPayload["allDuplicates"] = allDuplicates
+
+		copied := false
+		copyConflict := false
+		var copyConflicts []string
+		copyError := ""
+
+		if statusCode == http.StatusOK {
+			musicFolder := strings.TrimSpace(conf.Server.MusicFolder)
+			if musicFolder == "" {
+				copyError = "music folder is not configured"
+			} else if !allDuplicates {
+				destAudioName := filepath.Base(renamedFile)
+				if destAudioName == "" {
+					destAudioName = filepath.Base(musicName)
+				}
+				if destAudioName == "" {
+					copyError = "unable to determine destination filename"
+				} else {
+					destAudioPath := filepath.Join(musicFolder, destAudioName)
+
+					var destCuePath string
+					var destCueName string
+					if cuePath != "" && cueName != "" {
+						baseName := strings.TrimSuffix(destAudioName, filepath.Ext(destAudioName))
+						if baseName == "" {
+							baseName = strings.TrimSuffix(filepath.Base(musicName), filepath.Ext(musicName))
+						}
+						cueExt := filepath.Ext(cueName)
+						destCueName = baseName + cueExt
+						destCuePath = filepath.Join(musicFolder, destCueName)
+					}
+
+					conflicts := []string{}
+					if exists, err := fileExists(destAudioPath); err != nil {
+						copyError = fmt.Sprintf("check audio destination: %v", err)
+					} else if exists {
+						conflicts = append(conflicts, destAudioName)
+					}
+
+					if copyError == "" && destCuePath != "" {
+						if exists, err := fileExists(destCuePath); err != nil {
+							copyError = fmt.Sprintf("check cue destination: %v", err)
+						} else if exists {
+							conflicts = append(conflicts, destCueName)
+						}
+					}
+
+					if copyError == "" && len(conflicts) > 0 {
+						copyConflict = true
+						copyConflicts = conflicts
+						log.Warn(req.Context(), "Destination already exists, skipping copy", "conflicts", conflicts)
+					}
+
+					if copyError == "" && !copyConflict {
+						if err := copyFile(musicPath, destAudioPath); err != nil {
+							copyError = fmt.Sprintf("copy audio: %v", err)
+							log.Error(req.Context(), "Failed to copy uploaded audio", err, "source", musicPath, "dest", destAudioPath)
+						} else {
+							if destCuePath != "" && cuePath != "" {
+								if err := copyFile(cuePath, destCuePath); err != nil {
+									copyError = fmt.Sprintf("copy cue: %v", err)
+									log.Error(req.Context(), "Failed to copy uploaded cue", err, "source", cuePath, "dest", destCuePath)
+									if removeErr := os.Remove(destAudioPath); removeErr != nil {
+										log.Warn(req.Context(), "Failed to clean up audio after cue copy error", "path", destAudioPath, "error", removeErr)
+									}
+								}
+							}
+							if copyError == "" {
+								copied = true
+								log.Info(req.Context(), "Copied uploaded files to music folder", "audio", destAudioName, "folder", musicFolder)
+							}
+						}
+					}
+				}
+			}
+		}
+
+		respPayload["copied"] = copied
+		respPayload["copyConflict"] = copyConflict
+		if len(copyConflicts) > 0 {
+			respPayload["copyConflicts"] = copyConflicts
+		}
+		if copyError != "" {
+			respPayload["copyError"] = copyError
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(statusCode)

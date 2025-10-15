@@ -529,7 +529,6 @@ class EmbedSocketServer:
             logger=self.logger,
         )
         self.logger.debug("EmbedSocketServer initialized for %s", self.socket_path)
-        self.upload_feature_pipeline = UploadFeaturePipeline()
 
     def serve_forever(self) -> None:
         if os.path.exists(self.socket_path):
@@ -630,8 +629,11 @@ class EmbedSocketServer:
         duplicates = self.feature_pipeline.scan_for_dups(songs, settings)
         songs_payload = list(map(asdict, songs))
         chunk_payload = list(map(asdict, chunk_embeddings))
-        new_name = self.upload_feature_pipeline.rename(file_name, settings)
-        
+        new_name = self.feature_pipeline.rename(
+            file_name, settings, music_file=embedding.get("music_file")
+        )
+        if len(duplicates) == len(songs_payload):
+            logger.debug("Not upserting song embeddings because of deduplication")
 
         # self.milvus_client.upsert("embedding", songs_payload)
         #
@@ -644,6 +646,12 @@ class EmbedSocketServer:
             len(chunk_embeddings),
             len(duplicates),
         )
+        all_duplicates = bool(songs_payload) and len(duplicates) >= len(songs_payload)
+        return {
+            "duplicates": duplicates,
+            "renamedFile": new_name,
+            "allDuplicates": all_duplicates,
+        }
 
     def handle_connection(self, conn: socket.socket) -> None:
         with conn:
@@ -682,9 +690,10 @@ class EmbedSocketServer:
                     )
                     return
 
+                summary: Optional[dict] = None
                 try:
                     result = self.model.embed_music(music_file, music_name, cue_file)
-                    self.add_embedding_to_db(music_name, result, settings)
+                    summary = self.add_embedding_to_db(music_name, result, settings)
                 except Exception as exc:  # pragma: no cover - propagate to client
                     self.logger.exception("Embedding failed for %s", music_file)
                     self._write_response(
@@ -692,7 +701,10 @@ class EmbedSocketServer:
                     )
                     return
 
-                self._write_response(writer, {"status": "ok"})
+                response_payload = {"status": "ok"}
+                if isinstance(summary, dict):
+                    response_payload.update(summary)
+                self._write_response(writer, response_payload)
             finally:
                 self.logger.debug("Closing connection")
                 writer.close()

@@ -14,8 +14,172 @@ from typing import Any, Dict, List, Optional
 from urllib import error, request
 
 from models import _REASONING_LEVELS, SongEmbedding, UploadSettings
+from database_query import MilvusSimilaritySearcher
 
 LOGGER = logging.getLogger("navidrome.upload_features")
+
+
+def best_effort_parse_metadata(path: Optional[str]) -> Dict[str, Any]:
+    """
+    Attempt to extract useful audio metadata without failing loudly.
+    Returns a dictionary with normalized keys if any metadata is available.
+    """
+
+    def _to_text_list(value: Any) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple, set)):
+            collected: List[str] = []
+            for item in value:
+                collected.extend(_to_text_list(item))
+            return collected
+        if hasattr(value, "text"):
+            try:
+                return _to_text_list(getattr(value, "text"))
+            except Exception:
+                return []
+        if hasattr(value, "value"):
+            try:
+                return _to_text_list(getattr(value, "value"))
+            except Exception:
+                return []
+        if isinstance(value, bytes):
+            try:
+                return [value.decode("utf-8")]
+            except UnicodeDecodeError:
+                return [value.decode("latin-1", errors="ignore")]
+        text = str(value).strip()
+        return [text] if text else []
+
+    metadata: Dict[str, Any] = {}
+    if not path:
+        return metadata
+
+    try:
+        file_path = Path(path)
+    except (TypeError, ValueError):
+        return metadata
+
+    if not file_path.exists():
+        LOGGER.debug("Metadata parse skipped; file does not exist: %s", path)
+        return metadata
+
+    try:
+        from mutagen import File as MutagenFile  # type: ignore
+    except ImportError:
+        LOGGER.debug("mutagen library not available; cannot parse metadata for %s", path)
+        return metadata
+
+    try:
+        audio_file = MutagenFile(str(file_path))
+    except Exception as exc:
+        LOGGER.debug("mutagen failed to read %s: %s", path, exc)
+        return metadata
+
+    if audio_file is None:
+        LOGGER.debug("mutagen returned no data for %s", path)
+        return metadata
+
+    tags = getattr(audio_file, "tags", None)
+    if not tags:
+        return metadata
+
+    normalized: Dict[str, List[str]] = {}
+    try:
+        items = tags.items()
+    except Exception:
+        items = []
+
+    for key, value in items:
+        key_str = str(key).lower()
+        values = _to_text_list(value)
+        if not values:
+            continue
+        normalized.setdefault(key_str, [])
+        normalized[key_str].extend(values)
+
+    def pick_values(*candidates: str) -> List[str]:
+        collected: List[str] = []
+        for candidate in candidates:
+            collected.extend(normalized.get(candidate, []))
+        return collected
+
+    def pick_first(*candidates: str) -> Optional[str]:
+        for candidate in candidates:
+            values = normalized.get(candidate)
+            if values:
+                for raw in values:
+                    text = raw.strip()
+                    if text:
+                        return text
+        return None
+
+    artist_tokens: List[str] = []
+    for raw_artist in pick_values("artist", "artists", "albumartist", "tpe1", "tpe2"):
+        splits = re.split(r"[;/,&]+", raw_artist)
+        for token in splits:
+            cleaned = token.strip()
+            if cleaned:
+                artist_tokens.append(cleaned)
+    if artist_tokens:
+        # Remove duplicates while preserving order and limit to three to avoid noisy metadata floods.
+        seen = set()
+        deduped: List[str] = []
+        for artist in artist_tokens:
+            key = artist.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(artist)
+            if len(deduped) == 3:
+                break
+        if deduped:
+            metadata["artists"] = deduped
+
+    album = pick_first("album", "talb")
+    if album:
+        metadata["album"] = album
+
+    title = pick_first("title", "tit2")
+    if title:
+        metadata["title"] = title
+
+    track_raw = pick_first("tracknumber", "trck")
+    if track_raw:
+        match = re.match(r"(\d+)", track_raw)
+        metadata["track_number"] = match.group(1) if match else track_raw
+
+    disc_raw = pick_first("discnumber", "tpos")
+    if disc_raw:
+        match = re.match(r"(\d+)", disc_raw)
+        metadata["disc_number"] = match.group(1) if match else disc_raw
+
+    date = pick_first("date", "year", "tdrc")
+    if date:
+        metadata["date"] = date
+
+    genres = []
+    for raw_genre in pick_values("genre", "genres", "tcon"):
+        splits = re.split(r"[;/,&]+", raw_genre)
+        for token in splits:
+            cleaned = token.strip()
+            if cleaned:
+                genres.append(cleaned)
+    if genres:
+        seen_genres = set()
+        deduped_genres: List[str] = []
+        for genre in genres:
+            key = genre.lower()
+            if key in seen_genres:
+                continue
+            seen_genres.add(key)
+            deduped_genres.append(genre)
+            if len(deduped_genres) == 5:
+                break
+        if deduped_genres:
+            metadata["genres"] = deduped_genres
+
+    return metadata
 
 
 class OpenAiRenamer:
@@ -49,27 +213,79 @@ class OpenAiRenamer:
         self.api_key = os.getenv("NAVIDROME_OPENAI_API_KEY") or os.getenv(
             "OPENAI_API_KEY"
         )
-        if not self.api_key:
-            self.logger.info(
-                "OpenAI API key not found in NAVIDROME_OPENAI_API_KEY or OPENAI_API_KEY. "
-                "Continuing without authentication headers; ensure your endpoint does not "
-                "require a bearer token (LM Studio servers typically do not)."
-            )
 
-    def rename_segments(self, name: str, system_prompt: str) -> str:
+    def rename_segments(
+        self, name: str, system_prompt: str, metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
         prompt = system_prompt.strip() if system_prompt else ""
-        context_lines = [name]
+        metadata = metadata or {}
 
         system_messages = [
             "You are helping rename uploaded music track segments.",
             "Respond ONLY with compact JSON following this schema: " '{"title": title}',
         ]
+        if metadata:
+            system_messages.append(
+                "Audio metadata is auto-extracted and may be polluted or outdated. "
+                "Treat it as hints only and avoid inventing extra artist names."
+            )
         if prompt:
             system_messages.append(
                 f"The caller supplied additional requirements: {prompt}"
             )
         system_message = " ".join(filter(None, system_messages))
-        user_message = "Here are the original tracks:\n" + "\n".join(context_lines)
+
+        def _format_metadata(data: Dict[str, Any]) -> str:
+            ordered_keys = [
+                "title",
+                "artists",
+                "album",
+                "track_number",
+                "disc_number",
+                "date",
+                "genres",
+            ]
+            summary_lines: List[str] = []
+            handled = set()
+            for key in ordered_keys:
+                if key not in data:
+                    continue
+                handled.add(key)
+                label = key.replace("_", " ").title()
+                value = data[key]
+                if isinstance(value, list):
+                    display = ", ".join(value)
+                else:
+                    display = str(value)
+                summary_lines.append(f"- {label}: {display}")
+            for key in sorted(data.keys()):
+                if key in handled:
+                    continue
+                label = key.replace("_", " ").title()
+                value = data[key]
+                if isinstance(value, list):
+                    display = ", ".join(value)
+                else:
+                    display = str(value)
+                summary_lines.append(f"- {label}: {display}")
+            return "\n".join(summary_lines)
+
+        user_lines = [
+            "Here is the original audio context for renaming:",
+            f"- Uploaded file name: {name}",
+        ]
+        if metadata:
+            user_lines.extend(
+                [
+                    "- Best-effort metadata (may be inaccurate):",
+                    _format_metadata(metadata),
+                ]
+            )
+        user_lines.append(
+            "Return only JSON with a concise, listener-friendly title that respects the hints above."
+        )
+
+        user_message = "\n".join(user_lines)
 
         request_body = {
             "model": self.model,
@@ -141,34 +357,6 @@ class OpenAiRenamer:
             return None
 
 
-class SimilaritySearchStub:
-    """
-    Placeholder implementation for similarity search integration.
-
-    The real implementation can replace this class while keeping the pipeline
-    contract unchanged.
-    """
-
-    def __init__(self, logger: logging.Logger) -> None:
-        self.logger = logger
-
-    def identify_duplicates(
-        self, embedding_payload: SongEmbedding, threshold: float
-    ) -> List[str]:
-        print(embedding_payload)
-        return []
-        segments = embedding_payload.get("segments")
-        if not isinstance(segments, list):
-            return []
-        self.logger.info(
-            "Similarity search stub invoked for %d segments (threshold=%.3f). "
-            "No duplicate filtering performed.",
-            len(segments),
-            threshold,
-        )
-        return []
-
-
 class UploadFeaturePipeline:
     """
     Applies the configured upload features to an embedding payload.
@@ -177,23 +365,34 @@ class UploadFeaturePipeline:
     def __init__(
         self,
         *,
-        similarity_searcher: Optional[SimilaritySearchStub] = None,
+        similarity_searcher: MilvusSimilaritySearcher,
         logger: Optional[logging.Logger] = None,
     ) -> None:
         self.logger = logger or LOGGER
-        self.similarity_searcher = similarity_searcher or SimilaritySearchStub(
-            self.logger
-        )
+        self.similarity_searcher: MilvusSimilaritySearcher = similarity_searcher
 
-    def rename(self, name, settings: UploadSettings) -> str:
+    def rename(
+        self,
+        name: str,
+        settings: UploadSettings,
+        *,
+        music_file: Optional[str] = None,
+    ) -> str:
         name_path = Path(name)
         name_suffix = name_path.suffix
         name = name_path.stem
         if settings.rename_enabled:
-            new_name = self._apply_renaming(name, settings)
-            self.logger.info(f"Renamed {name} to {new_name} via OpenAI endpoint.")
+            source_for_metadata = music_file or str(name_path)
+            metadata = best_effort_parse_metadata(source_for_metadata)
+            new_name = self._apply_renaming(name, settings, metadata)
+            self.logger.info(
+                "Renamed %s to %s via OpenAI endpoint (metadata=%s).",
+                name,
+                new_name,
+                bool(metadata),
+            )
             return str(Path(new_name).with_suffix(name_suffix))
-            
+
         return str(name_path)
 
     def scan_for_dups(
@@ -214,7 +413,9 @@ class UploadFeaturePipeline:
                 )
         return removed_list
 
-    def _apply_renaming(self, name: str, settings: UploadSettings) -> str:
+    def _apply_renaming(
+        self, name: str, settings: UploadSettings, metadata: Dict[str, Any]
+    ) -> str:
         renamer = OpenAiRenamer(
             endpoint=settings.openai_endpoint,
             model=settings.openai_model,
@@ -222,7 +423,7 @@ class UploadFeaturePipeline:
             logger=self.logger,
         )
 
-        new_name = renamer.rename_segments(name, settings.renaming_prompt)
+        new_name = renamer.rename_segments(name, settings.renaming_prompt, metadata)
         return new_name
 
     def _apply_similarity_filter(

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
   Card,
@@ -94,6 +94,7 @@ const defaultUploadSettings = {
   renamingPrompt: '',
   openAiEndpoint: '',
   openAiModel: '',
+  useMetadata: true,
   similaritySearchEnabled: false,
   dedupThreshold: '0.85',
   reasoningLevel: 'default',
@@ -421,6 +422,53 @@ const UploadPage = () => {
   const [currentProgress, setCurrentProgress] = useState(null)
   const [activeTab, setActiveTab] = useState(0)
   const [settings, setSettings] = useState(() => loadStoredSettings())
+  const handleUploadOutcome = useCallback(
+    (response, group) => {
+      if (!response) {
+        return
+      }
+      const primaryName = group?.primary?.name
+      const renamedFile =
+        (typeof response.renamedFile === 'string' && response.renamedFile) ||
+        primaryName ||
+        ''
+
+      if (response.allDuplicates) {
+        notify(
+          translate('upload.notifications.allDuplicates', {
+            name: renamedFile || primaryName || '',
+          }),
+          'warning',
+        )
+      }
+
+      if (response.copyConflict) {
+        const conflicts = Array.isArray(response.copyConflicts)
+          ? response.copyConflicts.filter(
+              (item) => typeof item === 'string' && item.trim() !== '',
+            )
+          : []
+        const conflictLabel =
+          conflicts.length > 0 ? conflicts.join(', ') : renamedFile || primaryName || ''
+        notify(
+          translate('upload.notifications.copyConflict', {
+            files: conflictLabel,
+          }),
+          'warning',
+        )
+      }
+
+      if (response.copyError && !response.copyConflict) {
+        notify(
+          translate('upload.notifications.copyError', {
+            name: renamedFile || primaryName || '',
+          }),
+          'warning',
+        )
+      }
+    },
+    [notify, translate],
+  )
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window?.localStorage) {
@@ -541,7 +589,7 @@ const UploadPage = () => {
       })
 
       try {
-        await uploadFileGroup(currentGroup.files, (progress) => {
+        const response = await uploadFileGroup(currentGroup.files, (progress) => {
           setCurrentProgress((prev) => {
             if (!prev || prev.id !== currentGroup.id) {
               return prev
@@ -556,6 +604,7 @@ const UploadPage = () => {
             }
           })
         }, uploadSettings)
+        handleUploadOutcome(response, currentGroup)
         uploadedCount += currentGroup.files.length
         queue.shift()
         const completedKeys = new Set(currentGroup.fileKeys)
@@ -776,6 +825,20 @@ const UploadPage = () => {
                 }
                 label={translate('upload.settings.renameToggle')}
               />
+              <FormControlLabel
+                control={
+                  <Switch
+                    color="primary"
+                    checked={settings.useMetadata}
+                    onChange={handleToggleSetting('useMetadata')}
+                    name="upload-settings-use-metadata"
+                  />
+                }
+                label={translate('upload.settings.useMetadataToggle')}
+              />
+              <Typography variant="caption" color="textSecondary">
+                {translate('upload.settings.useMetadataHelper')}
+              </Typography>
               <TextField
                 label={translate('upload.settings.systemPromptLabel')}
                 placeholder={translate('upload.settings.systemPromptPlaceholder')}
