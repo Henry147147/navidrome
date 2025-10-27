@@ -11,6 +11,7 @@ import uvicorn
 from pymilvus import MilvusClient
 
 from database_query import MilvusSimilaritySearcher
+from milvus_schema import MilvusSchemaManager
 from schemas import (
     RecommendationItem,
     RecommendationRequest,
@@ -132,7 +133,14 @@ class RecommendationEngine:
 def build_engine() -> RecommendationEngine:
     uri = os.getenv("NAVIDROME_MILVUS_URI", "http://localhost:19530")
     client = MilvusClient(uri=uri)
-    searcher = MilvusSimilaritySearcher(client=client, logger=LOGGER)
+    schema_manager = MilvusSchemaManager(client=client, logger=LOGGER)
+    track_id_supported = schema_manager.ensure_track_id_field("embedding")
+    searcher = MilvusSimilaritySearcher(
+        client=client,
+        logger=LOGGER,
+        schema_manager=schema_manager,
+    )
+    searcher.set_track_id_field_available(track_id_supported)
     return RecommendationEngine(searcher)
 
 
