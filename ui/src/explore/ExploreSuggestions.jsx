@@ -16,7 +16,8 @@ import {
   TextField,
   Typography,
   Chip,
-  Slider,
+  Tabs,
+  Tab,
 } from '@material-ui/core'
 import { makeStyles } from '@material-ui/core/styles'
 import {
@@ -35,10 +36,19 @@ import SearchIcon from '@material-ui/icons/Search'
 import config from '../config'
 import { BRAND_NAME } from '../consts'
 import { formatDuration } from '../utils'
+import ExploreSettingsPanel from './ExploreSettingsPanel'
 
 const useStyles = makeStyles((theme) => ({
   page: {
     marginTop: theme.spacing(2),
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(4),
+  },
+  tabs: {
+    alignSelf: 'flex-start',
+  },
+  tabPanel: {
     display: 'flex',
     flexDirection: 'column',
     gap: theme.spacing(4),
@@ -112,12 +122,6 @@ const useStyles = makeStyles((theme) => ({
     gap: theme.spacing(1),
     alignItems: 'center',
   },
-  sliderRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: theme.spacing(2),
-    flexWrap: 'wrap',
-  },
   searchResults: {
     marginTop: theme.spacing(1),
     maxHeight: 260,
@@ -134,7 +138,13 @@ const useStyles = makeStyles((theme) => ({
 }))
 
 const PLAYLIST_LIMIT = Math.min(6, config.maxSidebarPlaylists || 6)
-const DEFAULT_RECOMMENDATION_LIMIT = 25
+const DEFAULT_SETTINGS = {
+  mixLength: 25,
+  baseDiversity: 0.15,
+  discoveryExploration: 0.6,
+  seedRecencyWindowDays: 60,
+  favoritesBlendWeight: 0.85,
+}
 
 const RecommendationPreview = ({
   result,
@@ -242,6 +252,14 @@ const ExploreSuggestions = () => {
   const dataProvider = useDataProvider()
   const notify = useNotify()
   const refresh = useRefresh()
+  const [activeTab, setActiveTab] = useState(0)
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS)
+  const [settingsDraft, setSettingsDraft] = useState(DEFAULT_SETTINGS)
+  const [settingsErrors, setSettingsErrors] = useState({})
+  const [settingsDirty, setSettingsDirty] = useState(false)
+  const [settingsLoading, setSettingsLoading] = useState(false)
+  const [settingsSaving, setSettingsSaving] = useState(false)
+  const [settingsMessage, setSettingsMessage] = useState(null)
 
   const {
     data: playlistMap,
@@ -267,13 +285,51 @@ const ExploreSuggestions = () => {
     return Object.keys(playlistMap).map((key) => playlistMap[key])
   }, [playlistMap])
 
+
+  useEffect(() => {
+    let isActive = true
+    setSettingsLoading(true)
+    dataProvider
+      .getRecommendationSettings()
+      .then(({ data }) => {
+        if (!isActive) {
+          return
+        }
+        const merged = { ...DEFAULT_SETTINGS, ...data }
+        setSettings(merged)
+        setSettingsDraft(merged)
+        setSettingsDirty(false)
+        setSettingsErrors({})
+        setSettingsMessage(null)
+      })
+      .catch((error) => {
+        if (!isActive) {
+          return
+        }
+        const message =
+          error?.body?.message ||
+          error?.message ||
+          translate('pages.explore.settings.loadError', {
+            _: 'Unable to load settings.',
+          })
+        setSettingsMessage(message)
+      })
+      .finally(() => {
+        if (isActive) {
+          setSettingsLoading(false)
+        }
+      })
+    return () => {
+      isActive = false
+    }
+  }, [dataProvider, translate])
+
 	const [generators, setGenerators] = useState(() => ({
 		recent: { result: null, name: '', loading: false, error: null },
 		favorites: { result: null, name: '', loading: false, error: null },
 		all: { result: null, name: '', loading: false, error: null },
 		discovery: { result: null, name: '', loading: false, error: null },
 	}))
-	const [discoveryDiversity, setDiscoveryDiversity] = useState(0.6)
 	const generatorDefaultFallback = {
 		recent: 'Recent Mix',
 		favorites: 'Favorites Mix',
@@ -292,6 +348,106 @@ const ExploreSuggestions = () => {
 		all: dataProvider.getAllRecommendations,
 		discovery: dataProvider.getDiscoveryRecommendations,
 	}
+	const handleTabChange = (_, value) => {
+		setActiveTab(value)
+	}
+	const handleSettingsFieldChange = (key, value) => {
+		setSettingsDraft((prev) => ({
+			...prev,
+			[key]: value,
+		}))
+		setSettingsDirty(true)
+		setSettingsErrors((prev) => ({
+			...prev,
+			[key]: undefined,
+		}))
+		setSettingsMessage(null)
+	}
+	const validateSettings = (values) => {
+		const issues = {}
+		if (values.mixLength < 10 || values.mixLength > 100) {
+			issues.mixLength = translate('pages.explore.settings.mixLengthError', {
+				_: 'Choose a value between 10 and 100 tracks.',
+			})
+		}
+		if (values.baseDiversity < 0 || values.baseDiversity > 1) {
+			issues.baseDiversity = translate(
+				'pages.explore.settings.baseDiversityError',
+				{ _: 'Set a value between 0% and 100%.' },
+			)
+		}
+		if (
+			values.discoveryExploration < 0.3 ||
+			values.discoveryExploration > 1
+		) {
+			issues.discoveryExploration = translate(
+				'pages.explore.settings.discoveryExplorationError',
+				{ _: 'Set a value between 30% and 100%.' },
+			)
+		}
+		if (
+			values.seedRecencyWindowDays < 7 ||
+			values.seedRecencyWindowDays > 120
+		) {
+			issues.seedRecencyWindowDays = translate(
+				'pages.explore.settings.recencyWindowError',
+				{ _: 'Use a window between 7 and 120 days.' },
+			)
+		}
+		if (
+			values.favoritesBlendWeight < 0.1 ||
+			values.favoritesBlendWeight > 1
+		) {
+			issues.favoritesBlendWeight = translate(
+				'pages.explore.settings.favoritesWeightError',
+				{ _: 'Keep the weight between 10% and 100%.' },
+			)
+		}
+		return issues
+	}
+	const handleSettingsSave = () => {
+		const validation = validateSettings(settingsDraft)
+		setSettingsErrors(validation)
+		if (Object.keys(validation).length > 0) {
+			return
+		}
+		setSettingsSaving(true)
+		setSettingsMessage(null)
+		dataProvider
+			.updateRecommendationSettings(settingsDraft)
+			.then(({ data }) => {
+				const merged = { ...DEFAULT_SETTINGS, ...data }
+				setSettings(merged)
+				setSettingsDraft(merged)
+				setSettingsDirty(false)
+				setSettingsErrors({})
+				setSettingsMessage(null)
+				notify(
+					translate('pages.explore.settings.saveSuccess', {
+						_: 'Recommendation settings updated.',
+					}),
+					'info',
+				)
+			})
+			.catch((error) => {
+				const message =
+					error?.body?.message ||
+					error?.message ||
+					translate('pages.explore.settings.saveError', {
+						_: 'Unable to save settings.',
+					})
+				setSettingsMessage(message)
+			})
+			.finally(() => {
+				setSettingsSaving(false)
+			})
+	}
+	const handleSettingsReset = () => {
+		setSettingsDraft(settings)
+		setSettingsDirty(false)
+		setSettingsErrors({})
+		setSettingsMessage(null)
+	}
 	const updateGeneratorName = (mode, value) => {
 		setGenerators((prev) => ({
 			...prev,
@@ -303,11 +459,16 @@ const ExploreSuggestions = () => {
 		if (!api) {
 			return
 		}
+		const payload = {
+			limit: settings.mixLength,
+			diversity: settings.baseDiversity,
+			...requestOptions,
+		}
 		setGenerators((prev) => ({
 			...prev,
 			[mode]: { ...prev[mode], loading: true, error: null },
 		}))
-		api({ limit: DEFAULT_RECOMMENDATION_LIMIT, ...requestOptions })
+		api(payload)
 			.then(({ data }) => {
 				const autoName =
 					data?.name ||
@@ -407,15 +568,14 @@ const ExploreSuggestions = () => {
 				_: 'Generate discovery playlist',
 			}),
 			description: translate('pages.explore.discoveryDescription', {
-				_: 'Surface songs that are farther from your usual listening. Adjust the exploration slider.',
+				_: 'Surface songs that are farther from your usual listening. Tune exploration from the Settings tab.',
 			}),
 			defaultNameKey: 'pages.explore.discoveryDefaultName',
 			errorKey: 'pages.explore.noDiscoverySeeds',
-			slider: true,
 			onGenerate: () =>
 				runGenerator(
 					'discovery',
-					{ diversity: discoveryDiversity },
+					{ diversity: settings.discoveryExploration },
 					'pages.explore.discoveryDefaultName',
 					'pages.explore.noDiscoverySeeds',
 				),
@@ -441,37 +601,16 @@ const ExploreSuggestions = () => {
 						{config.description}
 					</Typography>
 				)}
-				{config.slider && (
-					<Box className={classes.sliderRow}>
-						<Typography variant="body2">
-							{translate('pages.explore.discoverySliderLabel', {
-								_: 'Exploration',
-							})}
-						</Typography>
-						<Slider
-							value={discoveryDiversity}
-							onChange={(_, value) => {
-								const nextValue = Array.isArray(value) ? value[0] : value
-								setDiscoveryDiversity(nextValue)
-							}}
-							min={0}
-							max={1}
-							step={0.05}
-							valueLabelDisplay="auto"
-							valueLabelFormat={(value) => `${Math.round(value * 100)}%`}
-						/>
-						<Typography variant="body2" className={classes.placeholder}>
-							{translate('pages.explore.discoverySliderValue', {
-								_: '%{value}% exploratory',
-								value: Math.round(discoveryDiversity * 100),
-							})}
-						</Typography>
-						<Typography variant="caption" className={classes.placeholder}>
-							{translate('pages.explore.discoverySliderHelper', {
-								_: 'Higher values lean toward more adventurous picks.',
-							})}
-						</Typography>
-					</Box>
+				{config.key === 'discovery' && (
+					<Typography variant="body2" className={classes.placeholder}>
+						{translate('pages.explore.discoverySliderValue', {
+							_: '%{value}% exploratory',
+							value: Math.round(settings.discoveryExploration * 100),
+						})}
+						{` · ${translate('pages.explore.settings.adjustInSettings', {
+							_: 'Adjust this in the Settings tab.',
+						})}`}
+					</Typography>
 				)}
 				<Box className={classes.buttonRow}>
 					<Button
@@ -564,9 +703,10 @@ const ExploreSuggestions = () => {
 		setCustomError(null)
 		dataProvider
 			.getCustomRecommendations({
-        songIds: selectedSongs.map((song) => song.id),
-        limit: DEFAULT_RECOMMENDATION_LIMIT,
-      })
+				songIds: selectedSongs.map((song) => song.id),
+				limit: settings.mixLength,
+				diversity: settings.baseDiversity,
+			})
       .then(({ data }) => {
         setCustomResult(data)
         setCustomName(
@@ -630,161 +770,202 @@ const ExploreSuggestions = () => {
   return (
     <Box className={classes.page}>
       <Title title={`${BRAND_NAME} - ${pageTitle}`} />
-
-      <Card className={classes.heroCard} variant="outlined">
-        <ExploreIcon className={classes.heroIcon} />
-        <Box>
-          <Typography variant="h4">
-            {translate('pages.explore.suggested', {
-              _: 'Explore Suggested',
-            })}
-          </Typography>
-          <Typography variant="body1" className={classes.cardMeta}>
-            {translate('pages.explore.suggestedSubtitle', {
-              _: 'Kick off your next listening session with a few hand-picked ideas.',
-            })}
-          </Typography>
-        </Box>
-      </Card>
-
-      <Box className={classes.section}>
-        {generatorConfigs.map((config) => renderGeneratorCard(config))}
-      </Box>
-
-      <Card className={classes.recommendationCard} variant="outlined">
-        <Typography variant="h5">
-          {translate('pages.explore.customTitle', {
-            _: 'Create from selected songs',
-          })}
-        </Typography>
-        <TextField
-          variant="outlined"
-          value={songQuery}
-          onChange={(event) => setSongQuery(event.target.value)}
-          placeholder={translate('pages.explore.searchPlaceholder', {
-            _: 'Search for songs to add',
-          })}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon />
-              </InputAdornment>
-            ),
-            endAdornment: searchLoading ? (
-              <CircularProgress size={18} />
-            ) : undefined,
-          }}
+      <Tabs
+        value={activeTab}
+        onChange={handleTabChange}
+        indicatorColor="primary"
+        textColor="primary"
+        className={classes.tabs}
+      >
+        <Tab
+          label={translate('pages.explore.tabs.overview', { _: 'Overview' })}
         />
-        {searchResults.length > 0 && (
-          <Paper className={classes.searchResults} variant="outlined">
-            {searchResults.map((song) => (
-              <MenuItem key={song.id} onClick={() => handleSelectSong(song)}>
-                <ListItemText
-                  primary={song.title}
-                  secondary={`${song.artist || ''} • ${song.album || ''}`}
-                />
-              </MenuItem>
-            ))}
-          </Paper>
-        )}
-        <Box className={classes.selectedSongsContainer}>
-          {selectedSongs.length === 0 && (
-            <Typography variant="body2" className={classes.placeholder}>
-              {translate('pages.explore.selectedEmpty', {
-                _: 'No songs selected yet.',
+        <Tab
+          label={translate('pages.explore.tabs.settings', { _: 'Settings' })}
+        />
+      </Tabs>
+
+      {activeTab === 0 && (
+        <Box className={classes.tabPanel}>
+          <Card className={classes.heroCard} variant="outlined">
+            <ExploreIcon className={classes.heroIcon} />
+            <Box>
+              <Typography variant="h4">
+                {translate('pages.explore.suggested', {
+                  _: 'Explore Suggested',
+                })}
+              </Typography>
+              <Typography variant="body1" className={classes.cardMeta}>
+                {translate('pages.explore.suggestedSubtitle', {
+                  _: 'Kick off your next listening session with a few hand-picked ideas.',
+                })}
+              </Typography>
+            </Box>
+          </Card>
+
+          <Box className={classes.section}>
+            {generatorConfigs.map((config) => renderGeneratorCard(config))}
+          </Box>
+
+          <Card className={classes.recommendationCard} variant="outlined">
+            <Typography variant="h5">
+              {translate('pages.explore.customTitle', {
+                _: 'Create from selected songs',
               })}
             </Typography>
-          )}
-          {selectedSongs.map((song) => (
-            <Chip
-              key={song.id}
-              label={`${song.title || ''} — ${song.artist || ''}`}
-              onDelete={() => handleRemoveSong(song.id)}
-              color="primary"
-              variant="default"
+            <TextField
+              variant="outlined"
+              value={songQuery}
+              onChange={(event) => setSongQuery(event.target.value)}
+              placeholder={translate('pages.explore.searchPlaceholder', {
+                _: 'Search for songs to add',
+              })}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                ),
+                endAdornment: searchLoading ? (
+                  <CircularProgress size={18} />
+                ) : undefined,
+              }}
             />
-          ))}
-        </Box>
-        <Box className={classes.buttonRow}>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleGenerateCustom}
-            disabled={selectedSongs.length === 0 || customLoading}
-          >
-            {customLoading ? (
-              <CircularProgress size={18} color="inherit" />
-            ) : (
-              translate('pages.explore.generateButton', { _: 'Generate mix' })
+            {searchResults.length > 0 && (
+              <Paper className={classes.searchResults} variant="outlined">
+                {searchResults.map((song) => (
+                  <MenuItem key={song.id} onClick={() => handleSelectSong(song)}>
+                    <ListItemText
+                      primary={song.title}
+                      secondary={`${song.artist || ''} • ${song.album || ''}`}
+                    />
+                  </MenuItem>
+                ))}
+              </Paper>
             )}
-          </Button>
-          {customError && (
-            <Typography variant="body2" className={classes.error}>
-              {customError}
-            </Typography>
-          )}
-        </Box>
-        <RecommendationPreview
-          result={customResult}
-          playlistName={customName}
-          onPlaylistNameChange={setCustomName}
-          onSave={() => saveAsPlaylist(customResult, customName)}
-          saving={saving}
-          translate={translate}
-        />
-      </Card>
+            <Box className={classes.selectedSongsContainer}>
+              {selectedSongs.length === 0 && (
+                <Typography variant="body2" className={classes.placeholder}>
+                  {translate('pages.explore.selectedEmpty', {
+                    _: 'No songs selected yet.',
+                  })}
+                </Typography>
+              )}
+              {selectedSongs.map((song) => (
+                <Chip
+                  key={song.id}
+                  label={`${song.title || ''} — ${song.artist || ''}`}
+                  onDelete={() => handleRemoveSong(song.id)}
+                  color="primary"
+                  variant="default"
+                />
+              ))}
+            </Box>
+            <Box className={classes.buttonRow}>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleGenerateCustom}
+                disabled={selectedSongs.length === 0 || customLoading}
+              >
+                {customLoading ? (
+                  <CircularProgress size={18} color="inherit" />
+                ) : (
+                  translate('pages.explore.generateButton', { _: 'Generate mix' })
+                )}
+              </Button>
+              {customError && (
+                <Typography variant="body2" className={classes.error}>
+                  {customError}
+                </Typography>
+              )}
+            </Box>
+            <RecommendationPreview
+              result={customResult}
+              playlistName={customName}
+              onPlaylistNameChange={setCustomName}
+              onSave={() => saveAsPlaylist(customResult, customName)}
+              saving={saving}
+              translate={translate}
+            />
+          </Card>
 
-      <Box className={classes.section}>
-        <Typography variant="h5">{playlistsLabel}</Typography>
-        {playlistsLoading && <CircularProgress size={24} />}
-        {playlistsError && !playlistsLoading && (
-          <Typography variant="body2" className={classes.error}>
-            {translate('pages.explore.playlistsError', {
-              _: 'We could not load playlists right now. Try again later.',
-            })}
-          </Typography>
-        )}
-        {playlistsLoaded && !playlistsError && playlists.length === 0 && (
-          <Typography variant="body2" className={classes.placeholder}>
-            {translate('pages.explore.playlistsEmpty', {
-              _: 'You do not have any playlists yet. Create one to see it here.',
-            })}
-          </Typography>
-        )}
-        {playlists.length > 0 && (
-          <Box className={classes.grid}>
-            {playlists.map((playlist) => (
-              <Card key={playlist.id} className={classes.card} variant="outlined">
-                <CardActionArea
-                  className={classes.cardAction}
-                  component={Link}
-                  to={`/playlist/${playlist.id}/show`}
-                >
-                  <CardContent>
-                    <Box className={classes.playlistHeader}>
-                      <QueueMusicIcon color="primary" />
-                      <Typography variant="h6">{playlist.name}</Typography>
-                    </Box>
-                    {playlist.comment && (
-                      <Typography variant="body2" className={classes.cardMeta}>
-                        {playlist.comment}
-                      </Typography>
-                    )}
-                    <Typography variant="body2" className={classes.cardMeta}>
-                      {`${playlistCountLabel}: ${playlist.songCount ?? 0}`}
-                    </Typography>
-                    {playlist.updatedAt && (
-                      <Typography variant="caption" className={classes.cardMeta}>
-                        {`${updatedLabel}: ${new Date(playlist.updatedAt).toLocaleString()}`}
-                      </Typography>
-                    )}
-                  </CardContent>
-                </CardActionArea>
-              </Card>
-            ))}
+          <Box className={classes.section}>
+            <Typography variant="h5">{playlistsLabel}</Typography>
+            {playlistsLoading && <CircularProgress size={24} />}
+            {playlistsError && !playlistsLoading && (
+              <Typography variant="body2" className={classes.error}>
+                {translate('pages.explore.playlistsError', {
+                  _: 'We could not load playlists right now. Try again later.',
+                })}
+              </Typography>
+            )}
+            {playlistsLoaded && !playlistsError && playlists.length === 0 && (
+              <Typography variant="body2" className={classes.placeholder}>
+                {translate('pages.explore.playlistsEmpty', {
+                  _: 'You do not have any playlists yet. Create one to see it here.',
+                })}
+              </Typography>
+            )}
+            {playlists.length > 0 && (
+              <Box className={classes.grid}>
+                {playlists.map((playlist) => (
+                  <Card
+                    key={playlist.id}
+                    className={classes.card}
+                    variant="outlined"
+                  >
+                    <CardActionArea
+                      className={classes.cardAction}
+                      component={Link}
+                      to={`/playlist/${playlist.id}/show`}
+                    >
+                      <CardContent>
+                        <Box className={classes.playlistHeader}>
+                          <QueueMusicIcon color="primary" />
+                          <Typography variant="h6">{playlist.name}</Typography>
+                        </Box>
+                        {playlist.comment && (
+                          <Typography variant="body2" className={classes.cardMeta}>
+                            {playlist.comment}
+                          </Typography>
+                        )}
+                        <Typography variant="body2" className={classes.cardMeta}>
+                          {`${playlistCountLabel}: ${playlist.songCount ?? 0}`}
+                        </Typography>
+                        {playlist.updatedAt && (
+                          <Typography variant="caption" className={classes.cardMeta}>
+                            {`${updatedLabel}: ${new Date(
+                              playlist.updatedAt,
+                            ).toLocaleString()}`}
+                          </Typography>
+                        )}
+                      </CardContent>
+                    </CardActionArea>
+                  </Card>
+                ))}
+              </Box>
+            )}
           </Box>
-        )}
-      </Box>
+        </Box>
+      )}
+
+      {activeTab === 1 && (
+        <Box className={classes.tabPanel}>
+          <ExploreSettingsPanel
+            translate={translate}
+            draft={settingsDraft}
+            errors={settingsErrors}
+            onFieldChange={handleSettingsFieldChange}
+            onReset={handleSettingsReset}
+            onSave={handleSettingsSave}
+            saving={settingsSaving}
+            dirty={settingsDirty}
+            loading={settingsLoading}
+            serverError={settingsMessage}
+          />
+        </Box>
+      )}
     </Box>
   )
 }

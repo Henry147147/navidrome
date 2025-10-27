@@ -3,6 +3,8 @@ package nativeapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -38,16 +40,175 @@ const (
 	modeFavoritesRecommendations = "favorites"
 	modeAllRecommendations       = "all"
 	modeDiscoveryRecommendations = "discovery"
+
+	recommendationSettingsKey = "recommendations.settings"
+
+	mixLengthMin          = 10
+	mixLengthMax          = 100
+	seedRecencyMinDays    = 7
+	seedRecencyMaxDays    = 120
+	discoveryMinDiversity = 0.3
+	favoritesBlendMin     = 0.1
 )
+
+type recommendationSettings struct {
+	MixLength             int     `json:"mixLength"`
+	BaseDiversity         float64 `json:"baseDiversity"`
+	DiscoveryExploration  float64 `json:"discoveryExploration"`
+	SeedRecencyWindowDays int     `json:"seedRecencyWindowDays"`
+	FavoritesBlendWeight  float64 `json:"favoritesBlendWeight"`
+}
+
+func defaultRecommendationSettings() recommendationSettings {
+	limit := conf.Server.Recommendations.DefaultLimit
+	if limit < mixLengthMin {
+		limit = mixLengthMin
+	}
+	if limit > mixLengthMax {
+		limit = mixLengthMax
+	}
+	diversity := conf.Server.Recommendations.Diversity
+	if diversity < 0 {
+		diversity = 0
+	}
+	if diversity > 1 {
+		diversity = 1
+	}
+	return recommendationSettings{
+		MixLength:             limit,
+		BaseDiversity:         diversity,
+		DiscoveryExploration:  0.6,
+		SeedRecencyWindowDays: 60,
+		FavoritesBlendWeight:  0.85,
+	}
+}
+
+func (s *recommendationSettings) applyDefaults(defaults recommendationSettings) {
+	if s.MixLength == 0 {
+		s.MixLength = defaults.MixLength
+	}
+	if s.DiscoveryExploration == 0 {
+		s.DiscoveryExploration = defaults.DiscoveryExploration
+	}
+	if s.SeedRecencyWindowDays == 0 {
+		s.SeedRecencyWindowDays = defaults.SeedRecencyWindowDays
+	}
+	if s.FavoritesBlendWeight == 0 {
+		s.FavoritesBlendWeight = defaults.FavoritesBlendWeight
+	}
+}
+
+func (s recommendationSettings) validate() error {
+	if s.MixLength < mixLengthMin || s.MixLength > mixLengthMax {
+		return fmt.Errorf("mixLength must be between %d and %d", mixLengthMin, mixLengthMax)
+	}
+	if s.BaseDiversity < 0 || s.BaseDiversity > 1 {
+		return fmt.Errorf("baseDiversity must be between %.2f and %.2f", 0.0, 1.0)
+	}
+	if s.DiscoveryExploration < discoveryMinDiversity || s.DiscoveryExploration > 1 {
+		return fmt.Errorf("discoveryExploration must be between %.2f and %.2f", discoveryMinDiversity, 1.0)
+	}
+	if s.SeedRecencyWindowDays < seedRecencyMinDays || s.SeedRecencyWindowDays > seedRecencyMaxDays {
+		return fmt.Errorf("seedRecencyWindowDays must be between %d and %d", seedRecencyMinDays, seedRecencyMaxDays)
+	}
+	if s.FavoritesBlendWeight < favoritesBlendMin || s.FavoritesBlendWeight > 1 {
+		return fmt.Errorf("favoritesBlendWeight must be between %.2f and %.2f", favoritesBlendMin, 1.0)
+	}
+	return nil
+}
 
 func (n *Router) addRecommendationRoutes(r chi.Router) {
 	r.Route("/recommendations", func(r chi.Router) {
+		r.Route("/settings", func(r chi.Router) {
+			r.Get("/", n.handleGetRecommendationSettings)
+			r.Put("/", n.handleUpdateRecommendationSettings)
+		})
 		r.Post("/recent", n.handleRecentRecommendations)
 		r.Post("/favorites", n.handleFavoritesRecommendations)
 		r.Post("/all", n.handleAllRecommendations)
 		r.Post("/discovery", n.handleDiscoveryRecommendations)
 		r.Post("/custom", n.handleCustomRecommendations)
 	})
+}
+
+func (n *Router) handleGetRecommendationSettings(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user, ok := request.UserFrom(ctx)
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusUnauthorized)
+		return
+	}
+	settings, err := n.getRecommendationSettings(ctx, user)
+	if err != nil {
+		log.Error(ctx, "Failed to load recommendation settings", "error", err)
+		http.Error(w, "failed to load recommendation settings", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (n *Router) handleUpdateRecommendationSettings(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user, ok := request.UserFrom(ctx)
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusUnauthorized)
+		return
+	}
+	var payload recommendationSettings
+	if err := decodeJSON(r, &payload); err != nil {
+		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+	defaults := defaultRecommendationSettings()
+	payload.applyDefaults(defaults)
+	if err := payload.validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	settings, err := n.saveRecommendationSettings(ctx, user, payload)
+	if err != nil {
+		log.Error(ctx, "Failed to persist recommendation settings", "error", err)
+		http.Error(w, "failed to save recommendation settings", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (n *Router) getRecommendationSettings(ctx context.Context, user model.User) (recommendationSettings, error) {
+	defaults := defaultRecommendationSettings()
+	repo := n.ds.UserProps(ctx)
+	value, err := repo.Get(user.ID, recommendationSettingsKey)
+	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			return defaults, nil
+		}
+		return recommendationSettings{}, err
+	}
+	if strings.TrimSpace(value) == "" {
+		return defaults, nil
+	}
+	var settings recommendationSettings
+	if err := json.Unmarshal([]byte(value), &settings); err != nil {
+		log.Warn(ctx, "Failed to decode stored recommendation settings", "error", err)
+		return defaults, nil
+	}
+	settings.applyDefaults(defaults)
+	if err := settings.validate(); err != nil {
+		log.Warn(ctx, "Stored recommendation settings invalid, using defaults", "error", err)
+		return defaults, nil
+	}
+	return settings, nil
+}
+
+func (n *Router) saveRecommendationSettings(ctx context.Context, user model.User, settings recommendationSettings) (recommendationSettings, error) {
+	bytes, err := json.Marshal(settings)
+	if err != nil {
+		return recommendationSettings{}, err
+	}
+	if err := n.ds.UserProps(ctx).Put(user.ID, recommendationSettingsKey, string(bytes)); err != nil {
+		return recommendationSettings{}, err
+	}
+	return settings, nil
 }
 
 func (n *Router) handleRecentRecommendations(w http.ResponseWriter, r *http.Request) {
@@ -61,13 +222,19 @@ func (n *Router) handleRecentRecommendations(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "user not found in context", http.StatusUnauthorized)
 		return
 	}
+	settings, err := n.getRecommendationSettings(ctx, user)
+	if err != nil {
+		log.Error(ctx, "Failed to load recommendation settings", "error", err)
+		http.Error(w, "failed to load recommendation settings", http.StatusInternalServerError)
+		return
+	}
 	var payload recommendationRequestPayload
 	if err := decodeJSON(r, &payload); err != nil {
 		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
 		return
 	}
-	limit := normalizeLimit(payload.Limit)
-	seeds, err := n.buildRecentSeeds(ctx, user, limit*2)
+	limit := normalizeLimit(payload.Limit, settings.MixLength)
+	seeds, err := n.buildRecentSeeds(ctx, user, limit*2, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -83,7 +250,7 @@ func (n *Router) handleRecentRecommendations(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "We need a little more listening history before we can build this mix.")
 		return
 	}
-	resp, err := n.executeRecommendation(ctx, user, modeRecentRecommendations, payload.Name, seeds, limit, payload.Diversity)
+	resp, err := n.executeRecommendation(ctx, user, modeRecentRecommendations, payload.Name, seeds, limit, payload.Diversity, settings.BaseDiversity, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -102,12 +269,18 @@ func (n *Router) handleFavoritesRecommendations(w http.ResponseWriter, r *http.R
 		http.Error(w, "user not found in context", http.StatusUnauthorized)
 		return
 	}
+	settings, err := n.getRecommendationSettings(ctx, user)
+	if err != nil {
+		log.Error(ctx, "Failed to load recommendation settings", "error", err)
+		http.Error(w, "failed to load recommendation settings", http.StatusInternalServerError)
+		return
+	}
 	var payload recommendationRequestPayload
 	if err := decodeJSON(r, &payload); err != nil {
 		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
 		return
 	}
-	limit := normalizeLimit(payload.Limit)
+	limit := normalizeLimit(payload.Limit, settings.MixLength)
 	seeds, err := n.buildLikedSeeds(ctx, user, limit*2)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -117,7 +290,7 @@ func (n *Router) handleFavoritesRecommendations(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "Star or rate a few songs and try again.")
 		return
 	}
-	resp, err := n.executeRecommendation(ctx, user, modeFavoritesRecommendations, payload.Name, seeds, limit, payload.Diversity)
+	resp, err := n.executeRecommendation(ctx, user, modeFavoritesRecommendations, payload.Name, seeds, limit, payload.Diversity, settings.BaseDiversity, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -136,13 +309,19 @@ func (n *Router) handleAllRecommendations(w http.ResponseWriter, r *http.Request
 		http.Error(w, "user not found in context", http.StatusUnauthorized)
 		return
 	}
+	settings, err := n.getRecommendationSettings(ctx, user)
+	if err != nil {
+		log.Error(ctx, "Failed to load recommendation settings", "error", err)
+		http.Error(w, "failed to load recommendation settings", http.StatusInternalServerError)
+		return
+	}
 	var payload recommendationRequestPayload
 	if err := decodeJSON(r, &payload); err != nil {
 		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
 		return
 	}
-	limit := normalizeLimit(payload.Limit)
-	seeds, err := n.buildAllSeeds(ctx, user, limit*2)
+	limit := normalizeLimit(payload.Limit, settings.MixLength)
+	seeds, err := n.buildAllSeeds(ctx, user, limit*2, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -154,7 +333,7 @@ func (n *Router) handleAllRecommendations(w http.ResponseWriter, r *http.Request
 	if len(seeds) > limit {
 		seeds = seeds[:limit]
 	}
-	resp, err := n.executeRecommendation(ctx, user, modeAllRecommendations, payload.Name, seeds, limit, payload.Diversity)
+	resp, err := n.executeRecommendation(ctx, user, modeAllRecommendations, payload.Name, seeds, limit, payload.Diversity, settings.BaseDiversity, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -173,13 +352,19 @@ func (n *Router) handleDiscoveryRecommendations(w http.ResponseWriter, r *http.R
 		http.Error(w, "user not found in context", http.StatusUnauthorized)
 		return
 	}
+	settings, err := n.getRecommendationSettings(ctx, user)
+	if err != nil {
+		log.Error(ctx, "Failed to load recommendation settings", "error", err)
+		http.Error(w, "failed to load recommendation settings", http.StatusInternalServerError)
+		return
+	}
 	var payload recommendationRequestPayload
 	if err := decodeJSON(r, &payload); err != nil {
 		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
 		return
 	}
-	limit := normalizeLimit(payload.Limit)
-	seeds, err := n.buildAllSeeds(ctx, user, limit*3)
+	limit := normalizeLimit(payload.Limit, settings.MixLength)
+	seeds, err := n.buildAllSeeds(ctx, user, limit*3, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -192,12 +377,7 @@ func (n *Router) handleDiscoveryRecommendations(w http.ResponseWriter, r *http.R
 	if len(seeds) > maxSeeds {
 		seeds = seeds[:maxSeeds]
 	}
-	diversity := payload.Diversity
-	if diversity == nil {
-		defaultDiversity := 0.6
-		diversity = &defaultDiversity
-	}
-	resp, err := n.executeRecommendation(ctx, user, modeDiscoveryRecommendations, payload.Name, seeds, limit, diversity)
+	resp, err := n.executeRecommendation(ctx, user, modeDiscoveryRecommendations, payload.Name, seeds, limit, payload.Diversity, settings.DiscoveryExploration, discoveryMinDiversity)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -216,6 +396,12 @@ func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "user not found in context", http.StatusUnauthorized)
 		return
 	}
+	settings, err := n.getRecommendationSettings(ctx, user)
+	if err != nil {
+		log.Error(ctx, "Failed to load recommendation settings", "error", err)
+		http.Error(w, "failed to load recommendation settings", http.StatusInternalServerError)
+		return
+	}
 	var payload recommendationRequestPayload
 	if err := decodeJSON(r, &payload); err != nil {
 		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
@@ -225,7 +411,7 @@ func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "songIds is required", http.StatusBadRequest)
 		return
 	}
-	limit := normalizeLimit(payload.Limit)
+	limit := normalizeLimit(payload.Limit, settings.MixLength)
 	seeds, err := n.buildCustomSeeds(ctx, user, payload.SongIDs)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -235,7 +421,7 @@ func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "Those songs aren't available right now. Try a different selection.")
 		return
 	}
-	resp, err := n.executeRecommendation(ctx, user, modeCustomRecommendations, payload.Name, seeds, limit, payload.Diversity)
+	resp, err := n.executeRecommendation(ctx, user, modeCustomRecommendations, payload.Name, seeds, limit, payload.Diversity, settings.BaseDiversity, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -243,14 +429,14 @@ func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (n *Router) executeRecommendation(ctx context.Context, user model.User, mode string, name string, seeds []subsonic.RecommendationSeed, limit int, diversityOverride *float64) (recommendationResponsePayload, error) {
+func (n *Router) executeRecommendation(ctx context.Context, user model.User, mode string, name string, seeds []subsonic.RecommendationSeed, limit int, diversityOverride *float64, fallback float64, min float64) (recommendationResponsePayload, error) {
 	req := subsonic.RecommendationRequest{
 		UserID:    user.ID,
 		UserName:  user.UserName,
 		Limit:     limit,
 		Mode:      mode,
 		Seeds:     seeds,
-		Diversity: normalizeDiversity(diversityOverride),
+		Diversity: normalizeDiversity(diversityOverride, fallback, min),
 	}
 	result, err := n.recommender.Recommend(ctx, mode, req)
 	if err != nil {
@@ -277,12 +463,17 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	}, nil
 }
 
-func (n *Router) buildRecentSeeds(ctx context.Context, user model.User, limit int) ([]subsonic.RecommendationSeed, error) {
+func (n *Router) buildRecentSeeds(ctx context.Context, user model.User, limit int, settings recommendationSettings) ([]subsonic.RecommendationSeed, error) {
+	filter := sq.Gt{"play_date": time.Time{}}
+	if settings.SeedRecencyWindowDays > 0 {
+		cutoff := time.Now().Add(-time.Duration(settings.SeedRecencyWindowDays) * 24 * time.Hour)
+		filter = sq.Gt{"play_date": cutoff}
+	}
 	options := model.QueryOptions{
 		Sort:    "playDate",
 		Order:   "desc",
 		Max:     limit,
-		Filters: sq.Gt{"play_date": time.Time{}},
+		Filters: filter,
 	}
 	options.Filters = withLibraryFilter(options.Filters, user)
 	mfs, err := n.ds.MediaFile(ctx).GetAll(options)
@@ -359,8 +550,8 @@ func (n *Router) buildLikedSeeds(ctx context.Context, user model.User, limit int
 	return seedsFromMediaFiles(mfs, "favorites"), nil
 }
 
-func (n *Router) buildAllSeeds(ctx context.Context, user model.User, limit int) ([]subsonic.RecommendationSeed, error) {
-	recent, err := n.buildRecentSeeds(ctx, user, limit)
+func (n *Router) buildAllSeeds(ctx context.Context, user model.User, limit int, settings recommendationSettings) ([]subsonic.RecommendationSeed, error) {
+	recent, err := n.buildRecentSeeds(ctx, user, limit, settings)
 	if err != nil {
 		return nil, err
 	}
@@ -369,7 +560,7 @@ func (n *Router) buildAllSeeds(ctx context.Context, user model.User, limit int) 
 		return nil, err
 	}
 	combined, seen := appendUniqueSeeds(nil, recent, nil, 1.0)
-	combined, _ = appendUniqueSeeds(combined, favorites, seen, 0.85)
+	combined, _ = appendUniqueSeeds(combined, favorites, seen, settings.FavoritesBlendWeight)
 	return combined, nil
 }
 
@@ -495,7 +686,11 @@ func defaultPlaylistName(mode string) string {
 	}
 }
 
-func normalizeLimit(limit int) int {
+func normalizeLimit(requested int, fallback int) int {
+	limit := fallback
+	if requested > 0 {
+		limit = requested
+	}
 	if limit <= 0 {
 		limit = conf.Server.Recommendations.DefaultLimit
 	}
@@ -505,8 +700,8 @@ func normalizeLimit(limit int) int {
 	return limit
 }
 
-func normalizeDiversity(override *float64) float64 {
-	diversity := conf.Server.Recommendations.Diversity
+func normalizeDiversity(override *float64, fallback float64, min float64) float64 {
+	diversity := fallback
 	if override != nil {
 		diversity = *override
 	}
@@ -515,6 +710,9 @@ func normalizeDiversity(override *float64) float64 {
 	}
 	if diversity > 1 {
 		diversity = 1
+	}
+	if diversity < min {
+		diversity = min
 	}
 	return diversity
 }

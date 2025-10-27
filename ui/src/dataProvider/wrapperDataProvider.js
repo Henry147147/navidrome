@@ -219,6 +219,16 @@ const wrapperDataProvider = {
   getAllRecommendations: (options) => postRecommendation('all', options),
   getDiscoveryRecommendations: (options) => postRecommendation('discovery', options),
   getCustomRecommendations: (options) => postRecommendation('custom', options),
+  getRecommendationSettings: () =>
+    httpClient(`${REST_URL}/recommendations/settings`).then(({ json }) => ({
+      data: json,
+    })),
+  updateRecommendationSettings: (data) =>
+    httpClient(`${REST_URL}/recommendations/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).then(({ json }) => ({ data: json })),
 }
 
 export default wrapperDataProvider
