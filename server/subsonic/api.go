@@ -32,40 +32,45 @@ type handlerRaw = func(http.ResponseWriter, *http.Request) (*responses.Subsonic,
 
 type Router struct {
 	http.Handler
-	ds        model.DataStore
-	artwork   artwork.Artwork
-	streamer  core.MediaStreamer
-	archiver  core.Archiver
-	players   core.Players
-	provider  external.Provider
-	playlists core.Playlists
-	scanner   scanner.Scanner
-	broker    events.Broker
-	scrobbler scrobbler.PlayTracker
-	share     core.Share
-	playback  playback.PlaybackServer
-	metrics   metrics.Metrics
+	ds          model.DataStore
+	artwork     artwork.Artwork
+	streamer    core.MediaStreamer
+	archiver    core.Archiver
+	players     core.Players
+	provider    external.Provider
+	playlists   core.Playlists
+	scanner     scanner.Scanner
+	broker      events.Broker
+	scrobbler   scrobbler.PlayTracker
+	share       core.Share
+	playback    playback.PlaybackServer
+	metrics     metrics.Metrics
+	recommender RecommendationClient
 }
 
 func New(ds model.DataStore, artwork artwork.Artwork, streamer core.MediaStreamer, archiver core.Archiver,
 	players core.Players, provider external.Provider, scanner scanner.Scanner, broker events.Broker,
 	playlists core.Playlists, scrobbler scrobbler.PlayTracker, share core.Share, playback playback.PlaybackServer,
-	metrics metrics.Metrics,
+	metrics metrics.Metrics, recommender RecommendationClient,
 ) *Router {
+	if recommender == nil {
+		recommender = noopRecommendationClient{}
+	}
 	r := &Router{
-		ds:        ds,
-		artwork:   artwork,
-		streamer:  streamer,
-		archiver:  archiver,
-		players:   players,
-		provider:  provider,
-		playlists: playlists,
-		scanner:   scanner,
-		broker:    broker,
-		scrobbler: scrobbler,
-		share:     share,
-		playback:  playback,
-		metrics:   metrics,
+		ds:          ds,
+		artwork:     artwork,
+		streamer:    streamer,
+		archiver:    archiver,
+		players:     players,
+		provider:    provider,
+		playlists:   playlists,
+		scanner:     scanner,
+		broker:      broker,
+		scrobbler:   scrobbler,
+		share:       share,
+		playback:    playback,
+		metrics:     metrics,
+		recommender: recommender,
 	}
 	r.Handler = r.routes()
 	return r

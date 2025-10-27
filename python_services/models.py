@@ -16,6 +16,7 @@ class SongEmbedding:
     sample_rate: int
     offset: float
     chunk_ids: list
+    track_id: str = ""
 
 
 @dataclass

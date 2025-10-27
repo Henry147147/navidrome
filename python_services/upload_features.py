@@ -67,7 +67,9 @@ def best_effort_parse_metadata(path: Optional[str]) -> Dict[str, Any]:
     try:
         from mutagen import File as MutagenFile  # type: ignore
     except ImportError:
-        LOGGER.debug("mutagen library not available; cannot parse metadata for %s", path)
+        LOGGER.debug(
+            "mutagen library not available; cannot parse metadata for %s", path
+        )
         return metadata
 
     try:
@@ -383,7 +385,9 @@ class UploadFeaturePipeline:
         name = name_path.stem
         if settings.rename_enabled:
             source_for_metadata = music_file or str(name_path)
-            metadata = best_effort_parse_metadata(source_for_metadata)
+            metadata: Dict[str, Any] = {}
+            if settings.use_metadata:
+                metadata = best_effort_parse_metadata(source_for_metadata)
             new_name = self._apply_renaming(name, settings, metadata)
             self.logger.info(
                 "Renamed %s to %s via OpenAI endpoint (metadata=%s).",

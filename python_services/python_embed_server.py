@@ -613,6 +613,7 @@ class EmbedSocketServer:
                 sample_rate=sample_rate,
                 offset=start_seconds,
                 chunk_ids=[i.id for i in current_chunk_data],
+                track_id=str(_id),
             )
             chunk_data.extend(current_chunk_data)
             song_data.append(song_embed)
@@ -633,13 +634,19 @@ class EmbedSocketServer:
             file_name, settings, music_file=embedding.get("music_file")
         )
         if len(duplicates) == len(songs_payload):
-            logger.debug("Not upserting song embeddings because of deduplication")
-
-        # self.milvus_client.upsert("embedding", songs_payload)
-        #
-        # self.milvus_client.upsert("chunked_embedding", chunk_payload)
-        # self.milvus_client.flush("embedding")
-        # self.milvus_client.flush("chunked_embedding")
+            self.logger.debug("Not upserting song embeddings because of deduplication")
+        else:
+            try:
+                if songs_payload:
+                    self.milvus_client.upsert("embedding", songs_payload)
+                if chunk_payload:
+                    self.milvus_client.upsert("chunked_embedding", chunk_payload)
+                if songs_payload:
+                    self.milvus_client.flush("embedding")
+                if chunk_payload:
+                    self.milvus_client.flush("chunked_embedding")
+            except Exception:
+                self.logger.exception("Failed to upsert embeddings to Milvus")
         self.logger.debug(
             "Prepared embedding payload for Milvus. Songs=%d, chunks=%d, duplicates=%d",
             len(songs),
@@ -676,8 +683,8 @@ class EmbedSocketServer:
                 music_name = payload.get("name")
                 settings = UploadSettings.from_payload(payload.get("settings"))
                 cue_file = payload.get("cue_file") or None
-                logger.debug(f"Payload: {payload}")
-                logger.debug("Normalized upload settings: %s", asdict(settings))
+                self.logger.debug("Payload: %s", payload)
+                self.logger.debug("Normalized upload settings: %s", asdict(settings))
                 self.logger.debug(
                     "Received embedding request for %s (cue=%s)", music_file, cue_file
                 )

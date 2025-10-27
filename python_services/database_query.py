@@ -154,6 +154,76 @@ class MilvusSimilaritySearcher:
             return []
         return results[0]
 
+    def search_similar_embeddings(
+        self,
+        embedding: Sequence[float],
+        *,
+        top_k: Optional[int] = None,
+        exclude_names: Optional[Iterable[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Run a similarity search directly from an embedding vector."""
+
+        vector = _ensure_vector(embedding)
+        limit = max(int(top_k or self.default_top_k), 1)
+        filter_expr: Optional[str] = None
+        filter_params: Optional[Dict[str, Any]] = None
+        if exclude_names:
+            exclusions = sorted({name for name in exclude_names if name})
+            if exclusions:
+                filter_expr = "name not in {names}"
+                filter_params = {"names": exclusions}
+
+        self._load_collection()
+
+        try:
+            results = self.client.search(
+                collection_name=self.collection_name,
+                anns_field=self.anns_field,
+                data=[vector],
+                limit=limit,
+                output_fields=["name", "track_id"],
+                filter=filter_expr,
+                filter_params=filter_params,
+                search_params=self._build_search_params(limit),
+            )
+        except Exception:  # pragma: no cover - defensive logging
+            self.logger.exception("Milvus vector search failed")
+            return []
+
+        if not results:
+            return []
+        return results[0]
+
+    def get_embeddings_by_name(
+        self, names: Sequence[str]
+    ) -> Dict[str, Sequence[float]]:
+        """Fetch stored embeddings for the specified track names."""
+
+        unique_names = sorted({name for name in names if name})
+        if not unique_names:
+            return {}
+
+        self._load_collection()
+
+        try:
+            rows = self.client.query(
+                collection_name=self.collection_name,
+                filter="name in {names}",
+                filter_params={"names": unique_names},
+                output_fields=["name", "track_id", self.anns_field],
+            )
+        except Exception:  # pragma: no cover - defensive logging
+            self.logger.exception("Milvus query failed when loading embeddings")
+            return {}
+
+        embeddings: Dict[str, Sequence[float]] = {}
+        for row in rows or []:
+            identifier = row.get("track_id") or row.get("name")
+            vector = row.get(self.anns_field)
+            if identifier and vector:
+                embeddings[str(identifier)] = vector
+        return embeddings
+
     def identify_duplicates(
         self,
         embedding_payload: SongEmbedding,

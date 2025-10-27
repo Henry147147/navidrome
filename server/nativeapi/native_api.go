@@ -18,19 +18,21 @@ import (
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 	"github.com/navidrome/navidrome/server"
+	"github.com/navidrome/navidrome/server/subsonic"
 )
 
 type Router struct {
 	http.Handler
-	ds        model.DataStore
-	share     core.Share
-	playlists core.Playlists
-	insights  metrics.Insights
-	libs      core.Library
+	ds          model.DataStore
+	share       core.Share
+	playlists   core.Playlists
+	insights    metrics.Insights
+	libs        core.Library
+	recommender subsonic.RecommendationClient
 }
 
-func New(ds model.DataStore, share core.Share, playlists core.Playlists, insights metrics.Insights, libraryService core.Library) *Router {
-	r := &Router{ds: ds, share: share, playlists: playlists, insights: insights, libs: libraryService}
+func New(ds model.DataStore, share core.Share, playlists core.Playlists, insights metrics.Insights, libraryService core.Library, recommender subsonic.RecommendationClient) *Router {
+	r := &Router{ds: ds, share: share, playlists: playlists, insights: insights, libs: libraryService, recommender: recommender}
 	r.Handler = r.routes()
 	return r
 }
@@ -67,6 +69,7 @@ func (n *Router) routes() http.Handler {
 		n.addKeepAliveRoute(r)
 		n.addInsightsRoute(r)
 		n.addUploadRoute(r)
+		n.addRecommendationRoutes(r)
 
 		r.With(adminOnlyMiddleware).Group(func(r chi.Router) {
 			n.addInspectRoute(r)

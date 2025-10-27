@@ -695,13 +695,26 @@
     }
   },
   "pages": {
-    "explore": {
-      "suggested": "Explore Suggested",
-      "suggestedSubtitle": "Kick off your next listening session with a few hand-picked ideas.",
-      "becauseListened": "Because you listened to \"%{song}\" recently",
-      "playlists": "Playlists for you",
-      "playlistsEmpty": "You do not have any playlists yet. Create one to see it here.",
-      "playlistsError": "We could not load playlists right now. Try again later."
-    }
+  "explore": {
+    "suggested": "Explore Suggested",
+    "suggestedSubtitle": "Kick off your next listening session with a few hand-picked ideas.",
+    "playlists": "Playlists for you",
+    "playlistsEmpty": "You do not have any playlists yet. Create one to see it here.",
+    "playlistsError": "We could not load playlists right now. Try again later.",
+    "recentTitle": "Generate from recent listens",
+    "recentDescription": "Build a personalised mix using the tracks you have been enjoying lately.",
+    "recentDefaultName": "Recent Mix",
+    "customTitle": "Create from selected songs",
+    "customDefaultName": "Custom Mix",
+    "generateButton": "Generate mix",
+    "searchPlaceholder": "Search for songs to add",
+    "selectedEmpty": "No songs selected yet.",
+    "recommendationTitle": "Preview: %{name}",
+    "playlistNameLabel": "Playlist name",
+    "savePlaylist": "Save as playlist",
+    "trackCountLabel": "%{count} tracks",
+    "playlistSaved": "Playlist \"%{name}\" created",
+    "recommendationWarning": "Note: %{warning}"
   }
+}
 }

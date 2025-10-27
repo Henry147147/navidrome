@@ -77,6 +77,14 @@ const callDeleteMany = (resource, params) => {
   }).then((response) => ({ data: response.json.ids || [] }))
 }
 
+const postRecommendation = (mode, body = {}) => {
+  return httpClient(`${REST_URL}/recommendations/${mode}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(({ json }) => ({ data: json }))
+}
+
 // Helper function to handle user-library associations
 const handleUserLibraryAssociation = async (userId, libraryIds) => {
   if (!libraryIds || libraryIds.length === 0) {
@@ -206,6 +214,8 @@ const wrapperDataProvider = {
       data: json,
     }))
   },
+  getRecentRecommendations: (options) => postRecommendation('recent', options),
+  getCustomRecommendations: (options) => postRecommendation('custom', options),
 }
 
 export default wrapperDataProvider
