@@ -173,7 +173,8 @@
       "selectedEmpty": "No songs selected yet.",
       "suggested": "Explore Suggested",
       "suggestedSubtitle": "Kick off your next listening session with a few hand-picked ideas.",
-      "trackCountLabel": "%{count} tracks"
+      "trackCountLabel": "%{count} tracks",
+      "becauseListened": "Because you listened to \"%{song}\" recently"
     }
   },
   "player": {
@@ -690,7 +691,7 @@
       "success": "Uploaded %{smart_count} file successfully |||| Uploaded %{smart_count} files successfully"
     },
     "progress": {
-      "calculating": "Processing...",
+      "calculating": "Calculating...",
       "detail": "%{loaded} / %{total} MB \u2022 %{speed} \u2022 %{eta}",
       "eta": "~%{time} remaining",
       "speed": "%{value} MB/s",
