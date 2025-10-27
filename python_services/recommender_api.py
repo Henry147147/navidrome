@@ -7,6 +7,7 @@ import os
 from typing import Dict, Iterable
 
 from fastapi import FastAPI, HTTPException
+import uvicorn
 from pymilvus import MilvusClient
 
 from database_query import MilvusSimilaritySearcher
@@ -160,3 +161,12 @@ app = create_app()
 
 
 __all__ = ["app", "create_app", "RecommendationEngine"]
+
+
+if __name__ == "__main__":
+    port_env = os.getenv("NAVIDROME_RECOMMENDER_PORT", "9002")
+    try:
+        port = int(port_env)
+    except ValueError:
+        port = 9002
+    uvicorn.run(app, host="127.0.0.1", port=port)

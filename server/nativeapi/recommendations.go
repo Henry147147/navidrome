@@ -252,7 +252,7 @@ func withLibraryFilter(filter sq.Sqlizer, user model.User) sq.Sqlizer {
 	}
 	libraryFilter := sq.Eq{"media_file.library_id": ids}
 	if filter == nil {
-		return sq.And{libraryFilter}
+		return libraryFilter
 	}
 	switch existing := filter.(type) {
 	case sq.And:

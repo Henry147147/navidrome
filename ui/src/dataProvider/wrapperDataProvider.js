@@ -77,11 +77,11 @@ const callDeleteMany = (resource, params) => {
   }).then((response) => ({ data: response.json.ids || [] }))
 }
 
-const postRecommendation = (mode, body = {}) => {
+const postRecommendation = (mode, body) => {
   return httpClient(`${REST_URL}/recommendations/${mode}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body || {}),
   }).then(({ json }) => ({ data: json }))
 }
 

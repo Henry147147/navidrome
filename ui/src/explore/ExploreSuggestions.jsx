@@ -339,7 +339,10 @@ const ExploreSuggestions = () => {
     setCustomLoading(true)
     setCustomError(null)
     dataProvider
-      .getCustomRecommendations({ songIds: selectedSongs.map((song) => song.id) })
+      .getCustomRecommendations({
+        songIds: selectedSongs.map((song) => song.id),
+        limit: DEFAULT_RECOMMENDATION_LIMIT,
+      })
       .then(({ data }) => {
         setCustomResult(data)
         setCustomName(

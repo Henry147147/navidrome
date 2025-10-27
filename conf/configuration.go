@@ -521,7 +521,7 @@ func setViperDefaults() {
 	viper.SetDefault("enabledownloads", true)
 	viper.SetDefault("enableexternalservices", true)
 	viper.SetDefault("enablemediafilecoverart", true)
-	viper.SetDefault("recommendations.baseurl", "")
+	viper.SetDefault("recommendations.baseurl", "http://127.0.0.1:9002")
 	viper.SetDefault("recommendations.timeout", 5*time.Second)
 	viper.SetDefault("recommendations.defaultlimit", 25)
 	viper.SetDefault("recommendations.diversity", 0.15)
