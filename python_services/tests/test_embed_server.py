@@ -37,16 +37,6 @@ class RecordingMilvusClient:
         self.flush_calls.append(collection_name)
 
 
-class StaticSchemaManager:
-    def __init__(self, supported: bool) -> None:
-        self.supported = supported
-        self.calls: List[str] = []
-
-    def ensure_track_id_field(self, collection_name: str) -> bool:
-        self.calls.append(collection_name)
-        return self.supported
-
-
 class NoOpFeaturePipeline:
     def scan_for_dups(self, embeddings, settings):
         return []
@@ -80,11 +70,9 @@ def make_song(track_id: str = "abc") -> SongEmbedding:
 
 def test_add_embedding_drops_track_id_when_schema_missing(logger: logging.Logger):
     client = RecordingMilvusClient()
-    schema_manager = StaticSchemaManager(False)
     server = EmbedSocketServer(
         socket_path="/tmp/navidrome-test.sock",
         milvus_client=client,
-        schema_manager=schema_manager,
     )
     server.feature_pipeline = NoOpFeaturePipeline()
     server.load_from_json = lambda embedding: ([make_song()], [])
@@ -94,26 +82,6 @@ def test_add_embedding_drops_track_id_when_schema_missing(logger: logging.Logger
 
     assert client.upsert_calls
     collection, payload = client.upsert_calls[0]
+    # Ensure track_id is never written to Milvus payloads because schema disallows it.
     assert collection == "embedding"
     assert payload[0].get("track_id") is None
-
-
-def test_add_embedding_preserves_track_id_when_schema_available(
-    logger: logging.Logger,
-):
-    client = RecordingMilvusClient()
-    schema_manager = StaticSchemaManager(True)
-    server = EmbedSocketServer(
-        socket_path="/tmp/navidrome-test.sock",
-        milvus_client=client,
-        schema_manager=schema_manager,
-    )
-    server.feature_pipeline = NoOpFeaturePipeline()
-    server.load_from_json = lambda embedding: ([make_song("xyz")], [])
-
-    settings = UploadSettings()
-    server.add_embedding_to_db("song.flac", {"music_file": "song.flac"}, settings)
-
-    assert client.upsert_calls
-    _, payload = client.upsert_calls[0]
-    assert payload[0].get("track_id") == "xyz"

@@ -14,7 +14,6 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from pymilvus import MilvusClient
 
-from milvus_schema import MilvusSchemaManager
 from models import SongEmbedding
 
 logger = logging.getLogger("navidrome.database_query")
@@ -76,7 +75,6 @@ class MilvusSimilaritySearcher:
         base_search_params: Optional[Dict[str, Any]] = None,
         default_top_k: int = DEFAULT_TOP_K,
         logger: Optional[logging.Logger] = None,
-        schema_manager: Optional[MilvusSchemaManager] = None,
     ) -> None:
         self.client = client
         self.collection_name = collection_name
@@ -96,11 +94,6 @@ class MilvusSimilaritySearcher:
             self.base_search_params = merged_params
         else:
             self.base_search_params = default_params
-        self.schema_manager = schema_manager or MilvusSchemaManager(
-            client=client, logger=self.logger
-        )
-        self._track_id_field_available: Optional[bool] = None
-        self._ensure_track_id_field()
 
     def _build_search_params(self, top_k: int) -> Dict[str, Any]:
         params = dict(self.base_search_params)
@@ -108,28 +101,6 @@ class MilvusSimilaritySearcher:
         inner.setdefault("ef", max(DEFAULT_MIN_EF, top_k))
         params["params"] = inner
         return params
-
-    def _ensure_track_id_field(self) -> bool:
-        if self._track_id_field_available is True:
-            return True
-        available = self.schema_manager.ensure_track_id_field(self.collection_name)
-        self._track_id_field_available = available
-        return available
-
-    def set_track_id_field_available(self, available: bool) -> None:
-        self._track_id_field_available = available
-
-    def _output_fields(
-        self,
-        base_fields: Sequence[str],
-        *,
-        include_track_id: bool = False,
-    ) -> List[str]:
-        fields = list(base_fields)
-        if include_track_id and self._ensure_track_id_field():
-            if "track_id" not in fields:
-                fields.append("track_id")
-        return fields
 
     def _load_collection(self) -> None:
         try:
@@ -168,7 +139,7 @@ class MilvusSimilaritySearcher:
                 anns_field=self.anns_field,
                 data=[vector],
                 limit=top_limit,
-                output_fields=self._output_fields(["name"]),
+                output_fields=["name"],
                 filter=filter_expr,
                 filter_params=filter_params,
                 search_params=self._build_search_params(top_limit),
@@ -210,7 +181,7 @@ class MilvusSimilaritySearcher:
                 anns_field=self.anns_field,
                 data=[vector],
                 limit=limit,
-                output_fields=self._output_fields(["name"], include_track_id=True),
+                output_fields=["name"],
                 filter=filter_expr,
                 filter_params=filter_params,
                 search_params=self._build_search_params(limit),
@@ -239,9 +210,7 @@ class MilvusSimilaritySearcher:
                 collection_name=self.collection_name,
                 filter="name in {names}",
                 filter_params={"names": unique_names},
-                output_fields=self._output_fields(
-                    ["name", self.anns_field], include_track_id=True
-                ),
+                output_fields=["name", self.anns_field],
             )
         except Exception:  # pragma: no cover - defensive logging
             self.logger.exception("Milvus query failed when loading embeddings")
@@ -249,7 +218,7 @@ class MilvusSimilaritySearcher:
 
         embeddings: Dict[str, Sequence[float]] = {}
         for row in rows or []:
-            identifier = row.get("track_id") or row.get("name")
+            identifier = row.get("name")
             vector = row.get(self.anns_field)
             if identifier and vector:
                 embeddings[str(identifier)] = vector

@@ -26,7 +26,6 @@ from cueparser import CueSheet
 from models import TrackSegment, ChunkedEmbedding, SongEmbedding
 from upload_features import UploadFeaturePipeline, UploadSettings
 from database_query import MilvusSimilaritySearcher
-from milvus_schema import MilvusSchemaManager
 
 
 SAMPLE_RATE = 24_000
@@ -522,37 +521,22 @@ class EmbedSocketServer:
         socket_path: str = SOCKET_PATH,
         *,
         milvus_client: Optional[MilvusClient] = None,
-        schema_manager: Optional[MilvusSchemaManager] = None,
     ):
         self.socket_path = socket_path
         self.logger = logger
         self.model = ClassifierModel()
         self.milvus_client = milvus_client or MilvusClient("http://localhost:19530")
-        self.schema_manager = schema_manager or MilvusSchemaManager(
-            self.milvus_client, logger=self.logger
-        )
         self.similarity_searcher = MilvusSimilaritySearcher(
             self.milvus_client,
             logger=self.logger,
-            schema_manager=self.schema_manager,
         )
         self.feature_pipeline = UploadFeaturePipeline(
             similarity_searcher=self.similarity_searcher,
             logger=self.logger,
         )
-        track_id_supported = self.schema_manager.ensure_track_id_field("embedding")
-        self.similarity_searcher.set_track_id_field_available(track_id_supported)
-        self._warned_track_id_missing = False
-        if not track_id_supported:
-            self.logger.warning(
-                "Milvus collection 'embedding' is missing track_id field; "
-                "falling back to name-only identifiers until schema is updated."
-            )
-            self._warned_track_id_missing = True
         self.logger.debug(
-            "EmbedSocketServer initialized for %s (track_id_supported=%s)",
+            "EmbedSocketServer initialized for %s",
             self.socket_path,
-            track_id_supported,
         )
 
     def serve_forever(self) -> None:
@@ -607,6 +591,7 @@ class EmbedSocketServer:
             hash_bytes = hash_obj.digest()
             _id = np.frombuffer(hash_bytes[:8], dtype=np.int64)[0]  # type: ignore
             current_chunk_data = []
+            embedding_name = name
             for chunk_embedding, chunk_metadata in zip(
                 song["chunk_embeddings"], song["chunk_metadata"]
             ):
@@ -623,7 +608,7 @@ class EmbedSocketServer:
                 current_chunk_data.append(
                     ChunkedEmbedding(
                         id=chunk_id,
-                        parent_id=_id,
+                        parent_id=embedding_name,
                         start_seconds=chunk_start_seconds,
                         end_seconds=chunk_end_seconds,
                         embedding=chunk_embedding,
@@ -655,17 +640,8 @@ class EmbedSocketServer:
         duplicates = self.feature_pipeline.scan_for_dups(songs, settings)
         songs_payload = list(map(asdict, songs))
         chunk_payload = list(map(asdict, chunk_embeddings))
-        track_id_supported = self.schema_manager.ensure_track_id_field("embedding")
-        self.similarity_searcher.set_track_id_field_available(track_id_supported)
-        if songs_payload and not track_id_supported:
-            for item in songs_payload:
-                item.pop("track_id", None)
-            if not self._warned_track_id_missing:
-                self.logger.warning(
-                    "Milvus collection 'embedding' still lacks track_id field; "
-                    "storing embeddings without persistent identifiers."
-                )
-                self._warned_track_id_missing = True
+        for item in songs_payload:
+            item.pop("track_id", None)
         new_name = self.feature_pipeline.rename(
             file_name, settings, music_file=embedding.get("music_file")
         )
