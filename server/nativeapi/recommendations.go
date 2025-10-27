@@ -33,13 +33,19 @@ type recommendationResponsePayload struct {
 }
 
 const (
-	modeRecentRecommendations = "recent"
-	modeCustomRecommendations = "custom"
+	modeRecentRecommendations    = "recent"
+	modeCustomRecommendations    = "custom"
+	modeFavoritesRecommendations = "favorites"
+	modeAllRecommendations       = "all"
+	modeDiscoveryRecommendations = "discovery"
 )
 
 func (n *Router) addRecommendationRoutes(r chi.Router) {
 	r.Route("/recommendations", func(r chi.Router) {
 		r.Post("/recent", n.handleRecentRecommendations)
+		r.Post("/favorites", n.handleFavoritesRecommendations)
+		r.Post("/all", n.handleAllRecommendations)
+		r.Post("/discovery", n.handleDiscoveryRecommendations)
 		r.Post("/custom", n.handleCustomRecommendations)
 	})
 }
@@ -67,7 +73,7 @@ func (n *Router) handleRecentRecommendations(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if len(seeds) == 0 {
-		seeds, err = n.buildPreferenceSeeds(ctx, user, limit*2)
+		seeds, err = n.buildLikedSeeds(ctx, user, limit*2)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -78,6 +84,120 @@ func (n *Router) handleRecentRecommendations(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	resp, err := n.executeRecommendation(ctx, user, modeRecentRecommendations, payload.Name, seeds, limit, payload.Diversity)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (n *Router) handleFavoritesRecommendations(w http.ResponseWriter, r *http.Request) {
+	if n.recommender == nil {
+		http.Error(w, "recommendation service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ctx := r.Context()
+	user, ok := request.UserFrom(ctx)
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusUnauthorized)
+		return
+	}
+	var payload recommendationRequestPayload
+	if err := decodeJSON(r, &payload); err != nil {
+		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+	limit := normalizeLimit(payload.Limit)
+	seeds, err := n.buildLikedSeeds(ctx, user, limit*2)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if len(seeds) == 0 {
+		writeError(w, http.StatusBadRequest, "Star or rate a few songs and try again.")
+		return
+	}
+	resp, err := n.executeRecommendation(ctx, user, modeFavoritesRecommendations, payload.Name, seeds, limit, payload.Diversity)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (n *Router) handleAllRecommendations(w http.ResponseWriter, r *http.Request) {
+	if n.recommender == nil {
+		http.Error(w, "recommendation service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ctx := r.Context()
+	user, ok := request.UserFrom(ctx)
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusUnauthorized)
+		return
+	}
+	var payload recommendationRequestPayload
+	if err := decodeJSON(r, &payload); err != nil {
+		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+	limit := normalizeLimit(payload.Limit)
+	seeds, err := n.buildAllSeeds(ctx, user, limit*2)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if len(seeds) == 0 {
+		writeError(w, http.StatusBadRequest, "We didn't find enough signals to build this mix yet.")
+		return
+	}
+	if len(seeds) > limit {
+		seeds = seeds[:limit]
+	}
+	resp, err := n.executeRecommendation(ctx, user, modeAllRecommendations, payload.Name, seeds, limit, payload.Diversity)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (n *Router) handleDiscoveryRecommendations(w http.ResponseWriter, r *http.Request) {
+	if n.recommender == nil {
+		http.Error(w, "recommendation service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ctx := r.Context()
+	user, ok := request.UserFrom(ctx)
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusUnauthorized)
+		return
+	}
+	var payload recommendationRequestPayload
+	if err := decodeJSON(r, &payload); err != nil {
+		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+	limit := normalizeLimit(payload.Limit)
+	seeds, err := n.buildAllSeeds(ctx, user, limit*3)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if len(seeds) == 0 {
+		writeError(w, http.StatusBadRequest, "We need a little more listening data before exploring.")
+		return
+	}
+	maxSeeds := limit * 3
+	if len(seeds) > maxSeeds {
+		seeds = seeds[:maxSeeds]
+	}
+	diversity := payload.Diversity
+	if diversity == nil {
+		defaultDiversity := 0.6
+		diversity = &defaultDiversity
+	}
+	resp, err := n.executeRecommendation(ctx, user, modeDiscoveryRecommendations, payload.Name, seeds, limit, diversity)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -178,28 +298,46 @@ func (n *Router) buildCustomSeeds(ctx context.Context, user model.User, songIDs 
 	if err != nil {
 		return nil, err
 	}
+	order := make(map[string]int, len(songIDs))
+	for idx, id := range songIDs {
+		order[id] = idx
+	}
 	seeds := make([]subsonic.RecommendationSeed, 0, len(mfs))
 	seen := make(map[string]struct{}, len(mfs))
+	length := float64(len(order))
+	if length == 0 {
+		return []subsonic.RecommendationSeed{}, nil
+	}
 	for _, mf := range mfs {
-		if _, ok := seen[mf.ID]; ok {
+		pos, ok := order[mf.ID]
+		if !ok {
+			continue
+		}
+		if _, dup := seen[mf.ID]; dup {
 			continue
 		}
 		seen[mf.ID] = struct{}{}
+		weight := 1.0 - (float64(pos) / (length + 1))
+		if weight < 0.1 {
+			weight = 0.1
+		}
 		seed := subsonic.RecommendationSeed{
 			TrackID:  mf.ID,
-			Weight:   1.0,
+			Weight:   weight,
 			Source:   "custom",
 			PlayedAt: mf.PlayDate,
 		}
 		seeds = append(seeds, seed)
 	}
 	sort.SliceStable(seeds, func(i, j int) bool {
-		return strings.ToLower(seeds[i].TrackID) < strings.ToLower(seeds[j].TrackID)
+		iPos := order[seeds[i].TrackID]
+		jPos := order[seeds[j].TrackID]
+		return iPos < jPos
 	})
 	return seeds, nil
 }
 
-func (n *Router) buildPreferenceSeeds(ctx context.Context, user model.User, limit int) ([]subsonic.RecommendationSeed, error) {
+func (n *Router) buildLikedSeeds(ctx context.Context, user model.User, limit int) ([]subsonic.RecommendationSeed, error) {
 	preferenceFilter := sq.Or{
 		sq.Eq{"starred": true},
 		sq.Gt{"rating": 0},
@@ -219,6 +357,20 @@ func (n *Router) buildPreferenceSeeds(ctx context.Context, user model.User, limi
 		return []subsonic.RecommendationSeed{}, nil
 	}
 	return seedsFromMediaFiles(mfs, "favorites"), nil
+}
+
+func (n *Router) buildAllSeeds(ctx context.Context, user model.User, limit int) ([]subsonic.RecommendationSeed, error) {
+	recent, err := n.buildRecentSeeds(ctx, user, limit)
+	if err != nil {
+		return nil, err
+	}
+	favorites, err := n.buildLikedSeeds(ctx, user, limit)
+	if err != nil {
+		return nil, err
+	}
+	combined, seen := appendUniqueSeeds(nil, recent, nil, 1.0)
+	combined, _ = appendUniqueSeeds(combined, favorites, seen, 0.85)
+	return combined, nil
 }
 
 func (n *Router) loadTracks(ctx context.Context, ids []string) ([]model.MediaFile, error) {
@@ -279,6 +431,33 @@ func fallbackTrackIDs(seeds []subsonic.RecommendationSeed, limit int) []string {
 	return ids
 }
 
+func appendUniqueSeeds(dst []subsonic.RecommendationSeed, src []subsonic.RecommendationSeed, seen map[string]struct{}, scale float64) ([]subsonic.RecommendationSeed, map[string]struct{}) {
+	if len(src) == 0 {
+		return dst, seen
+	}
+	if seen == nil {
+		seen = make(map[string]struct{}, len(dst)+len(src))
+	}
+	for _, seed := range src {
+		id := seed.TrackID
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		if scale > 0 && scale != 1 {
+			seed.Weight *= scale
+			if seed.Weight < 0.05 {
+				seed.Weight = 0.05
+			}
+		}
+		dst = append(dst, seed)
+	}
+	return dst, seen
+}
+
 func withLibraryFilter(filter sq.Sqlizer, user model.User) sq.Sqlizer {
 	if user.IsAdmin || len(user.Libraries) == 0 {
 		return filter
@@ -305,6 +484,12 @@ func defaultPlaylistName(mode string) string {
 		return "Recent Mix"
 	case modeCustomRecommendations:
 		return "Custom Mix"
+	case modeFavoritesRecommendations:
+		return "Favorites Mix"
+	case modeAllRecommendations:
+		return "All Metrics Mix"
+	case modeDiscoveryRecommendations:
+		return "Discovery Mix"
 	default:
 		return "Mix"
 	}

@@ -1,409 +1,256 @@
 {
-  "languageName": "English",
-  "resources": {
-    "song": {
-      "name": "Song |||| Songs",
-      "fields": {
-        "albumArtist": "Album Artist",
-        "duration": "Time",
-        "trackNumber": "#",
-        "playCount": "Plays",
-        "title": "Title",
-        "artist": "Artist",
-        "album": "Album",
-        "path": "File path",
-        "libraryName": "Library",
-        "genre": "Genre",
-        "compilation": "Compilation",
-        "year": "Year",
-        "size": "File size",
-        "updatedAt": "Updated at",
-        "bitRate": "Bit rate",
-        "bitDepth": "Bit depth",
-        "sampleRate": "Sample rate",
-        "channels": "Channels",
-        "discSubtitle": "Disc Subtitle",
-        "starred": "Favourite",
-        "comment": "Comment",
-        "rating": "Rating",
-        "quality": "Quality",
-        "bpm": "BPM",
-        "playDate": "Last Played",
-        "createdAt": "Date added",
-        "grouping": "Grouping",
-        "mood": "Mood",
-        "participants": "Additional participants",
-        "tags": "Additional Tags",
-        "mappedTags": "Mapped tags",
-        "rawTags": "Raw tags",
-        "missing": "Missing"
-      },
-      "actions": {
-        "addToQueue": "Play Later",
-        "playNow": "Play Now",
-        "addToPlaylist": "Add to Playlist",
-        "showInPlaylist": "Show in Playlist",
-        "shuffleAll": "Shuffle All",
-        "download": "Download",
-        "playNext": "Play Next",
-        "info": "Get Info"
-      }
+  "about": {
+    "config": {
+      "configName": "Config Name",
+      "configurationFile": "Configuration File",
+      "currentValue": "Current Value",
+      "devFlagsComment": "These are experimental settings and may be removed in future versions",
+      "devFlagsHeader": "Development Flags (subject to change/removal)",
+      "environmentVariable": "Environment Variable",
+      "exportFailed": "Failed to copy configuration",
+      "exportSuccess": "Configuration exported to clipboard in TOML format",
+      "exportToml": "Export Configuration (TOML)"
     },
-    "album": {
-      "name": "Album |||| Albums",
-      "fields": {
-        "albumArtist": "Album Artist",
-        "artist": "Artist",
-        "duration": "Time",
-        "songCount": "Songs",
-        "playCount": "Plays",
-        "size": "Size",
-        "name": "Name",
-        "libraryName": "Library",
-        "genre": "Genre",
-        "compilation": "Compilation",
-        "year": "Year",
-        "date": "Recording Date",
-        "originalDate": "Original",
-        "releaseDate": "Released",
-        "releases": "Release |||| Releases",
-        "released": "Released",
-        "updatedAt": "Updated at",
-        "comment": "Comment",
-        "rating": "Rating",
-        "createdAt": "Date added",
-        "recordLabel": "Label",
-        "catalogNum": "Catalog Number",
-        "releaseType": "Type",
-        "grouping": "Grouping",
-        "media": "Media",
-        "mood": "Mood",
-        "missing": "Missing"
+    "links": {
+      "featureRequests": "Feature requests",
+      "homepage": "Home page",
+      "insights": {
+        "disabled": "Disabled",
+        "waiting": "Waiting"
       },
-      "actions": {
-        "playAll": "Play",
-        "playNext": "Play Next",
-        "addToQueue": "Play Later",
-        "share": "Share",
-        "shuffle": "Shuffle",
-        "addToPlaylist": "Add to Playlist",
-        "download": "Download",
-        "info": "Get Info"
-      },
-      "lists": {
-        "all": "All",
-        "random": "Random",
-        "recentlyAdded": "Recently Added",
-        "recentlyPlayed": "Recently Played",
-        "mostPlayed": "Most Played",
-        "starred": "Favourites",
-        "topRated": "Top Rated"
-      }
+      "lastInsightsCollection": "Last insights collection",
+      "source": "Source code"
     },
-    "artist": {
-      "name": "Artist |||| Artists",
-      "fields": {
-        "name": "Name",
-        "albumCount": "Album Count",
-        "songCount": "Song Count",
-        "size": "Size",
-        "playCount": "Plays",
-        "rating": "Rating",
-        "genre": "Genre",
-        "role": "Role",
-        "missing": "Missing"
-      },
-      "roles": {
-        "albumartist": "Album Artist |||| Album Artists",
-        "artist": "Artist |||| Artists",
-        "composer": "Composer |||| Composers",
-        "conductor": "Conductor |||| Conductors",
-        "lyricist": "Lyricist |||| Lyricists",
-        "arranger": "Arranger |||| Arrangers",
-        "producer": "Producer |||| Producers",
-        "director": "Director |||| Directors",
-        "engineer": "Engineer |||| Engineers",
-        "mixer": "Mixer |||| Mixers",
-        "remixer": "Remixer |||| Remixers",
-        "djmixer": "DJ Mixer |||| DJ Mixers",
-        "performer": "Performer |||| Performers",
-        "maincredit": "Album Artist or Artist |||| Album Artists or Artists"
-      },
-      "actions": {
-        "topSongs": "Top Songs",
-        "shuffle": "Shuffle",
-        "radio": "Radio"
-      }
-    },
-    "user": {
-      "name": "User |||| Users",
-      "fields": {
-        "userName": "Username",
-        "isAdmin": "Is Admin",
-        "lastLoginAt": "Last Login",
-        "lastAccessAt": "Last Access",
-        "updatedAt": "Updated at",
-        "name": "Name",
-        "password": "Password",
-        "createdAt": "Created at",
-        "changePassword": "Change Password?",
-        "currentPassword": "Current Password",
-        "newPassword": "New Password",
-        "token": "Token",
-        "libraries": "Libraries"
-      },
-      "helperTexts": {
-        "name": "Changes to your name will only be reflected on next login",
-        "libraries": "Select specific libraries for this user, or leave empty to use default libraries"
-      },
-      "notifications": {
-        "created": "User created",
-        "updated": "User updated",
-        "deleted": "User deleted"
-      },
-      "validation": {
-        "librariesRequired": "At least one library must be selected for non-admin users"
-      },
-      "message": {
-        "listenBrainzToken": "Enter your ListenBrainz user token.",
-        "clickHereForToken": "Click here to get your token",
-        "selectAllLibraries": "Select all libraries",
-        "adminAutoLibraries": "Admin users automatically have access to all libraries"
-      }
-    },
-    "player": {
-      "name": "Player |||| Players",
-      "fields": {
-        "name": "Name",
-        "transcodingId": "Transcoding",
-        "maxBitRate": "Max. Bit Rate",
-        "client": "Client",
-        "userName": "Username",
-        "lastSeen": "Last Seen At",
-        "reportRealPath": "Report Real Path",
-        "scrobbleEnabled": "Send Scrobbles to external services"
-      }
-    },
-    "transcoding": {
-      "name": "Transcoding |||| Transcodings",
-      "fields": {
-        "name": "Name",
-        "targetFormat": "Target Format",
-        "defaultBitRate": "Default Bit Rate",
-        "command": "Command"
-      }
-    },
-    "playlist": {
-      "name": "Playlist |||| Playlists",
-      "fields": {
-        "name": "Name",
-        "duration": "Duration",
-        "ownerName": "Owner",
-        "public": "Public",
-        "updatedAt": "Updated at",
-        "createdAt": "Created at",
-        "songCount": "Songs",
-        "comment": "Comment",
-        "sync": "Auto-import",
-        "path": "Import from"
-      },
-      "actions": {
-        "selectPlaylist": "Select a playlist:",
-        "addNewPlaylist": "Create \"%{name}\"",
-        "export": "Export",
-        "saveQueue": "Save Queue to Playlist",
-        "makePublic": "Make Public",
-        "makePrivate": "Make Private",
-        "searchOrCreate": "Search playlists or type to create new...",
-        "pressEnterToCreate": "Press Enter to create new playlist",
-        "removeFromSelection": "Remove from selection"
-      },
-      "message": {
-        "duplicate_song": "Add duplicated songs",
-        "song_exist": "There are duplicates being added to the playlist. Would you like to add the duplicates or skip them?",
-        "noPlaylistsFound": "No playlists found",
-        "noPlaylists": "No playlists available"
-      }
-    },
-    "radio": {
-      "name": "Radio |||| Radios",
-      "fields": {
-        "name": "Name",
-        "streamUrl": "Stream URL",
-        "homePageUrl": "Home Page URL",
-        "updatedAt": "Updated at",
-        "createdAt": "Created at"
-      },
-      "actions": {
-        "playNow": "Play Now"
-      }
-    },
-    "share": {
-      "name": "Share |||| Shares",
-      "fields": {
-        "username": "Shared By",
-        "url": "URL",
-        "description": "Description",
-        "downloadable": "Allow Downloads?",
-        "contents": "Contents",
-        "expiresAt": "Expires",
-        "lastVisitedAt": "Last Visited",
-        "visitCount": "Visits",
-        "format": "Format",
-        "maxBitRate": "Max. Bit Rate",
-        "updatedAt": "Updated at",
-        "createdAt": "Created at"
-      },
-      "notifications": {},
-      "actions": {}
-    },
-    "missing": {
-      "name": "Missing File |||| Missing Files",
-      "empty": "No Missing Files",
-      "fields": {
-        "path": "Path",
-        "size": "Size",
-        "libraryName": "Library",
-        "updatedAt": "Disappeared on"
-      },
-      "actions": {
-        "remove": "Remove",
-        "remove_all": "Remove All"
-      },
-      "notifications": {
-        "removed": "Missing file(s) removed"
-      }
-    },
-    "library": {
-      "name": "Library |||| Libraries",
-      "fields": {
-        "name": "Name",
-        "path": "Path",
-        "remotePath": "Remote Path",
-        "lastScanAt": "Last Scan",
-        "songCount": "Songs",
-        "albumCount": "Albums",
-        "artistCount": "Artists",
-        "totalSongs": "Songs",
-        "totalAlbums": "Albums",
-        "totalArtists": "Artists",
-        "totalFolders": "Folders",
-        "totalFiles": "Files",
-        "totalMissingFiles": "Missing Files",
-        "totalSize": "Total Size",
-        "totalDuration": "Duration",
-        "defaultNewUsers": "Default for New Users",
-        "createdAt": "Created",
-        "updatedAt": "Updated"
-      },
-      "sections": {
-        "basic": "Basic Information",
-        "statistics": "Statistics"
-      },
-      "actions": {
-        "scan": "Scan Library",
-        "manageUsers": "Manage User Access",
-        "viewDetails": "View Details"
-      },
-      "notifications": {
-        "created": "Library created successfully",
-        "updated": "Library updated successfully",
-        "deleted": "Library deleted successfully",
-        "scanStarted": "Library scan started",
-        "scanCompleted": "Library scan completed"
-      },
-      "validation": {
-        "nameRequired": "Library name is required",
-        "pathRequired": "Library path is required",
-        "pathNotDirectory": "Library path must be a directory",
-        "pathNotFound": "Library path not found",
-        "pathNotAccessible": "Library path is not accessible",
-        "pathInvalid": "Invalid library path"
-      },
-      "messages": {
-        "deleteConfirm": "Are you sure you want to delete this library? This will remove all associated data and user access.",
-        "scanInProgress": "Scan in progress...",
-        "noLibrariesAssigned": "No libraries assigned to this user"
-      }
+    "tabs": {
+      "about": "About",
+      "config": "Configuration"
     }
   },
+  "activity": {
+    "elapsedTime": "Elapsed Time",
+    "fullScan": "Full Scan",
+    "quickScan": "Quick Scan",
+    "scanType": "Type",
+    "serverDown": "OFFLINE",
+    "serverUptime": "Server Uptime",
+    "status": "Scan Error",
+    "title": "Activity",
+    "totalScanned": "Total Folders Scanned"
+  },
+  "help": {
+    "hotkeys": {
+      "current_song": "Go to Current Song",
+      "next_song": "Next Song",
+      "prev_song": "Previous Song",
+      "show_help": "Show This Help",
+      "toggle_love": "Add this track to favourites",
+      "toggle_menu": "Toggle Menu Side Bar",
+      "toggle_play": "Play / Pause",
+      "vol_down": "Volume Down",
+      "vol_up": "Volume Up"
+    },
+    "title": "Hilberto Music Hotkeys"
+  },
+  "languageName": "English",
+  "menu": {
+    "about": "About",
+    "albumList": "Albums",
+    "explore": {
+      "name": "Explore"
+    },
+    "library": "Library",
+    "librarySelector": {
+      "allLibraries": "All Libraries (%{count})",
+      "multipleLibraries": "%{selected} of %{total} Libraries",
+      "none": "None",
+      "selectLibraries": "Select Libraries"
+    },
+    "personal": {
+      "name": "Personal",
+      "options": {
+        "defaultView": "Default View",
+        "desktop_notifications": "Desktop Notifications",
+        "gain": {
+          "album": "Use Album Gain",
+          "none": "Disabled",
+          "track": "Use Track Gain"
+        },
+        "language": "Language",
+        "lastfmNotConfigured": "Last.fm API-Key is not configured",
+        "lastfmScrobbling": "Scrobble to Last.fm",
+        "listenBrainzScrobbling": "Scrobble to ListenBrainz",
+        "preAmp": "ReplayGain PreAmp (dB)",
+        "replaygain": "ReplayGain Mode",
+        "theme": "Theme"
+      }
+    },
+    "playlists": "Playlists",
+    "settings": "Settings",
+    "sharedPlaylists": "Shared Playlists",
+    "theme": "Theme",
+    "upload": {
+      "name": "Upload"
+    },
+    "version": "Version"
+  },
+  "message": {
+    "delete_user_content": "Are you sure you want to delete this user and all their data (including playlists and preferences)?",
+    "delete_user_title": "Delete user '%{name}'",
+    "downloadDialogTitle": "Download %{resource} '%{name}' (%{size})",
+    "downloadOriginalFormat": "Download in original format",
+    "lastfmLink": "Read More...",
+    "lastfmLinkFailure": "Last.fm could not be linked",
+    "lastfmLinkSuccess": "Last.fm successfully linked and scrobbling enabled",
+    "lastfmUnlinkFailure": "Last.fm could not be unlinked",
+    "lastfmUnlinkSuccess": "Last.fm unlinked and scrobbling disabled",
+    "listenBrainzLinkFailure": "ListenBrainz could not be linked: %{error}",
+    "listenBrainzLinkSuccess": "ListenBrainz successfully linked and scrobbling enabled as user: %{user}",
+    "listenBrainzUnlinkFailure": "ListenBrainz could not be unlinked",
+    "listenBrainzUnlinkSuccess": "ListenBrainz unlinked and scrobbling disabled",
+    "noPlaylistsAvailable": "None available",
+    "noSimilarSongsFound": "No similar songs found",
+    "noTopSongsFound": "No top songs found",
+    "note": "NOTE",
+    "notifications_blocked": "You have blocked Notifications for this site in your browser's settings",
+    "notifications_not_available": "This browser does not support desktop notifications or you are not accessing Hilberto Music over https",
+    "openIn": {
+      "lastfm": "Open in Last.fm",
+      "musicbrainz": "Open in MusicBrainz"
+    },
+    "remove_all_missing_content": "Are you sure you want to remove all missing files from the database? This will permanently remove any references to them, including their play counts and ratings.",
+    "remove_all_missing_title": "Remove all missing files",
+    "remove_missing_content": "Are you sure you want to remove the selected missing files from the database? This will remove permanently any references to them, including their play counts and ratings.",
+    "remove_missing_title": "Remove missing files",
+    "shareBatchDialogTitle": "Share 1 %{resource} |||| Share %{smart_count} %{resource}",
+    "shareCopyToClipboard": "Copy to clipboard: Ctrl+C, Enter",
+    "shareDialogTitle": "Share %{resource} '%{name}'",
+    "shareFailure": "Error copying URL %{url} to clipboard",
+    "shareOriginalFormat": "Share in original format",
+    "shareSuccess": "URL copied to clipboard: %{url}",
+    "songsAddedToPlaylist": "Added 1 song to playlist |||| Added %{smart_count} songs to playlist",
+    "transcodingDisabled": "Changing the transcoding configuration through the web interface is disabled for security reasons. If you would like to change (edit or add) transcoding options, restart the server with the %{config} configuration option.",
+    "transcodingEnabled": "Hilberto Music is currently running with %{config}, making it possible to run system commands from the transcoding settings using the web interface. We recommend to disable it for security reasons and only enable it when configuring Transcoding options."
+  },
+  "nowPlaying": {
+    "empty": "Nothing playing",
+    "minutesAgo": "%{smart_count} minute ago |||| %{smart_count} minutes ago",
+    "title": "Now Playing"
+  },
+  "pages": {
+    "explore": {
+      "allDefaultName": "All Metrics Mix",
+      "allDescription": "Blend your recent plays and favourites for a balanced playlist.",
+      "allTitle": "Generate from all metrics",
+      "customDefaultName": "Custom Mix",
+      "customNoSeeds": "Try selecting different songs and generate again.",
+      "customTitle": "Create from selected songs",
+      "discoveryDefaultName": "Discovery Mix",
+      "discoveryDescription": "Surface songs that are farther from your usual listening. Adjust the exploration slider.",
+      "discoverySliderHelper": "Higher values lean toward more adventurous picks.",
+      "discoverySliderLabel": "Exploration",
+      "discoverySliderValue": "%{value}% exploratory",
+      "discoveryTitle": "Generate discovery playlist",
+      "favoritesDefaultName": "Favorites Mix",
+      "favoritesDescription": "Use the songs you have starred or rated highly to create a mix.",
+      "favoritesTitle": "Generate from liked songs",
+      "generateButton": "Generate mix",
+      "noAllSeeds": "We didn't find enough signals to build this mix yet.",
+      "noDiscoverySeeds": "We need more listening data before exploring.",
+      "noFavoritesSeeds": "Star or rate a few songs and try again.",
+      "noRecentSeeds": "Play a few songs and try again.",
+      "playlistNameLabel": "Playlist name",
+      "playlistSaved": "Playlist \"%{name}\" created",
+      "playlists": "Playlists for you",
+      "playlistsEmpty": "You do not have any playlists yet. Create one to see it here.",
+      "playlistsError": "We could not load playlists right now. Try again later.",
+      "recentDefaultName": "Recent Mix",
+      "recentDescription": "Build a personalised mix using the tracks you have been enjoying lately.",
+      "recentTitle": "Generate from recent listens",
+      "recommendationTitle": "Preview: %{name}",
+      "recommendationWarning": "Note: %{warning}",
+      "savePlaylist": "Save as playlist",
+      "searchPlaceholder": "Search for songs to add",
+      "selectedEmpty": "No songs selected yet.",
+      "suggested": "Explore Suggested",
+      "suggestedSubtitle": "Kick off your next listening session with a few hand-picked ideas.",
+      "trackCountLabel": "%{count} tracks"
+    }
+  },
+  "player": {
+    "clickToDeleteText": "Click to delete %{name}",
+    "clickToPauseText": "Click to pause",
+    "clickToPlayText": "Click to play",
+    "closeText": "Close",
+    "destroyText": "Destroy",
+    "downloadText": "Download",
+    "emptyLyricText": "No lyrics",
+    "nextTrackText": "Next track",
+    "notContentText": "No music",
+    "openText": "Open",
+    "playListsText": "Play Queue",
+    "playModeText": {
+      "order": "In order",
+      "orderLoop": "Repeat",
+      "shufflePlay": "Shuffle",
+      "singleLoop": "Repeat One"
+    },
+    "previousTrackText": "Previous track",
+    "reloadText": "Reload",
+    "removeAudioListsText": "Delete audio lists",
+    "toggleLyricText": "Toggle lyrics",
+    "toggleMiniModeText": "Minimize",
+    "volumeText": "Volume"
+  },
   "ra": {
-    "auth": {
-      "welcome1": "Thanks for installing Hilberto Music!",
-      "welcome2": "To start, create an admin user",
-      "confirmPassword": "Confirm Password",
-      "buttonCreateAdmin": "Create Admin",
-      "auth_check_error": "Please login to continue",
-      "user_menu": "Profile",
-      "username": "Username",
-      "password": "Password",
-      "sign_in": "Sign in",
-      "sign_in_error": "Authentication failed, please retry",
-      "logout": "Logout",
-      "insightsCollectionNote": "Hilberto Music collects anonymous usage data to\nhelp improve the project. Click [here] to learn\nmore and to opt-out if you want"
-    },
-    "validation": {
-      "invalidChars": "Please only use letters and numbers",
-      "passwordDoesNotMatch": "Password does not match",
-      "required": "Required",
-      "minLength": "Must be %{min} characters at least",
-      "maxLength": "Must be %{max} characters or less",
-      "minValue": "Must be at least %{min}",
-      "maxValue": "Must be %{max} or less",
-      "number": "Must be a number",
-      "email": "Must be a valid email",
-      "oneOf": "Must be one of: %{options}",
-      "regex": "Must match a specific format (regexp): %{pattern}",
-      "unique": "Must be unique",
-      "url": "Must be a valid URL"
-    },
     "action": {
-      "add_filter": "Add filter",
       "add": "Add",
+      "add_filter": "Add filter",
       "back": "Go Back",
       "bulk_actions": "1 item selected |||| %{smart_count} items selected",
       "bulk_actions_mobile": "1 |||| %{smart_count}",
       "cancel": "Cancel",
       "clear_input_value": "Clear value",
       "clone": "Clone",
+      "close": "Close",
+      "close_menu": "Close menu",
       "confirm": "Confirm",
       "create": "Create",
       "delete": "Delete",
+      "download": "Download",
       "edit": "Edit",
+      "expand": "Expand",
       "export": "Export",
       "list": "List",
+      "open_menu": "Open menu",
       "refresh": "Refresh",
-      "remove_filter": "Remove this filter",
       "remove": "Remove",
+      "remove_filter": "Remove this filter",
       "save": "Save",
       "search": "Search",
+      "share": "Share",
       "show": "Show",
+      "skip": "Skip",
       "sort": "Sort",
       "undo": "Undo",
-      "expand": "Expand",
-      "close": "Close",
-      "open_menu": "Open menu",
-      "close_menu": "Close menu",
-      "unselect": "Unselect",
-      "skip": "Skip",
-      "share": "Share",
-      "download": "Download"
+      "unselect": "Unselect"
+    },
+    "auth": {
+      "auth_check_error": "Please login to continue",
+      "buttonCreateAdmin": "Create Admin",
+      "confirmPassword": "Confirm Password",
+      "insightsCollectionNote": "Hilberto Music collects anonymous usage data to\nhelp improve the project. Click [here] to learn\nmore and to opt-out if you want",
+      "logout": "Logout",
+      "password": "Password",
+      "sign_in": "Sign in",
+      "sign_in_error": "Authentication failed, please retry",
+      "user_menu": "Profile",
+      "username": "Username",
+      "welcome1": "Thanks for installing Hilberto Music!",
+      "welcome2": "To start, create an admin user"
     },
     "boolean": {
-      "true": "Yes",
-      "false": "No"
-    },
-    "page": {
-      "create": "Create %{name}",
-      "dashboard": "Dashboard",
-      "edit": "%{name} #%{id}",
-      "error": "Something went wrong",
-      "list": "%{name}",
-      "loading": "Loading",
-      "not_found": "Not Found",
-      "show": "%{name} #%{id}",
-      "empty": "No %{name} yet.",
-      "invite": "Do you want to add one?"
+      "false": "No",
+      "true": "Yes"
     },
     "input": {
       "file": {
@@ -414,14 +261,14 @@
         "upload_several": "Drop some pictures to upload, or click to select one.",
         "upload_single": "Drop a picture to upload, or click to select it."
       },
+      "password": {
+        "toggle_hidden": "Show password",
+        "toggle_visible": "Hide password"
+      },
       "references": {
         "all_missing": "Unable to find references data.",
         "many_missing": "At least one of the associated references no longer appears to be available.",
         "single_missing": "Associated reference no longer appears to be available."
-      },
-      "password": {
-        "toggle_visible": "Hide password",
-        "toggle_hidden": "Show password"
       }
     },
     "message": {
@@ -437,286 +284,454 @@
       "loading": "The page is loading, just a moment please",
       "no": "No",
       "not_found": "Either you typed a wrong URL, or you followed a bad link.",
-      "yes": "Yes",
-      "unsaved_changes": "Some of your changes weren't saved. Are you sure you want to ignore them?"
+      "unsaved_changes": "Some of your changes weren't saved. Are you sure you want to ignore them?",
+      "yes": "Yes"
     },
     "navigation": {
-      "no_results": "No results found",
+      "next": "Next",
       "no_more_results": "The page number %{page} is out of boundaries. Try the previous page.",
-      "page_out_of_boundaries": "Page number %{page} out of boundaries",
-      "page_out_from_end": "Cannot go after last page",
+      "no_results": "No results found",
       "page_out_from_begin": "Cannot go before page 1",
+      "page_out_from_end": "Cannot go after last page",
+      "page_out_of_boundaries": "Page number %{page} out of boundaries",
       "page_range_info": "%{offsetBegin}-%{offsetEnd} of %{total}",
       "page_rows_per_page": "Items per page:",
-      "next": "Next",
       "prev": "Prev",
       "skip_nav": "Skip to content"
     },
     "notification": {
-      "updated": "Element updated |||| %{smart_count} elements updated",
-      "created": "Element created",
-      "deleted": "Element deleted |||| %{smart_count} elements deleted",
       "bad_item": "Incorrect element",
-      "item_doesnt_exist": "Element does not exist",
-      "http_error": "Server communication error",
-      "data_provider_error": "dataProvider error. Check the console for details.",
-      "i18n_error": "Cannot load the translations for the specified language",
       "canceled": "Action cancelled",
+      "created": "Element created",
+      "data_provider_error": "dataProvider error. Check the console for details.",
+      "deleted": "Element deleted |||| %{smart_count} elements deleted",
+      "http_error": "Server communication error",
+      "i18n_error": "Cannot load the translations for the specified language",
+      "item_doesnt_exist": "Element does not exist",
       "logged_out": "Your session has ended, please reconnect.",
-      "new_version": "New version available! Please refresh this window."
+      "new_version": "New version available! Please refresh this window.",
+      "updated": "Element updated |||| %{smart_count} elements updated"
+    },
+    "page": {
+      "create": "Create %{name}",
+      "dashboard": "Dashboard",
+      "edit": "%{name} #%{id}",
+      "empty": "No %{name} yet.",
+      "error": "Something went wrong",
+      "invite": "Do you want to add one?",
+      "list": "%{name}",
+      "loading": "Loading",
+      "not_found": "Not Found",
+      "show": "%{name} #%{id}"
     },
     "toggleFieldsMenu": {
       "columnsToDisplay": "Columns To Display",
-      "layout": "Layout",
       "grid": "Grid",
+      "layout": "Layout",
       "table": "Table"
+    },
+    "validation": {
+      "email": "Must be a valid email",
+      "invalidChars": "Please only use letters and numbers",
+      "maxLength": "Must be %{max} characters or less",
+      "maxValue": "Must be %{max} or less",
+      "minLength": "Must be %{min} characters at least",
+      "minValue": "Must be at least %{min}",
+      "number": "Must be a number",
+      "oneOf": "Must be one of: %{options}",
+      "passwordDoesNotMatch": "Password does not match",
+      "regex": "Must match a specific format (regexp): %{pattern}",
+      "required": "Required",
+      "unique": "Must be unique",
+      "url": "Must be a valid URL"
     }
   },
-  "message": {
-    "note": "NOTE",
-    "transcodingDisabled": "Changing the transcoding configuration through the web interface is disabled for security reasons. If you would like to change (edit or add) transcoding options, restart the server with the %{config} configuration option.",
-    "transcodingEnabled": "Hilberto Music is currently running with %{config}, making it possible to run system commands from the transcoding settings using the web interface. We recommend to disable it for security reasons and only enable it when configuring Transcoding options.",
-    "songsAddedToPlaylist": "Added 1 song to playlist |||| Added %{smart_count} songs to playlist",
-    "noSimilarSongsFound": "No similar songs found",
-    "noTopSongsFound": "No top songs found",
-    "noPlaylistsAvailable": "None available",
-    "delete_user_title": "Delete user '%{name}'",
-    "delete_user_content": "Are you sure you want to delete this user and all their data (including playlists and preferences)?",
-    "remove_missing_title": "Remove missing files",
-    "remove_missing_content": "Are you sure you want to remove the selected missing files from the database? This will remove permanently any references to them, including their play counts and ratings.",
-    "remove_all_missing_title": "Remove all missing files",
-    "remove_all_missing_content": "Are you sure you want to remove all missing files from the database? This will permanently remove any references to them, including their play counts and ratings.",
-    "notifications_blocked": "You have blocked Notifications for this site in your browser's settings",
-    "notifications_not_available": "This browser does not support desktop notifications or you are not accessing Hilberto Music over https",
-    "lastfmLinkSuccess": "Last.fm successfully linked and scrobbling enabled",
-    "lastfmLinkFailure": "Last.fm could not be linked",
-    "lastfmUnlinkSuccess": "Last.fm unlinked and scrobbling disabled",
-    "lastfmUnlinkFailure": "Last.fm could not be unlinked",
-    "listenBrainzLinkSuccess": "ListenBrainz successfully linked and scrobbling enabled as user: %{user}",
-    "listenBrainzLinkFailure": "ListenBrainz could not be linked: %{error}",
-    "listenBrainzUnlinkSuccess": "ListenBrainz unlinked and scrobbling disabled",
-    "listenBrainzUnlinkFailure": "ListenBrainz could not be unlinked",
-    "openIn": {
-      "lastfm": "Open in Last.fm",
-      "musicbrainz": "Open in MusicBrainz"
+  "resources": {
+    "album": {
+      "actions": {
+        "addToPlaylist": "Add to Playlist",
+        "addToQueue": "Play Later",
+        "download": "Download",
+        "info": "Get Info",
+        "playAll": "Play",
+        "playNext": "Play Next",
+        "share": "Share",
+        "shuffle": "Shuffle"
+      },
+      "fields": {
+        "albumArtist": "Album Artist",
+        "artist": "Artist",
+        "catalogNum": "Catalog Number",
+        "comment": "Comment",
+        "compilation": "Compilation",
+        "createdAt": "Date added",
+        "date": "Recording Date",
+        "duration": "Time",
+        "genre": "Genre",
+        "grouping": "Grouping",
+        "libraryName": "Library",
+        "media": "Media",
+        "missing": "Missing",
+        "mood": "Mood",
+        "name": "Name",
+        "originalDate": "Original",
+        "playCount": "Plays",
+        "rating": "Rating",
+        "recordLabel": "Label",
+        "releaseDate": "Released",
+        "releaseType": "Type",
+        "released": "Released",
+        "releases": "Release |||| Releases",
+        "size": "Size",
+        "songCount": "Songs",
+        "updatedAt": "Updated at",
+        "year": "Year"
+      },
+      "lists": {
+        "all": "All",
+        "mostPlayed": "Most Played",
+        "random": "Random",
+        "recentlyAdded": "Recently Added",
+        "recentlyPlayed": "Recently Played",
+        "starred": "Favourites",
+        "topRated": "Top Rated"
+      },
+      "name": "Album |||| Albums"
     },
-    "lastfmLink": "Read More...",
-    "shareOriginalFormat": "Share in original format",
-    "shareDialogTitle": "Share %{resource} '%{name}'",
-    "shareBatchDialogTitle": "Share 1 %{resource} |||| Share %{smart_count} %{resource}",
-    "shareCopyToClipboard": "Copy to clipboard: Ctrl+C, Enter",
-    "shareSuccess": "URL copied to clipboard: %{url}",
-    "shareFailure": "Error copying URL %{url} to clipboard",
-    "downloadDialogTitle": "Download %{resource} '%{name}' (%{size})",
-    "downloadOriginalFormat": "Download in original format"
-  },
-  "menu": {
-    "library": "Library",
-    "librarySelector": {
-      "allLibraries": "All Libraries (%{count})",
-      "multipleLibraries": "%{selected} of %{total} Libraries",
-      "selectLibraries": "Select Libraries",
-      "none": "None"
-    },
-    "settings": "Settings",
-    "version": "Version",
-    "theme": "Theme",
-    "personal": {
-      "name": "Personal",
-      "options": {
-        "theme": "Theme",
-        "language": "Language",
-        "defaultView": "Default View",
-        "desktop_notifications": "Desktop Notifications",
-        "lastfmNotConfigured": "Last.fm API-Key is not configured",
-        "lastfmScrobbling": "Scrobble to Last.fm",
-        "listenBrainzScrobbling": "Scrobble to ListenBrainz",
-        "replaygain": "ReplayGain Mode",
-        "preAmp": "ReplayGain PreAmp (dB)",
-        "gain": {
-          "none": "Disabled",
-          "album": "Use Album Gain",
-          "track": "Use Track Gain"
-        }
+    "artist": {
+      "actions": {
+        "radio": "Radio",
+        "shuffle": "Shuffle",
+        "topSongs": "Top Songs"
+      },
+      "fields": {
+        "albumCount": "Album Count",
+        "genre": "Genre",
+        "missing": "Missing",
+        "name": "Name",
+        "playCount": "Plays",
+        "rating": "Rating",
+        "role": "Role",
+        "size": "Size",
+        "songCount": "Song Count"
+      },
+      "name": "Artist |||| Artists",
+      "roles": {
+        "albumartist": "Album Artist |||| Album Artists",
+        "arranger": "Arranger |||| Arrangers",
+        "artist": "Artist |||| Artists",
+        "composer": "Composer |||| Composers",
+        "conductor": "Conductor |||| Conductors",
+        "director": "Director |||| Directors",
+        "djmixer": "DJ Mixer |||| DJ Mixers",
+        "engineer": "Engineer |||| Engineers",
+        "lyricist": "Lyricist |||| Lyricists",
+        "maincredit": "Album Artist or Artist |||| Album Artists or Artists",
+        "mixer": "Mixer |||| Mixers",
+        "performer": "Performer |||| Performers",
+        "producer": "Producer |||| Producers",
+        "remixer": "Remixer |||| Remixers"
       }
     },
-    "albumList": "Albums",
-    "playlists": "Playlists",
-    "sharedPlaylists": "Shared Playlists",
-    "about": "About",
-    "explore": {
-      "name": "Explore"
-    },
-    "upload": {
-      "name": "Upload"
-    }
-  },
-  "player": {
-    "playListsText": "Play Queue",
-    "openText": "Open",
-    "closeText": "Close",
-    "notContentText": "No music",
-    "clickToPlayText": "Click to play",
-    "clickToPauseText": "Click to pause",
-    "nextTrackText": "Next track",
-    "previousTrackText": "Previous track",
-    "reloadText": "Reload",
-    "volumeText": "Volume",
-    "toggleLyricText": "Toggle lyrics",
-    "toggleMiniModeText": "Minimize",
-    "destroyText": "Destroy",
-    "downloadText": "Download",
-    "removeAudioListsText": "Delete audio lists",
-    "clickToDeleteText": "Click to delete %{name}",
-    "emptyLyricText": "No lyrics",
-    "playModeText": {
-      "order": "In order",
-      "orderLoop": "Repeat",
-      "singleLoop": "Repeat One",
-      "shufflePlay": "Shuffle"
-    }
-  },
-  "about": {
-    "links": {
-      "homepage": "Home page",
-      "source": "Source code",
-      "featureRequests": "Feature requests",
-      "lastInsightsCollection": "Last insights collection",
-      "insights": {
-        "disabled": "Disabled",
-        "waiting": "Waiting"
+    "library": {
+      "actions": {
+        "manageUsers": "Manage User Access",
+        "scan": "Scan Library",
+        "viewDetails": "View Details"
+      },
+      "fields": {
+        "albumCount": "Albums",
+        "artistCount": "Artists",
+        "createdAt": "Created",
+        "defaultNewUsers": "Default for New Users",
+        "lastScanAt": "Last Scan",
+        "name": "Name",
+        "path": "Path",
+        "remotePath": "Remote Path",
+        "songCount": "Songs",
+        "totalAlbums": "Albums",
+        "totalArtists": "Artists",
+        "totalDuration": "Duration",
+        "totalFiles": "Files",
+        "totalFolders": "Folders",
+        "totalMissingFiles": "Missing Files",
+        "totalSize": "Total Size",
+        "totalSongs": "Songs",
+        "updatedAt": "Updated"
+      },
+      "messages": {
+        "deleteConfirm": "Are you sure you want to delete this library? This will remove all associated data and user access.",
+        "noLibrariesAssigned": "No libraries assigned to this user",
+        "scanInProgress": "Scan in progress..."
+      },
+      "name": "Library |||| Libraries",
+      "notifications": {
+        "created": "Library created successfully",
+        "deleted": "Library deleted successfully",
+        "scanCompleted": "Library scan completed",
+        "scanStarted": "Library scan started",
+        "updated": "Library updated successfully"
+      },
+      "sections": {
+        "basic": "Basic Information",
+        "statistics": "Statistics"
+      },
+      "validation": {
+        "nameRequired": "Library name is required",
+        "pathInvalid": "Invalid library path",
+        "pathNotAccessible": "Library path is not accessible",
+        "pathNotDirectory": "Library path must be a directory",
+        "pathNotFound": "Library path not found",
+        "pathRequired": "Library path is required"
       }
     },
-    "tabs": {
-      "about": "About",
-      "config": "Configuration"
+    "missing": {
+      "actions": {
+        "remove": "Remove",
+        "remove_all": "Remove All"
+      },
+      "empty": "No Missing Files",
+      "fields": {
+        "libraryName": "Library",
+        "path": "Path",
+        "size": "Size",
+        "updatedAt": "Disappeared on"
+      },
+      "name": "Missing File |||| Missing Files",
+      "notifications": {
+        "removed": "Missing file(s) removed"
+      }
     },
-    "config": {
-      "configName": "Config Name",
-      "environmentVariable": "Environment Variable",
-      "currentValue": "Current Value",
-      "configurationFile": "Configuration File",
-      "exportToml": "Export Configuration (TOML)",
-      "exportSuccess": "Configuration exported to clipboard in TOML format",
-      "exportFailed": "Failed to copy configuration",
-      "devFlagsHeader": "Development Flags (subject to change/removal)",
-      "devFlagsComment": "These are experimental settings and may be removed in future versions"
+    "player": {
+      "fields": {
+        "client": "Client",
+        "lastSeen": "Last Seen At",
+        "maxBitRate": "Max. Bit Rate",
+        "name": "Name",
+        "reportRealPath": "Report Real Path",
+        "scrobbleEnabled": "Send Scrobbles to external services",
+        "transcodingId": "Transcoding",
+        "userName": "Username"
+      },
+      "name": "Player |||| Players"
+    },
+    "playlist": {
+      "actions": {
+        "addNewPlaylist": "Create \"%{name}\"",
+        "export": "Export",
+        "makePrivate": "Make Private",
+        "makePublic": "Make Public",
+        "pressEnterToCreate": "Press Enter to create new playlist",
+        "removeFromSelection": "Remove from selection",
+        "saveQueue": "Save Queue to Playlist",
+        "searchOrCreate": "Search playlists or type to create new...",
+        "selectPlaylist": "Select a playlist:"
+      },
+      "fields": {
+        "comment": "Comment",
+        "createdAt": "Created at",
+        "duration": "Duration",
+        "name": "Name",
+        "ownerName": "Owner",
+        "path": "Import from",
+        "public": "Public",
+        "songCount": "Songs",
+        "sync": "Auto-import",
+        "updatedAt": "Updated at"
+      },
+      "message": {
+        "duplicate_song": "Add duplicated songs",
+        "noPlaylists": "No playlists available",
+        "noPlaylistsFound": "No playlists found",
+        "song_exist": "There are duplicates being added to the playlist. Would you like to add the duplicates or skip them?"
+      },
+      "name": "Playlist |||| Playlists"
+    },
+    "radio": {
+      "actions": {
+        "playNow": "Play Now"
+      },
+      "fields": {
+        "createdAt": "Created at",
+        "homePageUrl": "Home Page URL",
+        "name": "Name",
+        "streamUrl": "Stream URL",
+        "updatedAt": "Updated at"
+      },
+      "name": "Radio |||| Radios"
+    },
+    "share": {
+      "actions": {},
+      "fields": {
+        "contents": "Contents",
+        "createdAt": "Created at",
+        "description": "Description",
+        "downloadable": "Allow Downloads?",
+        "expiresAt": "Expires",
+        "format": "Format",
+        "lastVisitedAt": "Last Visited",
+        "maxBitRate": "Max. Bit Rate",
+        "updatedAt": "Updated at",
+        "url": "URL",
+        "username": "Shared By",
+        "visitCount": "Visits"
+      },
+      "name": "Share |||| Shares",
+      "notifications": {}
+    },
+    "song": {
+      "actions": {
+        "addToPlaylist": "Add to Playlist",
+        "addToQueue": "Play Later",
+        "download": "Download",
+        "info": "Get Info",
+        "playNext": "Play Next",
+        "playNow": "Play Now",
+        "showInPlaylist": "Show in Playlist",
+        "shuffleAll": "Shuffle All"
+      },
+      "fields": {
+        "album": "Album",
+        "albumArtist": "Album Artist",
+        "artist": "Artist",
+        "bitDepth": "Bit depth",
+        "bitRate": "Bit rate",
+        "bpm": "BPM",
+        "channels": "Channels",
+        "comment": "Comment",
+        "compilation": "Compilation",
+        "createdAt": "Date added",
+        "discSubtitle": "Disc Subtitle",
+        "duration": "Time",
+        "genre": "Genre",
+        "grouping": "Grouping",
+        "libraryName": "Library",
+        "mappedTags": "Mapped tags",
+        "missing": "Missing",
+        "mood": "Mood",
+        "participants": "Additional participants",
+        "path": "File path",
+        "playCount": "Plays",
+        "playDate": "Last Played",
+        "quality": "Quality",
+        "rating": "Rating",
+        "rawTags": "Raw tags",
+        "sampleRate": "Sample rate",
+        "size": "File size",
+        "starred": "Favourite",
+        "tags": "Additional Tags",
+        "title": "Title",
+        "trackNumber": "#",
+        "updatedAt": "Updated at",
+        "year": "Year"
+      },
+      "name": "Song |||| Songs"
+    },
+    "transcoding": {
+      "fields": {
+        "command": "Command",
+        "defaultBitRate": "Default Bit Rate",
+        "name": "Name",
+        "targetFormat": "Target Format"
+      },
+      "name": "Transcoding |||| Transcodings"
+    },
+    "user": {
+      "fields": {
+        "changePassword": "Change Password?",
+        "createdAt": "Created at",
+        "currentPassword": "Current Password",
+        "isAdmin": "Is Admin",
+        "lastAccessAt": "Last Access",
+        "lastLoginAt": "Last Login",
+        "libraries": "Libraries",
+        "name": "Name",
+        "newPassword": "New Password",
+        "password": "Password",
+        "token": "Token",
+        "updatedAt": "Updated at",
+        "userName": "Username"
+      },
+      "helperTexts": {
+        "libraries": "Select specific libraries for this user, or leave empty to use default libraries",
+        "name": "Changes to your name will only be reflected on next login"
+      },
+      "message": {
+        "adminAutoLibraries": "Admin users automatically have access to all libraries",
+        "clickHereForToken": "Click here to get your token",
+        "listenBrainzToken": "Enter your ListenBrainz user token.",
+        "selectAllLibraries": "Select all libraries"
+      },
+      "name": "User |||| Users",
+      "notifications": {
+        "created": "User created",
+        "deleted": "User deleted",
+        "updated": "User updated"
+      },
+      "validation": {
+        "librariesRequired": "At least one library must be selected for non-admin users"
+      }
     }
-  },
-  "activity": {
-    "title": "Activity",
-    "totalScanned": "Total Folders Scanned",
-    "quickScan": "Quick Scan",
-    "fullScan": "Full Scan",
-    "serverUptime": "Server Uptime",
-    "serverDown": "OFFLINE",
-    "scanType": "Type",
-    "status": "Scan Error",
-    "elapsedTime": "Elapsed Time"
-  },
-  "nowPlaying": {
-    "title": "Now Playing",
-    "empty": "Nothing playing",
-    "minutesAgo": "%{smart_count} minute ago |||| %{smart_count} minutes ago"
   },
   "upload": {
-    "title": "Upload Music",
-    "description": "Select audio files from your device and send them to the server.",
-    "tabs": {
-      "label": "Upload sections",
-      "upload": "Upload",
-      "settings": "Settings"
-    },
     "actions": {
+      "clear": "Clear Selection",
       "select": "Choose Files",
-      "upload": "Upload Files",
-      "clear": "Clear Selection"
+      "upload": "Upload Files"
     },
-    "settings": {
-      "renameTitle": "Renaming",
-      "renameToggle": "Enable automatic renaming",
-      "useMetadataToggle": "Use embedded metadata hints",
-      "useMetadataHelper": "Tag metadata may be polluted; disable this if it leads to inaccurate titles.",
-      "systemPromptLabel": "Renaming system prompt",
-      "systemPromptPlaceholder": "Describe how the uploaded tracks should be renamed.",
-      "systemPromptHelper": "This prompt is used when renaming uploaded files.",
-      "openAiTitle": "OpenAI",
-      "endpointLabel": "Endpoint",
-      "endpointPlaceholder": "https://api.openai.com",
-      "endpointHelper": "Leave blank to use the default OpenAI endpoint.",
-      "modelLabel": "Model",
-      "modelPlaceholder": "gpt-4o-mini",
-      "modelHelper": "Select the model that will handle renaming requests.",
-      "reasoningLabel": "Reasoning level",
-      "reasoningHelper": "Select how much reasoning the rename model should apply.",
-      "reasoningOptions": {
-        "none": "None",
-        "low": "Low",
-        "medium": "Medium",
-        "high": "High",
-        "default": "Default"
-      },
-      "similarityTitle": "Similarity Search",
-      "similarityToggle": "Enable similarity search",
-      "thresholdLabel": "Deduplication threshold",
-      "thresholdHelper": "Similar tracks at or above this value (0-1) are treated as duplicates."
-    },
-    "selectedCount": "%{smart_count} file selected |||| %{smart_count} files selected",
-    "totalSize": "Total size: %{size}",
+    "description": "Select audio files from your device and send them to the server.",
     "emptySelection": "No files selected yet.",
     "notifications": {
-      "success": "Uploaded %{smart_count} file successfully |||| Uploaded %{smart_count} files successfully",
-      "error": "We could not upload your files. Please try again.",
-      "noFiles": "Select at least one file before uploading.",
       "allDuplicates": "%{name} was not copied because every segment matched existing music.",
       "copyConflict": "Skipped copying %{files} because file(s) with the same name already exist in the library.",
-      "copyError": "Failed to copy %{name} into the music library. Check the server logs."
+      "copyError": "Failed to copy %{name} into the music library. Check the server logs.",
+      "error": "We could not upload your files. Please try again.",
+      "noFiles": "Select at least one file before uploading.",
+      "success": "Uploaded %{smart_count} file successfully |||| Uploaded %{smart_count} files successfully"
     },
     "progress": {
-      "uploading": "Uploading %{name}",
-      "detail": "%{loaded} / %{total} MB • %{speed} • %{eta}",
-      "speed": "%{value} MB/s",
+      "calculating": "Processing...",
+      "detail": "%{loaded} / %{total} MB \u2022 %{speed} \u2022 %{eta}",
       "eta": "~%{time} remaining",
-      "calculating": "Processing..."
-    }
-  },
-  "help": {
-    "title": "Hilberto Music Hotkeys",
-    "hotkeys": {
-      "show_help": "Show This Help",
-      "toggle_menu": "Toggle Menu Side Bar",
-      "toggle_play": "Play / Pause",
-      "prev_song": "Previous Song",
-      "next_song": "Next Song",
-      "current_song": "Go to Current Song",
-      "vol_up": "Volume Up",
-      "vol_down": "Volume Down",
-      "toggle_love": "Add this track to favourites"
-    }
-  },
-  "pages": {
-  "explore": {
-    "suggested": "Explore Suggested",
-    "suggestedSubtitle": "Kick off your next listening session with a few hand-picked ideas.",
-    "playlists": "Playlists for you",
-    "playlistsEmpty": "You do not have any playlists yet. Create one to see it here.",
-    "playlistsError": "We could not load playlists right now. Try again later.",
-    "recentTitle": "Generate from recent listens",
-    "recentDescription": "Build a personalised mix using the tracks you have been enjoying lately.",
-    "recentDefaultName": "Recent Mix",
-    "customTitle": "Create from selected songs",
-    "customDefaultName": "Custom Mix",
-    "generateButton": "Generate mix",
-    "searchPlaceholder": "Search for songs to add",
-    "selectedEmpty": "No songs selected yet.",
-    "recommendationTitle": "Preview: %{name}",
-    "playlistNameLabel": "Playlist name",
-    "savePlaylist": "Save as playlist",
-    "trackCountLabel": "%{count} tracks",
-    "playlistSaved": "Playlist \"%{name}\" created",
-    "recommendationWarning": "Note: %{warning}",
-    "noRecentSeeds": "Play a few songs and try again.",
-    "customNoSeeds": "Try selecting different songs and generate again."
+      "speed": "%{value} MB/s",
+      "uploading": "Uploading %{name}"
+    },
+    "selectedCount": "%{smart_count} file selected |||| %{smart_count} files selected",
+    "settings": {
+      "endpointHelper": "Leave blank to use the default OpenAI endpoint.",
+      "endpointLabel": "Endpoint",
+      "endpointPlaceholder": "https://api.openai.com",
+      "modelHelper": "Select the model that will handle renaming requests.",
+      "modelLabel": "Model",
+      "modelPlaceholder": "gpt-4o-mini",
+      "openAiTitle": "OpenAI",
+      "reasoningHelper": "Select how much reasoning the rename model should apply.",
+      "reasoningLabel": "Reasoning level",
+      "reasoningOptions": {
+        "default": "Default",
+        "high": "High",
+        "low": "Low",
+        "medium": "Medium",
+        "none": "None"
+      },
+      "renameTitle": "Renaming",
+      "renameToggle": "Enable automatic renaming",
+      "similarityTitle": "Similarity Search",
+      "similarityToggle": "Enable similarity search",
+      "systemPromptHelper": "This prompt is used when renaming uploaded files.",
+      "systemPromptLabel": "Renaming system prompt",
+      "systemPromptPlaceholder": "Describe how the uploaded tracks should be renamed.",
+      "thresholdHelper": "Similar tracks at or above this value (0-1) are treated as duplicates.",
+      "thresholdLabel": "Deduplication threshold",
+      "useMetadataHelper": "Tag metadata may be polluted; disable this if it leads to inaccurate titles.",
+      "useMetadataToggle": "Use embedded metadata hints"
+    },
+    "tabs": {
+      "label": "Upload sections",
+      "settings": "Settings",
+      "upload": "Upload"
+    },
+    "title": "Upload Music",
+    "totalSize": "Total size: %{size}"
   }
-}
 }

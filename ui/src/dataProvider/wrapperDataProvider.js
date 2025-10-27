@@ -215,6 +215,9 @@ const wrapperDataProvider = {
     }))
   },
   getRecentRecommendations: (options) => postRecommendation('recent', options),
+  getFavoriteRecommendations: (options) => postRecommendation('favorites', options),
+  getAllRecommendations: (options) => postRecommendation('all', options),
+  getDiscoveryRecommendations: (options) => postRecommendation('discovery', options),
   getCustomRecommendations: (options) => postRecommendation('custom', options),
 }
 

@@ -16,6 +16,7 @@ import {
   TextField,
   Typography,
   Chip,
+  Slider,
 } from '@material-ui/core'
 import { makeStyles } from '@material-ui/core/styles'
 import {
@@ -110,6 +111,12 @@ const useStyles = makeStyles((theme) => ({
     flexWrap: 'wrap',
     gap: theme.spacing(1),
     alignItems: 'center',
+  },
+  sliderRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(2),
+    flexWrap: 'wrap',
   },
   searchResults: {
     marginTop: theme.spacing(1),
@@ -260,17 +267,249 @@ const ExploreSuggestions = () => {
     return Object.keys(playlistMap).map((key) => playlistMap[key])
   }, [playlistMap])
 
-  const [recentResult, setRecentResult] = useState(null)
-  const [recentName, setRecentName] = useState('')
-  const [recentLoading, setRecentLoading] = useState(false)
-  const [recentError, setRecentError] = useState(null)
+	const [generators, setGenerators] = useState(() => ({
+		recent: { result: null, name: '', loading: false, error: null },
+		favorites: { result: null, name: '', loading: false, error: null },
+		all: { result: null, name: '', loading: false, error: null },
+		discovery: { result: null, name: '', loading: false, error: null },
+	}))
+	const [discoveryDiversity, setDiscoveryDiversity] = useState(0.6)
+	const generatorDefaultFallback = {
+		recent: 'Recent Mix',
+		favorites: 'Favorites Mix',
+		all: 'All Metrics Mix',
+		discovery: 'Discovery Mix',
+	}
+	const generatorErrorFallback = {
+		recent: 'Play a few songs and try again.',
+		favorites: 'Star or rate a few songs and try again.',
+		all: "We didn't find enough signals to build this mix yet.",
+		discovery: 'We need more listening data before exploring.',
+	}
+	const generatorApiMap = {
+		recent: dataProvider.getRecentRecommendations,
+		favorites: dataProvider.getFavoriteRecommendations,
+		all: dataProvider.getAllRecommendations,
+		discovery: dataProvider.getDiscoveryRecommendations,
+	}
+	const updateGeneratorName = (mode, value) => {
+		setGenerators((prev) => ({
+			...prev,
+			[mode]: { ...prev[mode], name: value },
+		}))
+	}
+	const runGenerator = (mode, requestOptions = {}, defaultNameKey, errorKey) => {
+		const api = generatorApiMap[mode]
+		if (!api) {
+			return
+		}
+		setGenerators((prev) => ({
+			...prev,
+			[mode]: { ...prev[mode], loading: true, error: null },
+		}))
+		api({ limit: DEFAULT_RECOMMENDATION_LIMIT, ...requestOptions })
+			.then(({ data }) => {
+				const autoName =
+					data?.name ||
+					translate(defaultNameKey, {
+						_: generatorDefaultFallback[mode],
+					})
+				setGenerators((prev) => ({
+					...prev,
+					[mode]: {
+						...prev[mode],
+						loading: false,
+						result: data,
+						name:
+							prev[mode].name && prev[mode].name.trim()
+								? prev[mode].name
+								: autoName,
+						error: null,
+					},
+				}))
+			})
+			.catch((error) => {
+				const fallbackMessage = translate(errorKey, {
+					_: generatorErrorFallback[mode],
+				})
+				const message =
+					error?.body?.message || error?.message || fallbackMessage
+				setGenerators((prev) => ({
+					...prev,
+					[mode]: {
+						...prev[mode],
+						loading: false,
+						error: message,
+						result: null,
+					},
+				}))
+			})
+	}
+	const [saving, setSaving] = useState(false)
+	const generatorConfigs = [
+		{
+			key: 'recent',
+			title: translate('pages.explore.recentTitle', {
+				_: 'Generate from recent listens',
+			}),
+			description: translate('pages.explore.recentDescription', {
+				_: 'Build a personalised mix using the tracks you have been enjoying lately.',
+			}),
+			defaultNameKey: 'pages.explore.recentDefaultName',
+			errorKey: 'pages.explore.noRecentSeeds',
+			onGenerate: () =>
+				runGenerator(
+					'recent',
+					{},
+					'pages.explore.recentDefaultName',
+					'pages.explore.noRecentSeeds',
+				),
+		},
+		{
+			key: 'favorites',
+			title: translate('pages.explore.favoritesTitle', {
+				_: 'Generate from liked songs',
+			}),
+			description: translate('pages.explore.favoritesDescription', {
+				_: 'Use the songs you have starred or rated highly to create a mix.',
+			}),
+			defaultNameKey: 'pages.explore.favoritesDefaultName',
+			errorKey: 'pages.explore.noFavoritesSeeds',
+			onGenerate: () =>
+				runGenerator(
+					'favorites',
+					{},
+					'pages.explore.favoritesDefaultName',
+					'pages.explore.noFavoritesSeeds',
+				),
+		},
+		{
+			key: 'all',
+			title: translate('pages.explore.allTitle', {
+				_: 'Generate from all metrics',
+			}),
+			description: translate('pages.explore.allDescription', {
+				_: 'Blend your recent plays and favourites for a balanced playlist.',
+			}),
+			defaultNameKey: 'pages.explore.allDefaultName',
+			errorKey: 'pages.explore.noAllSeeds',
+			onGenerate: () =>
+				runGenerator(
+					'all',
+					{},
+					'pages.explore.allDefaultName',
+					'pages.explore.noAllSeeds',
+				),
+		},
+		{
+			key: 'discovery',
+			title: translate('pages.explore.discoveryTitle', {
+				_: 'Generate discovery playlist',
+			}),
+			description: translate('pages.explore.discoveryDescription', {
+				_: 'Surface songs that are farther from your usual listening. Adjust the exploration slider.',
+			}),
+			defaultNameKey: 'pages.explore.discoveryDefaultName',
+			errorKey: 'pages.explore.noDiscoverySeeds',
+			slider: true,
+			onGenerate: () =>
+				runGenerator(
+					'discovery',
+					{ diversity: discoveryDiversity },
+					'pages.explore.discoveryDefaultName',
+					'pages.explore.noDiscoverySeeds',
+				),
+		},
+	]
+	const renderGeneratorCard = (config) => {
+		const state =
+			generators[config.key] || {
+				result: null,
+				name: '',
+				loading: false,
+				error: null,
+			}
+		return (
+			<Card
+				key={config.key}
+				className={classes.recommendationCard}
+				variant="outlined"
+			>
+				<Typography variant="h5">{config.title}</Typography>
+				{config.description && (
+					<Typography variant="body2" className={classes.placeholder}>
+						{config.description}
+					</Typography>
+				)}
+				{config.slider && (
+					<Box className={classes.sliderRow}>
+						<Typography variant="body2">
+							{translate('pages.explore.discoverySliderLabel', {
+								_: 'Exploration',
+							})}
+						</Typography>
+						<Slider
+							value={discoveryDiversity}
+							onChange={(_, value) => {
+								const nextValue = Array.isArray(value) ? value[0] : value
+								setDiscoveryDiversity(nextValue)
+							}}
+							min={0}
+							max={1}
+							step={0.05}
+							valueLabelDisplay="auto"
+							valueLabelFormat={(value) => `${Math.round(value * 100)}%`}
+						/>
+						<Typography variant="body2" className={classes.placeholder}>
+							{translate('pages.explore.discoverySliderValue', {
+								_: '%{value}% exploratory',
+								value: Math.round(discoveryDiversity * 100),
+							})}
+						</Typography>
+						<Typography variant="caption" className={classes.placeholder}>
+							{translate('pages.explore.discoverySliderHelper', {
+								_: 'Higher values lean toward more adventurous picks.',
+							})}
+						</Typography>
+					</Box>
+				)}
+				<Box className={classes.buttonRow}>
+					<Button
+						variant="contained"
+						color="primary"
+						onClick={config.onGenerate}
+						disabled={state.loading}
+					>
+						{state.loading ? (
+							<CircularProgress size={18} color="inherit" />
+						) : (
+							translate('pages.explore.generateButton', {
+								_: 'Generate mix',
+							})
+						)}
+					</Button>
+					{state.error && (
+						<Typography variant="body2" className={classes.error}>
+							{state.error}
+						</Typography>
+					)}
+				</Box>
+				<RecommendationPreview
+					result={state.result}
+					playlistName={state.name}
+					onPlaylistNameChange={(value) => updateGeneratorName(config.key, value)}
+					onSave={() => saveAsPlaylist(state.result, state.name)}
+					saving={saving}
+					translate={translate}
+				/>
+			</Card>
+		)
+	}
 
-  const [customResult, setCustomResult] = useState(null)
-  const [customName, setCustomName] = useState('')
-  const [customLoading, setCustomLoading] = useState(false)
-  const [customError, setCustomError] = useState(null)
-
-  const [saving, setSaving] = useState(false)
+	const [customResult, setCustomResult] = useState(null)
+	const [customName, setCustomName] = useState('')
+	const [customLoading, setCustomLoading] = useState(false)
+	const [customError, setCustomError] = useState(null)
 
   const [songQuery, setSongQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
@@ -320,33 +559,11 @@ const ExploreSuggestions = () => {
     setSelectedSongs((prev) => prev.filter((song) => song.id !== id))
   }
 
-  const handleGenerateRecent = () => {
-    setRecentLoading(true)
-    setRecentError(null)
-    dataProvider
-      .getRecentRecommendations({ limit: DEFAULT_RECOMMENDATION_LIMIT })
-      .then(({ data }) => {
-        setRecentResult(data)
-        setRecentName(data?.name || translate('pages.explore.recentDefaultName', { _: 'Recent Mix' }))
-      })
-      .catch((error) => {
-        const serverMessage =
-          error?.body?.message ||
-          error?.message ||
-          translate('pages.explore.noRecentSeeds', {
-            _: 'Play a few songs and try again.',
-          })
-        setRecentError(serverMessage)
-        setRecentResult(null)
-      })
-      .finally(() => setRecentLoading(false))
-  }
-
-  const handleGenerateCustom = () => {
-    setCustomLoading(true)
-    setCustomError(null)
-    dataProvider
-      .getCustomRecommendations({
+	const handleGenerateCustom = () => {
+		setCustomLoading(true)
+		setCustomError(null)
+		dataProvider
+			.getCustomRecommendations({
         songIds: selectedSongs.map((song) => song.id),
         limit: DEFAULT_RECOMMENDATION_LIMIT,
       })
@@ -430,43 +647,9 @@ const ExploreSuggestions = () => {
         </Box>
       </Card>
 
-      <Card className={classes.recommendationCard} variant="outlined">
-        <Typography variant="h5">
-          {translate('pages.explore.recentTitle', { _: 'Generate from recent listens' })}
-        </Typography>
-        <Typography variant="body2" className={classes.placeholder}>
-          {translate('pages.explore.recentDescription', {
-            _: 'Build a personalised mix using the tracks you have been enjoying lately.',
-          })}
-        </Typography>
-        <Box className={classes.buttonRow}>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleGenerateRecent}
-            disabled={recentLoading}
-          >
-            {recentLoading ? (
-              <CircularProgress size={18} color="inherit" />
-            ) : (
-              translate('pages.explore.generateButton', { _: 'Generate mix' })
-            )}
-          </Button>
-          {recentError && (
-            <Typography variant="body2" className={classes.error}>
-              {recentError}
-            </Typography>
-          )}
-        </Box>
-        <RecommendationPreview
-          result={recentResult}
-          playlistName={recentName}
-          onPlaylistNameChange={setRecentName}
-          onSave={() => saveAsPlaylist(recentResult, recentName)}
-          saving={saving}
-          translate={translate}
-        />
-      </Card>
+      <Box className={classes.section}>
+        {generatorConfigs.map((config) => renderGeneratorCard(config))}
+      </Box>
 
       <Card className={classes.recommendationCard} variant="outlined">
         <Typography variant="h5">
