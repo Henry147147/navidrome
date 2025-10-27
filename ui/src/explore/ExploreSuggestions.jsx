@@ -330,7 +330,14 @@ const ExploreSuggestions = () => {
         setRecentName(data?.name || translate('pages.explore.recentDefaultName', { _: 'Recent Mix' }))
       })
       .catch((error) => {
-        setRecentError(error?.message || 'Error')
+        const serverMessage =
+          error?.body?.message ||
+          error?.message ||
+          translate('pages.explore.noRecentSeeds', {
+            _: 'Play a few songs and try again.',
+          })
+        setRecentError(serverMessage)
+        setRecentResult(null)
       })
       .finally(() => setRecentLoading(false))
   }
@@ -350,7 +357,14 @@ const ExploreSuggestions = () => {
         )
       })
       .catch((error) => {
-        setCustomError(error?.message || 'Error')
+        const serverMessage =
+          error?.body?.message ||
+          error?.message ||
+          translate('pages.explore.customNoSeeds', {
+            _: 'Try selecting different songs and generate again.',
+          })
+        setCustomError(serverMessage)
+        setCustomResult(null)
       })
       .finally(() => setCustomLoading(false))
   }

@@ -714,7 +714,9 @@
     "savePlaylist": "Save as playlist",
     "trackCountLabel": "%{count} tracks",
     "playlistSaved": "Playlist \"%{name}\" created",
-    "recommendationWarning": "Note: %{warning}"
+    "recommendationWarning": "Note: %{warning}",
+    "noRecentSeeds": "Play a few songs and try again.",
+    "customNoSeeds": "Try selecting different songs and generate again."
   }
 }
 }

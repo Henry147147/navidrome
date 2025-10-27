@@ -66,6 +66,17 @@ func (n *Router) handleRecentRecommendations(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if len(seeds) == 0 {
+		seeds, err = n.buildPreferenceSeeds(ctx, user, limit*2)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	if len(seeds) == 0 {
+		writeError(w, http.StatusBadRequest, "We need a little more listening history before we can build this mix.")
+		return
+	}
 	resp, err := n.executeRecommendation(ctx, user, modeRecentRecommendations, payload.Name, seeds, limit, payload.Diversity)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
@@ -98,6 +109,10 @@ func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Requ
 	seeds, err := n.buildCustomSeeds(ctx, user, payload.SongIDs)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if len(seeds) == 0 {
+		writeError(w, http.StatusBadRequest, "Those songs aren't available right now. Try a different selection.")
 		return
 	}
 	resp, err := n.executeRecommendation(ctx, user, modeCustomRecommendations, payload.Name, seeds, limit, payload.Diversity)
@@ -182,6 +197,28 @@ func (n *Router) buildCustomSeeds(ctx context.Context, user model.User, songIDs 
 		return strings.ToLower(seeds[i].TrackID) < strings.ToLower(seeds[j].TrackID)
 	})
 	return seeds, nil
+}
+
+func (n *Router) buildPreferenceSeeds(ctx context.Context, user model.User, limit int) ([]subsonic.RecommendationSeed, error) {
+	preferenceFilter := sq.Or{
+		sq.Eq{"starred": true},
+		sq.Gt{"rating": 0},
+	}
+	filters := withLibraryFilter(preferenceFilter, user)
+	options := model.QueryOptions{
+		Sort:    "starred_at",
+		Order:   "desc",
+		Max:     limit,
+		Filters: filters,
+	}
+	mfs, err := n.ds.MediaFile(ctx).GetAll(options)
+	if err != nil {
+		return nil, err
+	}
+	if len(mfs) == 0 {
+		return []subsonic.RecommendationSeed{}, nil
+	}
+	return seedsFromMediaFiles(mfs, "favorites"), nil
 }
 
 func (n *Router) loadTracks(ctx context.Context, ids []string) ([]model.MediaFile, error) {
@@ -312,4 +349,8 @@ func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"message": message})
 }
