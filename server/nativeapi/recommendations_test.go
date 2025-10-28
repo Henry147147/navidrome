@@ -87,3 +87,38 @@ func TestFallbackTrackIDsSkipsDisliked(t *testing.T) {
 		t.Fatalf("unexpected fallback ids: %#v", result)
 	}
 }
+
+func TestSelectionBaseWeightClamps(t *testing.T) {
+	w := selectionBaseWeight(0, 3)
+	if w != 1 {
+		t.Fatalf("expected first selection weight 1, got %f", w)
+	}
+	low := selectionBaseWeight(10, 3)
+	if low < 0.1 || low > 0.11 {
+		t.Fatalf("expected weight to clamp near 0.1, got %f", low)
+	}
+}
+
+func TestAlbumSeedWeightDecay(t *testing.T) {
+	base := 0.9
+	w0 := albumSeedWeight(base, 0)
+	if w0 != clamp(base, 0.05, 1) {
+		t.Fatalf("expected base weight with clamp, got %f", w0)
+	}
+	w3 := albumSeedWeight(base, 3)
+	if !(w3 < base && w3 > 0.05) {
+		t.Fatalf("expected decay between base and clamp floor, got %f", w3)
+	}
+}
+
+func TestMakeCustomSeedClampsWeights(t *testing.T) {
+	mf := model.MediaFile{ID: "track"}
+	seed := makeCustomSeed(mf, 5, "custom")
+	if seed.Weight > 1 {
+		t.Fatalf("weight should clamp to 1, got %f", seed.Weight)
+	}
+	seedLow := makeCustomSeed(mf, 0.001, "custom")
+	if seedLow.Weight < 0.05 {
+		t.Fatalf("weight should clamp to >= 0.05, got %f", seedLow.Weight)
+	}
+}

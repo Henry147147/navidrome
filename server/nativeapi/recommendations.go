@@ -559,47 +559,59 @@ func (n *Router) buildRecentSeeds(ctx context.Context, user model.User, limit in
 }
 
 func (n *Router) buildCustomSeeds(ctx context.Context, user model.User, songIDs []string) ([]subsonic.RecommendationSeed, error) {
+	if len(songIDs) == 0 {
+		return []subsonic.RecommendationSeed{}, nil
+	}
 	filters := withLibraryFilter(sq.Eq{"media_file.id": songIDs}, user)
 	mfs, err := n.ds.MediaFile(ctx).GetAll(model.QueryOptions{Filters: filters, Max: len(songIDs)})
 	if err != nil {
 		return nil, err
 	}
-	order := make(map[string]int, len(songIDs))
-	for idx, id := range songIDs {
-		order[id] = idx
+	trackCache := make(map[string]model.MediaFile, len(mfs))
+	for _, mf := range mfs {
+		trackCache[mf.ID] = mf
 	}
-	seeds := make([]subsonic.RecommendationSeed, 0, len(mfs))
-	seen := make(map[string]struct{}, len(mfs))
-	length := float64(len(order))
-	if length == 0 {
+	albumCache := make(map[string][]model.MediaFile)
+	totalSelections := len(songIDs)
+	seeds := make([]subsonic.RecommendationSeed, 0, totalSelections)
+	seen := make(map[string]struct{}, len(trackCache))
+
+	for idx, rawID := range songIDs {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			continue
+		}
+		baseWeight := selectionBaseWeight(idx, totalSelections)
+		if track, ok := trackCache[id]; ok {
+			if _, dup := seen[track.ID]; dup {
+				continue
+			}
+			seeds = append(seeds, makeCustomSeed(track, baseWeight, "custom"))
+			seen[track.ID] = struct{}{}
+			continue
+		}
+		albumTracks, err := n.loadAlbumTracks(ctx, user, id, albumCache)
+		if err != nil {
+			return nil, err
+		}
+		if len(albumTracks) == 0 {
+			continue
+		}
+		for pos, track := range albumTracks {
+			if track.ID == "" {
+				continue
+			}
+			if _, dup := seen[track.ID]; dup {
+				continue
+			}
+			weight := albumSeedWeight(baseWeight, pos)
+			seeds = append(seeds, makeCustomSeed(track, weight, "custom-album"))
+			seen[track.ID] = struct{}{}
+		}
+	}
+	if len(seeds) == 0 {
 		return []subsonic.RecommendationSeed{}, nil
 	}
-	for _, mf := range mfs {
-		pos, ok := order[mf.ID]
-		if !ok {
-			continue
-		}
-		if _, dup := seen[mf.ID]; dup {
-			continue
-		}
-		seen[mf.ID] = struct{}{}
-		weight := 1.0 - (float64(pos) / (length + 1))
-		if weight < 0.1 {
-			weight = 0.1
-		}
-		seed := subsonic.RecommendationSeed{
-			TrackID:  mf.ID,
-			Weight:   weight,
-			Source:   "custom",
-			PlayedAt: mf.PlayDate,
-		}
-		seeds = append(seeds, seed)
-	}
-	sort.SliceStable(seeds, func(i, j int) bool {
-		iPos := order[seeds[i].TrackID]
-		jPos := order[seeds[j].TrackID]
-		return iPos < jPos
-	})
 	return seeds, nil
 }
 
@@ -661,6 +673,78 @@ func (n *Router) loadTracks(ctx context.Context, ids []string) ([]model.MediaFil
 		}
 	}
 	return ordered, nil
+}
+
+func (n *Router) loadAlbumTracks(ctx context.Context, user model.User, albumID string, cache map[string][]model.MediaFile) ([]model.MediaFile, error) {
+	if albumID == "" {
+		return nil, nil
+	}
+	if cached, ok := cache[albumID]; ok {
+		return cached, nil
+	}
+	filters := withLibraryFilter(sq.Eq{"media_file.album_id": albumID}, user)
+	tracks, err := n.ds.MediaFile(ctx).GetAll(model.QueryOptions{
+		Filters: filters,
+		Max:     500,
+	})
+	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			cache[albumID] = nil
+			return nil, nil
+		}
+		return nil, err
+	}
+	sort.SliceStable(tracks, func(i, j int) bool {
+		if tracks[i].DiscNumber != tracks[j].DiscNumber {
+			return tracks[i].DiscNumber < tracks[j].DiscNumber
+		}
+		if tracks[i].TrackNumber != tracks[j].TrackNumber {
+			return tracks[i].TrackNumber < tracks[j].TrackNumber
+		}
+		return strings.Compare(tracks[i].OrderTitle, tracks[j].OrderTitle) < 0
+	})
+	cache[albumID] = tracks
+	return tracks, nil
+}
+
+func makeCustomSeed(mf model.MediaFile, weight float64, source string) subsonic.RecommendationSeed {
+	if weight > 1 {
+		weight = 1
+	}
+	if weight < 0.05 {
+		weight = 0.05
+	}
+	return subsonic.RecommendationSeed{
+		TrackID:  mf.ID,
+		Weight:   weight,
+		Source:   source,
+		PlayedAt: mf.PlayDate,
+	}
+}
+
+func selectionBaseWeight(idx int, total int) float64 {
+	if total <= 0 {
+		return 1
+	}
+	weight := 1.0 - (float64(idx) / float64(total+1))
+	if weight < 0.1 {
+		return 0.1
+	}
+	if weight > 1 {
+		return 1
+	}
+	return weight
+}
+
+func albumSeedWeight(base float64, position int) float64 {
+	if base <= 0 {
+		base = 0.1
+	}
+	if position <= 0 {
+		return clamp(base, 0.05, 1)
+	}
+	decay := math.Pow(0.85, float64(position))
+	return clamp(base*decay, 0.05, 1)
 }
 
 func seedsFromMediaFiles(files model.MediaFiles, source string) []subsonic.RecommendationSeed {
