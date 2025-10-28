@@ -70,10 +70,14 @@ class RecommendationEngine:
                 seed_embeddings[track_id] = vector
 
         if self.debug_logging:
-            missing_name = [track_id for track_id in seed_ids if track_id not in id_to_name]
+            missing_name = [
+                track_id for track_id in seed_ids if track_id not in id_to_name
+            ]
             if missing_name:
                 self.logger.debug("No canonical name for %d seeds", len(missing_name))
-            unresolved = [track_id for track_id in seed_ids if track_id not in seed_embeddings]
+            unresolved = [
+                track_id for track_id in seed_ids if track_id not in seed_embeddings
+            ]
             self.logger.debug(
                 "Loaded embeddings for %d/%d seeds",
                 len(seed_embeddings),
@@ -109,9 +113,7 @@ class RecommendationEngine:
             )
 
             if self.debug_logging:
-                self.logger.debug(
-                    "Seed %s returned %d hits", seed.track_id, len(hits)
-                )
+                self.logger.debug("Seed %s returned %d hits", seed.track_id, len(hits))
 
             for hit in hits:
                 raw_name = str(hit.get("name") or "").strip()
@@ -122,7 +124,9 @@ class RecommendationEngine:
                     candidate_id = self.name_resolver.name_to_id(raw_name)
                 if not candidate_id or candidate_id in exclude_ids:
                     if self.debug_logging and raw_name and not candidate_id:
-                        self.logger.debug("No track id mapping for candidate name: %s", raw_name)
+                        self.logger.debug(
+                            "No track id mapping for candidate name: %s", raw_name
+                        )
                     continue
                 distance = float(hit.get("distance", 0.0))
                 score = max(distance, 0.0) * max(seed.weight, 0.0)

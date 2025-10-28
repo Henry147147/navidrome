@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Optional, Set
+from typing import Any, Optional, Sequence, Set, Union
 
 import torch
 
@@ -10,22 +10,10 @@ _REASONING_LEVELS: Set[str] = {"none", "low", "medium", "high", "default"}
 @dataclass
 class SongEmbedding:
     name: str
-    embedding: torch.FloatTensor
-    window: int
-    hop: int
-    sample_rate: int
+    embedding: Union[torch.Tensor, Sequence[float]]
     offset: float
-    chunk_ids: list
+    model_id: str = ""
     track_id: str = ""
-
-
-@dataclass
-class ChunkedEmbedding:
-    id: int
-    parent_id: str
-    start_seconds: float
-    end_seconds: float
-    embedding: torch.FloatTensor
 
 
 @dataclass

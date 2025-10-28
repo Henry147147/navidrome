@@ -63,6 +63,30 @@ const Player = () => {
   const gainInfo = useSelector((state) => state.replayGain)
   const [context, setContext] = useState(null)
   const [gainNode, setGainNode] = useState(null)
+  const networkInfo = useMemo(() => {
+    if (typeof navigator === 'undefined') {
+      return null
+    }
+    return (
+      navigator.connection ||
+      navigator.mozConnection ||
+      navigator.webkitConnection ||
+      null
+    )
+  }, [])
+  const canPreloadNextTrack = useMemo(() => {
+    if (isMobilePlayer) {
+      return false
+    }
+    if (!networkInfo) {
+      return true
+    }
+    if (networkInfo.saveData) {
+      return false
+    }
+    const slowTypes = ['slow-2g', '2g', '3g']
+    return !slowTypes.includes(networkInfo.effectiveType)
+  }, [isMobilePlayer, networkInfo])
 
   useEffect(() => {
     if (
@@ -176,6 +200,10 @@ const Player = () => {
       }
 
       if (!preloaded) {
+        if (!canPreloadNextTrack) {
+          setPreload(true)
+          return
+        }
         const next = nextSong()
         if (next != null) {
           const audio = new Audio()
@@ -190,7 +218,7 @@ const Player = () => {
         setScrobbled(true)
       }
     },
-    [startTime, scrobbled, nextSong, preloaded],
+    [startTime, scrobbled, nextSong, preloaded, canPreloadNextTrack],
   )
 
   const onAudioVolumeChange = useCallback(

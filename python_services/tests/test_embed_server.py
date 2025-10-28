@@ -1,37 +1,47 @@
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 import pytest
-import torch
 
-import python_embed_server as embed_module
 from models import SongEmbedding, UploadSettings
 from python_embed_server import EmbedSocketServer
 
 
-class DummyThread:
-    def start(self) -> None:
+class StubEmbeddingModel:
+    def __init__(self, segments: List[Dict[str, Any]] | None = None) -> None:
+        self.segments = segments or []
+        self.embed_calls: List[Dict[str, Any]] = []
+
+    def ensure_milvus_schemas(self, client) -> None:  # pragma: no cover - simple stub
         return None
 
+    def ensure_milvus_index(self, client) -> None:  # pragma: no cover - simple stub
+        return None
 
-class DummyClassifierModel:
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.timeout_thread = DummyThread()
+    def embed_music(
+        self, music_file: str, music_name: str, cue_file: str | None = None
+    ) -> Dict[str, Any]:
+        payload = {
+            "music_file": music_file,
+            "cue_file": cue_file,
+            "model_id": "stub-model",
+            "segments": list(self.segments),
+        }
+        self.embed_calls.append(payload)
+        return payload
 
 
 class RecordingMilvusClient:
     def __init__(self) -> None:
         self.loaded: List[str] = []
-        self.upsert_calls: List[Tuple[str, List[Dict[str, Any]]]] = []
+        self.upsert_calls: List[Dict[str, Any]] = []
         self.flush_calls: List[str] = []
 
     def load_collection(self, collection_name: str) -> None:
         self.loaded.append(collection_name)
 
     def upsert(self, collection_name: str, payload: List[Dict[str, Any]]) -> None:
-        # Store a shallow copy so mutations after the call don't affect expectations.
-        copied = [dict(item) for item in payload]
-        self.upsert_calls.append((collection_name, copied))
+        self.upsert_calls.append({"collection": collection_name, "payload": payload})
 
     def flush(self, collection_name: str) -> None:
         self.flush_calls.append(collection_name)
@@ -45,43 +55,63 @@ class NoOpFeaturePipeline:
         return name
 
 
-@pytest.fixture(autouse=True)
-def stub_classifier(monkeypatch):
-    monkeypatch.setattr(embed_module, "ClassifierModel", DummyClassifierModel)
-
-
 @pytest.fixture()
 def logger() -> logging.Logger:
     return logging.getLogger("navidrome.tests")
 
 
-def make_song(track_id: str = "abc") -> SongEmbedding:
-    return SongEmbedding(
-        name="song.flac",
-        embedding=torch.tensor([0.1], dtype=torch.float32),
-        window=1,
-        hop=1,
-        sample_rate=1,
-        offset=0.0,
-        chunk_ids=[],
-        track_id=track_id,
-    )
+def test_load_from_json_converts_segments():
+    segment = {
+        "index": 1,
+        "title": "Track 01",
+        "offset_seconds": 2.5,
+        "duration_seconds": 10.0,
+        "embedding": [0.1, 0.2, 0.3],
+    }
+    payload = {
+        "music_file": "song.flac",
+        "model_id": "stub-model",
+        "segments": [segment],
+    }
+
+    songs = EmbedSocketServer.load_from_json(payload)
+
+    assert len(songs) == 1
+    song = songs[0]
+    assert song.name == "Track 01"
+    assert song.embedding == segment["embedding"]
+    assert song.offset == pytest.approx(2.5)
+    assert song.model_id == "stub-model"
+    assert song.track_id  # generated hash identifier
 
 
-def test_add_embedding_drops_track_id_when_schema_missing(logger: logging.Logger):
-    client = RecordingMilvusClient()
+def test_add_embedding_drops_track_id_before_upsert(logger: logging.Logger):
+    milvus = RecordingMilvusClient()
+    model = StubEmbeddingModel()
     server = EmbedSocketServer(
         socket_path="/tmp/navidrome-test.sock",
-        milvus_client=client,
+        milvus_client=milvus,
+        model=model,
     )
     server.feature_pipeline = NoOpFeaturePipeline()
-    server.load_from_json = lambda embedding: ([make_song()], [])
+
+    sample_song = SongEmbedding(
+        name="track.flac",
+        embedding=[0.5, 0.5],
+        offset=0.0,
+        model_id="stub-model",
+        track_id="1234",
+    )
+    server.load_from_json = lambda embedding: [sample_song]
 
     settings = UploadSettings()
-    server.add_embedding_to_db("song.flac", {"music_file": "song.flac"}, settings)
+    server.add_embedding_to_db("track.flac", {"music_file": "track.flac"}, settings)
 
-    assert client.upsert_calls
-    collection, payload = client.upsert_calls[0]
-    # Ensure track_id is never written to Milvus payloads because schema disallows it.
-    assert collection == "embedding"
-    assert payload[0].get("track_id") is None
+    assert milvus.loaded == ["embedding"]
+    assert milvus.flush_calls == ["embedding"]
+    assert len(milvus.upsert_calls) == 1
+    call = milvus.upsert_calls[0]
+    assert call["collection"] == "embedding"
+    stored_payload = call["payload"][0]
+    assert "track_id" not in stored_payload
+    assert stored_payload["model_id"] == "stub-model"

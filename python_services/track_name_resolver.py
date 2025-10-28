@@ -83,4 +83,3 @@ class TrackNameResolver:
         assert self._name_to_ids is not None
         ids = self._name_to_ids.get(name)
         return ids[0] if ids else None
-

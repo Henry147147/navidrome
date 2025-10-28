@@ -9,7 +9,7 @@ MILVUS_URI = "http://localhost:19530"
 QUERY_BATCH = 2_000
 
 MAIN = "embedding"
-COLLECTIONS = [MAIN, "clustered", "chunked_embedding"]
+COLLECTIONS = [MAIN, "clustered"]
 
 
 def fetch_all_embeddings(client: MilvusClient, collections: List[str]):
