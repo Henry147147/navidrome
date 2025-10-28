@@ -19,6 +19,12 @@ import {
   Chip,
   Tabs,
   Tab,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  FormHelperText,
+  Checkbox,
 } from '@material-ui/core'
 import { makeStyles } from '@material-ui/core/styles'
 import {
@@ -136,6 +142,18 @@ const useStyles = makeStyles((theme) => ({
     display: 'flex',
     flexWrap: 'wrap',
     gap: theme.spacing(1),
+  },
+  playlistExclusionControl: {
+    marginTop: theme.spacing(2),
+    minWidth: 240,
+  },
+  selectChips: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing(0.5),
+  },
+  selectChip: {
+    margin: 0,
   },
   listItemPrimary: {
     fontWeight: theme.typography.fontWeightMedium,
@@ -770,9 +788,10 @@ const ExploreSuggestions = () => {
   })
   const [songQuery, setSongQuery] = useState('')
   const [searchState, setSearchState] = useState(createInitialSearchState)
-  const [searchLoading, setSearchLoading] = useState(false)
-  const [searchLoadingMore, setSearchLoadingMore] = useState(false)
-  const [selectedSongs, setSelectedSongs] = useState([])
+const [searchLoading, setSearchLoading] = useState(false)
+const [searchLoadingMore, setSearchLoadingMore] = useState(false)
+const [selectedSongs, setSelectedSongs] = useState([])
+const [excludePlaylistIds, setExcludePlaylistIds] = useState([])
 
   useEffect(() => {
     const trimmed = songQuery.trim()
@@ -1139,6 +1158,7 @@ const ExploreSuggestions = () => {
         limit: 1,
         diversity: settings.baseDiversity,
         excludeTrackIds: Array.from(excludeSet),
+        excludePlaylistIds,
       })
       .then(({ data }) => {
         const newTrack = data?.tracks?.[0]
@@ -1198,6 +1218,7 @@ const ExploreSuggestions = () => {
         songIds: selectedSongs.map((song) => getSongId(song)).filter(Boolean),
         limit: settings.mixLength,
         diversity: settings.baseDiversity,
+        excludePlaylistIds,
       })
       .then(({ data }) => {
         setCustomResult(data)
@@ -1385,6 +1406,67 @@ const ExploreSuggestions = () => {
                 )
               })}
             </Box>
+            <FormControl
+              variant="outlined"
+              className={classes.playlistExclusionControl}
+              disabled={playlists.length === 0}
+            >
+              <InputLabel id="exclude-playlists-label">
+                {translate('pages.explore.excludePlaylistsLabel', {
+                  _: 'Exclude playlists',
+                })}
+              </InputLabel>
+              <Select
+                labelId="exclude-playlists-label"
+                multiple
+                value={excludePlaylistIds}
+                onChange={(event) => {
+                  const value = event.target.value
+                  setExcludePlaylistIds(Array.isArray(value) ? value : [])
+                }}
+                label={translate('pages.explore.excludePlaylistsLabel', {
+                  _: 'Exclude playlists',
+                })}
+                renderValue={(selected) => {
+                  if (!selected || selected.length === 0) {
+                    return translate('pages.explore.excludePlaylistsPlaceholder', {
+                      _: 'No playlists selected',
+                    })
+                  }
+                  return (
+                    <Box className={classes.selectChips}>
+                      {selected.map((id) => {
+                        const playlist = playlists.find((pls) => pls.id === id)
+                        const name = playlist?.name || id
+                        return (
+                          <Chip
+                            key={id}
+                            label={name}
+                            size="small"
+                            className={classes.selectChip}
+                          />
+                        )
+                      })}
+                    </Box>
+                  )
+                }}
+              >
+                {playlists.map((playlist) => (
+                  <MenuItem key={playlist.id} value={playlist.id}>
+                    <Checkbox checked={excludePlaylistIds.indexOf(playlist.id) > -1} />
+                    <ListItemText
+                      primary={playlist.name}
+                      secondary={playlist.comment || null}
+                    />
+                  </MenuItem>
+                ))}
+              </Select>
+              <FormHelperText>
+                {translate('pages.explore.excludePlaylistsHelper', {
+                  _: 'Skip songs that appear in the selected playlists.',
+                })}
+              </FormHelperText>
+            </FormControl>
             <Box className={classes.buttonRow}>
               <Button
                 variant="contained"

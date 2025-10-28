@@ -22,11 +22,12 @@ import (
 )
 
 type recommendationRequestPayload struct {
-	Limit           int      `json:"limit"`
-	SongIDs         []string `json:"songIds"`
-	Name            string   `json:"name"`
-	Diversity       *float64 `json:"diversity"`
-	ExcludeTrackIDs []string `json:"excludeTrackIds"`
+	Limit              int      `json:"limit"`
+	SongIDs            []string `json:"songIds"`
+	Name               string   `json:"name"`
+	Diversity          *float64 `json:"diversity"`
+	ExcludeTrackIDs    []string `json:"excludeTrackIds"`
+	ExcludePlaylistIDs []string `json:"excludePlaylistIds"`
 }
 
 type recommendationResponsePayload struct {
@@ -263,7 +264,7 @@ func (n *Router) handleRecentRecommendations(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "We need a little more listening history before we can build this mix.")
 		return
 	}
-	resp, err := n.executeRecommendation(ctx, user, modeRecentRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeRecentRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -303,7 +304,7 @@ func (n *Router) handleFavoritesRecommendations(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "Star or rate a few songs and try again.")
 		return
 	}
-	resp, err := n.executeRecommendation(ctx, user, modeFavoritesRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeFavoritesRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -346,7 +347,7 @@ func (n *Router) handleAllRecommendations(w http.ResponseWriter, r *http.Request
 	if len(seeds) > limit {
 		seeds = seeds[:limit]
 	}
-	resp, err := n.executeRecommendation(ctx, user, modeAllRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeAllRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -390,7 +391,7 @@ func (n *Router) handleDiscoveryRecommendations(w http.ResponseWriter, r *http.R
 	if len(seeds) > maxSeeds {
 		seeds = seeds[:maxSeeds]
 	}
-	resp, err := n.executeRecommendation(ctx, user, modeDiscoveryRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.Diversity, settings.DiscoveryExploration, discoveryMinDiversity, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeDiscoveryRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.DiscoveryExploration, discoveryMinDiversity, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -434,7 +435,7 @@ func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "Those songs aren't available right now. Try a different selection.")
 		return
 	}
-	resp, err := n.executeRecommendation(ctx, user, modeCustomRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeCustomRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -442,23 +443,40 @@ func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (n *Router) executeRecommendation(ctx context.Context, user model.User, mode string, name string, seeds []subsonic.RecommendationSeed, limit int, excludeTrackIDs []string, diversityOverride *float64, fallback float64, min float64, settings recommendationSettings) (recommendationResponsePayload, error) {
+func (n *Router) executeRecommendation(ctx context.Context, user model.User, mode string, name string, seeds []subsonic.RecommendationSeed, limit int, excludeTrackIDs []string, excludePlaylistIDs []string, diversityOverride *float64, fallback float64, min float64, settings recommendationSettings) (recommendationResponsePayload, error) {
 	dislikes, err := n.buildDislikeSignals(ctx, user, settings)
 	if err != nil {
 		log.Warn(ctx, "Failed to load low-rating signals", "error", err)
 	}
-	exclude := uniqueNonEmptyStrings(append(excludeTrackIDs, dislikes.trackIDs()...))
+	var combinedWarnings []string
+	playlistIDs := uniqueNonEmptyStrings(excludePlaylistIDs)
+	playlistTrackIDs, playlistWarnings, err := n.collectPlaylistTrackIDs(ctx, playlistIDs)
+	if err != nil {
+		return recommendationResponsePayload{}, err
+	}
+	if len(playlistWarnings) > 0 {
+		combinedWarnings = append(combinedWarnings, playlistWarnings...)
+	}
+	directExclude := uniqueNonEmptyStrings(excludeTrackIDs)
+	combinedExclude := uniqueNonEmptyStrings(append(directExclude, playlistTrackIDs...))
+	dislikedTrackIDs := dislikes.trackIDs()
+	combinedExclude = uniqueNonEmptyStrings(append(combinedExclude, dislikedTrackIDs...))
+	blocked := make(map[string]struct{}, len(combinedExclude))
+	for _, id := range combinedExclude {
+		blocked[id] = struct{}{}
+	}
 	req := subsonic.RecommendationRequest{
-		UserID:            user.ID,
-		UserName:          user.UserName,
-		Limit:             limit,
-		Mode:              mode,
-		Seeds:             seeds,
-		Diversity:         normalizeDiversity(diversityOverride, fallback, min),
-		ExcludeTrackIDs:   exclude,
-		DislikedTrackIDs:  dislikes.trackIDs(),
-		DislikedArtistIDs: dislikes.artistIDs(),
-		DislikeStrength:   settings.LowRatingPenalty,
+		UserID:             user.ID,
+		UserName:           user.UserName,
+		Limit:              limit,
+		Mode:               mode,
+		Seeds:              seeds,
+		Diversity:          normalizeDiversity(diversityOverride, fallback, min),
+		ExcludeTrackIDs:    combinedExclude,
+		DislikedTrackIDs:   dislikedTrackIDs,
+		DislikedArtistIDs:  dislikes.artistIDs(),
+		DislikeStrength:    settings.LowRatingPenalty,
+		ExcludePlaylistIDs: playlistIDs,
 	}
 	result, err := n.recommender.Recommend(ctx, mode, req)
 	if err != nil {
@@ -466,7 +484,7 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	}
 	trackIDs := result.TrackIDs()
 	if len(trackIDs) == 0 {
-		trackIDs = fallbackTrackIDs(seeds, limit, dislikes.trackRatings)
+		trackIDs = fallbackTrackIDs(seeds, limit, blocked)
 	}
 	tracks, err := n.loadTracks(ctx, trackIDs)
 	if err != nil {
@@ -476,8 +494,7 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	if strings.TrimSpace(playlistName) == "" {
 		playlistName = defaultPlaylistName(mode)
 	}
-	filteredTracks, filteredIDs, filteredWarnings := filterDislikedTracks(tracks, trackIDs, dislikes, settings.LowRatingPenalty)
-	var combinedWarnings []string
+	filteredTracks, filteredIDs, filteredWarnings := filterDislikedTracks(tracks, trackIDs, dislikes, blocked, settings.LowRatingPenalty)
 	if len(result.Warnings) > 0 {
 		combinedWarnings = append(combinedWarnings, result.Warnings...)
 	}
@@ -487,7 +504,7 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	finalTrackIDs := filteredIDs
 	finalTracks := filteredTracks
 	if len(finalTrackIDs) < limit {
-		additional := fallbackTrackIDs(seeds, limit, dislikes.trackRatings)
+		additional := fallbackTrackIDs(seeds, limit, blocked)
 		additional = difference(finalTrackIDs, additional)
 		if len(additional) > 0 {
 			extraIDs := make([]string, 0, limit-len(finalTrackIDs))
@@ -496,6 +513,9 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 				existing[id] = struct{}{}
 			}
 			for _, id := range additional {
+				if _, skip := blocked[id]; skip {
+					continue
+				}
 				if _, dup := existing[id]; dup {
 					continue
 				}
@@ -514,6 +534,9 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 					for _, id := range extraIDs {
 						mf, ok := extraTrackMap[id]
 						if !ok {
+							continue
+						}
+						if _, skip := blocked[id]; skip {
 							continue
 						}
 						if dislikes.shouldReject(mf, id, settings.LowRatingPenalty) {
@@ -675,6 +698,64 @@ func (n *Router) loadTracks(ctx context.Context, ids []string) ([]model.MediaFil
 	return ordered, nil
 }
 
+func (n *Router) collectPlaylistTrackIDs(ctx context.Context, playlistIDs []string) ([]string, []string, error) {
+	if len(playlistIDs) == 0 {
+		return nil, nil, nil
+	}
+	uniqueIDs := uniqueNonEmptyStrings(playlistIDs)
+	if len(uniqueIDs) == 0 {
+		return nil, nil, nil
+	}
+	trackSet := make(map[string]struct{})
+	warnings := make([]string, 0)
+	repo := n.ds.Playlist(ctx)
+	for _, playlistID := range uniqueIDs {
+		displayName := playlistID
+		playlist, err := repo.Get(playlistID)
+		if err != nil {
+			if errors.Is(err, model.ErrNotFound) {
+				warnings = append(warnings, fmt.Sprintf("Playlist %s is unavailable for exclusions.", playlistID))
+				continue
+			}
+			return nil, nil, err
+		}
+		if strings.TrimSpace(playlist.Name) != "" {
+			displayName = playlist.Name
+		}
+		tracks, err := repo.Tracks(playlistID, false).GetAll(model.QueryOptions{})
+		if err != nil {
+			if errors.Is(err, model.ErrNotFound) {
+				warnings = append(warnings, fmt.Sprintf("Playlist %s is unavailable for exclusions.", displayName))
+				continue
+			}
+			return nil, nil, err
+		}
+		if len(tracks) == 0 {
+			warnings = append(warnings, fmt.Sprintf("Playlist %s has no available tracks to exclude.", displayName))
+			continue
+		}
+		for _, track := range tracks {
+			id := strings.TrimSpace(track.MediaFileID)
+			if id == "" {
+				id = strings.TrimSpace(track.MediaFile.ID)
+			}
+			if id == "" {
+				continue
+			}
+			trackSet[id] = struct{}{}
+		}
+	}
+	if len(trackSet) == 0 {
+		return nil, warnings, nil
+	}
+	ids := make([]string, 0, len(trackSet))
+	for id := range trackSet {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids, warnings, nil
+}
+
 func (n *Router) loadAlbumTracks(ctx context.Context, user model.User, albumID string, cache map[string][]model.MediaFile) ([]model.MediaFile, error) {
 	if albumID == "" {
 		return nil, nil
@@ -772,15 +853,15 @@ func seedsFromMediaFiles(files model.MediaFiles, source string) []subsonic.Recom
 	return seeds
 }
 
-func fallbackTrackIDs(seeds []subsonic.RecommendationSeed, limit int, disliked map[string]int) []string {
+func fallbackTrackIDs(seeds []subsonic.RecommendationSeed, limit int, blocked map[string]struct{}) []string {
 	ids := make([]string, 0, len(seeds))
 	seen := make(map[string]struct{}, len(seeds))
 	for _, seed := range seeds {
 		if seed.TrackID == "" {
 			continue
 		}
-		if disliked != nil {
-			if _, blocked := disliked[seed.TrackID]; blocked {
+		if blocked != nil {
+			if _, skip := blocked[seed.TrackID]; skip {
 				continue
 			}
 		}
@@ -1038,8 +1119,8 @@ func clamp(value float64, minValue float64, maxValue float64) float64 {
 	return value
 }
 
-func filterDislikedTracks(tracks []model.MediaFile, trackIDs []string, signals dislikeSignals, scale float64) ([]model.MediaFile, []string, string) {
-	if len(trackIDs) == 0 || signals.empty() || scale <= 0 {
+func filterDislikedTracks(tracks []model.MediaFile, trackIDs []string, signals dislikeSignals, blocked map[string]struct{}, scale float64) ([]model.MediaFile, []string, string) {
+	if len(trackIDs) == 0 {
 		return tracks, trackIDs, ""
 	}
 	trackMap := make(map[string]model.MediaFile, len(tracks))
@@ -1048,23 +1129,37 @@ func filterDislikedTracks(tracks []model.MediaFile, trackIDs []string, signals d
 	}
 	filteredIDs := make([]string, 0, len(trackIDs))
 	filteredTracks := make([]model.MediaFile, 0, len(tracks))
-	removed := 0
+	blockedRemoved := 0
+	dislikedRemoved := 0
 	for _, id := range trackIDs {
 		mf, ok := trackMap[id]
 		if !ok {
 			continue
 		}
+		if blocked != nil {
+			if _, skip := blocked[id]; skip {
+				blockedRemoved++
+				continue
+			}
+		}
 		if signals.shouldReject(mf, id, scale) {
-			removed++
+			dislikedRemoved++
 			continue
 		}
 		filteredIDs = append(filteredIDs, id)
 		filteredTracks = append(filteredTracks, mf)
 	}
-	if removed == 0 {
+	if blockedRemoved == 0 && dislikedRemoved == 0 {
 		return filteredTracks, filteredIDs, ""
 	}
-	warning := fmt.Sprintf("%d tracks skipped because you rated them poorly.", removed)
+	parts := make([]string, 0, 2)
+	if blockedRemoved > 0 {
+		parts = append(parts, fmt.Sprintf("%d tracks removed because they belong to excluded playlists.", blockedRemoved))
+	}
+	if dislikedRemoved > 0 {
+		parts = append(parts, fmt.Sprintf("%d tracks skipped because you rated them poorly.", dislikedRemoved))
+	}
+	warning := strings.Join(parts, " ")
 	return filteredTracks, filteredIDs, warning
 }
 

@@ -1,6 +1,7 @@
 package nativeapi
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/navidrome/navidrome/model"
@@ -60,15 +61,15 @@ func TestFilterDislikedTracksRemovesMatches(t *testing.T) {
 		{ID: "t4"},
 	}
 	ids := []string{"t1", "t2", "t3", "t4"}
-	filteredTracks, filteredIDs, warning := filterDislikedTracks(tracks, ids, signals, 0.85)
+	filteredTracks, filteredIDs, warning := filterDislikedTracks(tracks, ids, signals, nil, 0.85)
 	if len(filteredIDs) != 1 || filteredIDs[0] != "t4" {
 		t.Fatalf("expected only t4 to remain, got ids %#v", filteredIDs)
 	}
 	if len(filteredTracks) != 1 || filteredTracks[0].ID != "t4" {
 		t.Fatalf("expected only track t4, got %#v", filteredTracks)
 	}
-	if warning == "" {
-		t.Fatalf("expected warning to mention filtered tracks")
+	if !strings.Contains(warning, "skipped because you rated them poorly") {
+		t.Fatalf("expected warning to mention disliked skip, got %q", warning)
 	}
 }
 
@@ -78,13 +79,33 @@ func TestFallbackTrackIDsSkipsDisliked(t *testing.T) {
 		{TrackID: "b"},
 		{TrackID: "c"},
 	}
-	disliked := map[string]int{"b": 1}
-	result := fallbackTrackIDs(seeds, 3, disliked)
+	blocked := map[string]struct{}{"b": {}}
+	result := fallbackTrackIDs(seeds, 3, blocked)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 fallback ids, got %d", len(result))
 	}
 	if result[0] != "a" || result[1] != "c" {
 		t.Fatalf("unexpected fallback ids: %#v", result)
+	}
+}
+
+func TestFilterBlockedTracksRemovesMatches(t *testing.T) {
+	tracks := []model.MediaFile{
+		{ID: "t1"},
+		{ID: "t2"},
+		{ID: "t3"},
+	}
+	ids := []string{"t1", "t2", "t3"}
+	blocked := map[string]struct{}{"t2": {}, "t3": {}}
+	filteredTracks, filteredIDs, warning := filterDislikedTracks(tracks, ids, dislikeSignals{}, blocked, 0.5)
+	if len(filteredIDs) != 1 || filteredIDs[0] != "t1" {
+		t.Fatalf("expected only t1 to remain, got %#v", filteredIDs)
+	}
+	if len(filteredTracks) != 1 || filteredTracks[0].ID != "t1" {
+		t.Fatalf("expected only track t1, got %#v", filteredTracks)
+	}
+	if !strings.Contains(warning, "removed because they belong to excluded playlists") {
+		t.Fatalf("expected warning to mention playlist exclusion, got %q", warning)
 	}
 }
 

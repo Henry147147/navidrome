@@ -180,6 +180,9 @@
       "suggestedSubtitle": "Kick off your next listening session with a few hand-picked ideas.",
       "trackCountLabel": "%{count} tracks",
       "becauseListened": "Because you listened to \"%{song}\" recently",
+      "excludePlaylistsLabel": "Exclude playlists",
+      "excludePlaylistsHelper": "Skip songs that appear in the selected playlists.",
+      "excludePlaylistsPlaceholder": "No playlists selected",
       "settings": {
         "lowRatingPenalty": "Low-rating repulsion",
         "lowRatingPenaltyHelper": "Higher values push 1\u2605 and 2\u2605 songs\u2014and their neighbours\u2014further away.",
