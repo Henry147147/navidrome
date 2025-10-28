@@ -24,14 +24,17 @@ type RecommendationSeed struct {
 }
 
 type RecommendationRequest struct {
-	UserID          string               `json:"user_id"`
-	UserName        string               `json:"user_name"`
-	Limit           int                  `json:"limit"`
-	Mode            string               `json:"mode"`
-	Seeds           []RecommendationSeed `json:"seeds"`
-	Diversity       float64              `json:"diversity"`
-	ExcludeTrackIDs []string             `json:"exclude_track_ids,omitempty"`
-	LibraryIDs      []int                `json:"library_ids,omitempty"`
+	UserID            string               `json:"user_id"`
+	UserName          string               `json:"user_name"`
+	Limit             int                  `json:"limit"`
+	Mode              string               `json:"mode"`
+	Seeds             []RecommendationSeed `json:"seeds"`
+	Diversity         float64              `json:"diversity"`
+	ExcludeTrackIDs   []string             `json:"exclude_track_ids,omitempty"`
+	LibraryIDs        []int                `json:"library_ids,omitempty"`
+	DislikedTrackIDs  []string             `json:"disliked_track_ids,omitempty"`
+	DislikedArtistIDs []string             `json:"disliked_artist_ids,omitempty"`
+	DislikeStrength   float64              `json:"dislike_strength,omitempty"`
 }
 
 type RecommendationItem struct {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -17,13 +18,15 @@ import (
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 	"github.com/navidrome/navidrome/server/subsonic"
+	"slices"
 )
 
 type recommendationRequestPayload struct {
-	Limit     int      `json:"limit"`
-	SongIDs   []string `json:"songIds"`
-	Name      string   `json:"name"`
-	Diversity *float64 `json:"diversity"`
+	Limit           int      `json:"limit"`
+	SongIDs         []string `json:"songIds"`
+	Name            string   `json:"name"`
+	Diversity       *float64 `json:"diversity"`
+	ExcludeTrackIDs []string `json:"excludeTrackIds"`
 }
 
 type recommendationResponsePayload struct {
@@ -43,12 +46,14 @@ const (
 
 	recommendationSettingsKey = "recommendations.settings"
 
-	mixLengthMin          = 10
-	mixLengthMax          = 100
-	seedRecencyMinDays    = 7
-	seedRecencyMaxDays    = 120
-	discoveryMinDiversity = 0.3
-	favoritesBlendMin     = 0.1
+	mixLengthMin           = 10
+	mixLengthMax           = 100
+	seedRecencyMinDays     = 7
+	seedRecencyMaxDays     = 120
+	discoveryMinDiversity  = 0.3
+	favoritesBlendMin      = 0.1
+	lowRatingDislikeMax    = 2
+	dislikeRejectThreshold = 0.5
 )
 
 type recommendationSettings struct {
@@ -57,6 +62,7 @@ type recommendationSettings struct {
 	DiscoveryExploration  float64 `json:"discoveryExploration"`
 	SeedRecencyWindowDays int     `json:"seedRecencyWindowDays"`
 	FavoritesBlendWeight  float64 `json:"favoritesBlendWeight"`
+	LowRatingPenalty      float64 `json:"lowRatingPenalty"`
 }
 
 func defaultRecommendationSettings() recommendationSettings {
@@ -80,6 +86,7 @@ func defaultRecommendationSettings() recommendationSettings {
 		DiscoveryExploration:  0.6,
 		SeedRecencyWindowDays: 60,
 		FavoritesBlendWeight:  0.85,
+		LowRatingPenalty:      0.85,
 	}
 }
 
@@ -95,6 +102,9 @@ func (s *recommendationSettings) applyDefaults(defaults recommendationSettings) 
 	}
 	if s.FavoritesBlendWeight == 0 {
 		s.FavoritesBlendWeight = defaults.FavoritesBlendWeight
+	}
+	if s.LowRatingPenalty == 0 {
+		s.LowRatingPenalty = defaults.LowRatingPenalty
 	}
 }
 
@@ -113,6 +123,9 @@ func (s recommendationSettings) validate() error {
 	}
 	if s.FavoritesBlendWeight < favoritesBlendMin || s.FavoritesBlendWeight > 1 {
 		return fmt.Errorf("favoritesBlendWeight must be between %.2f and %.2f", favoritesBlendMin, 1.0)
+	}
+	if s.LowRatingPenalty < 0.3 || s.LowRatingPenalty > 1 {
+		return fmt.Errorf("lowRatingPenalty must be between %.2f and %.2f", 0.3, 1.0)
 	}
 	return nil
 }
@@ -250,7 +263,7 @@ func (n *Router) handleRecentRecommendations(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "We need a little more listening history before we can build this mix.")
 		return
 	}
-	resp, err := n.executeRecommendation(ctx, user, modeRecentRecommendations, payload.Name, seeds, limit, payload.Diversity, settings.BaseDiversity, 0)
+	resp, err := n.executeRecommendation(ctx, user, modeRecentRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -290,7 +303,7 @@ func (n *Router) handleFavoritesRecommendations(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "Star or rate a few songs and try again.")
 		return
 	}
-	resp, err := n.executeRecommendation(ctx, user, modeFavoritesRecommendations, payload.Name, seeds, limit, payload.Diversity, settings.BaseDiversity, 0)
+	resp, err := n.executeRecommendation(ctx, user, modeFavoritesRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -333,7 +346,7 @@ func (n *Router) handleAllRecommendations(w http.ResponseWriter, r *http.Request
 	if len(seeds) > limit {
 		seeds = seeds[:limit]
 	}
-	resp, err := n.executeRecommendation(ctx, user, modeAllRecommendations, payload.Name, seeds, limit, payload.Diversity, settings.BaseDiversity, 0)
+	resp, err := n.executeRecommendation(ctx, user, modeAllRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -377,7 +390,7 @@ func (n *Router) handleDiscoveryRecommendations(w http.ResponseWriter, r *http.R
 	if len(seeds) > maxSeeds {
 		seeds = seeds[:maxSeeds]
 	}
-	resp, err := n.executeRecommendation(ctx, user, modeDiscoveryRecommendations, payload.Name, seeds, limit, payload.Diversity, settings.DiscoveryExploration, discoveryMinDiversity)
+	resp, err := n.executeRecommendation(ctx, user, modeDiscoveryRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.Diversity, settings.DiscoveryExploration, discoveryMinDiversity, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -421,7 +434,7 @@ func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "Those songs aren't available right now. Try a different selection.")
 		return
 	}
-	resp, err := n.executeRecommendation(ctx, user, modeCustomRecommendations, payload.Name, seeds, limit, payload.Diversity, settings.BaseDiversity, 0)
+	resp, err := n.executeRecommendation(ctx, user, modeCustomRecommendations, payload.Name, seeds, limit, payload.ExcludeTrackIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -429,14 +442,23 @@ func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (n *Router) executeRecommendation(ctx context.Context, user model.User, mode string, name string, seeds []subsonic.RecommendationSeed, limit int, diversityOverride *float64, fallback float64, min float64) (recommendationResponsePayload, error) {
+func (n *Router) executeRecommendation(ctx context.Context, user model.User, mode string, name string, seeds []subsonic.RecommendationSeed, limit int, excludeTrackIDs []string, diversityOverride *float64, fallback float64, min float64, settings recommendationSettings) (recommendationResponsePayload, error) {
+	dislikes, err := n.buildDislikeSignals(ctx, user, settings)
+	if err != nil {
+		log.Warn(ctx, "Failed to load low-rating signals", "error", err)
+	}
+	exclude := uniqueNonEmptyStrings(append(excludeTrackIDs, dislikes.trackIDs()...))
 	req := subsonic.RecommendationRequest{
-		UserID:    user.ID,
-		UserName:  user.UserName,
-		Limit:     limit,
-		Mode:      mode,
-		Seeds:     seeds,
-		Diversity: normalizeDiversity(diversityOverride, fallback, min),
+		UserID:            user.ID,
+		UserName:          user.UserName,
+		Limit:             limit,
+		Mode:              mode,
+		Seeds:             seeds,
+		Diversity:         normalizeDiversity(diversityOverride, fallback, min),
+		ExcludeTrackIDs:   exclude,
+		DislikedTrackIDs:  dislikes.trackIDs(),
+		DislikedArtistIDs: dislikes.artistIDs(),
+		DislikeStrength:   settings.LowRatingPenalty,
 	}
 	result, err := n.recommender.Recommend(ctx, mode, req)
 	if err != nil {
@@ -444,7 +466,7 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	}
 	trackIDs := result.TrackIDs()
 	if len(trackIDs) == 0 {
-		trackIDs = fallbackTrackIDs(seeds, limit)
+		trackIDs = fallbackTrackIDs(seeds, limit, dislikes.trackRatings)
 	}
 	tracks, err := n.loadTracks(ctx, trackIDs)
 	if err != nil {
@@ -454,12 +476,65 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	if strings.TrimSpace(playlistName) == "" {
 		playlistName = defaultPlaylistName(mode)
 	}
+	filteredTracks, filteredIDs, filteredWarnings := filterDislikedTracks(tracks, trackIDs, dislikes, settings.LowRatingPenalty)
+	var combinedWarnings []string
+	if len(result.Warnings) > 0 {
+		combinedWarnings = append(combinedWarnings, result.Warnings...)
+	}
+	if filteredWarnings != "" {
+		combinedWarnings = append(combinedWarnings, filteredWarnings)
+	}
+	finalTrackIDs := filteredIDs
+	finalTracks := filteredTracks
+	if len(finalTrackIDs) < limit {
+		additional := fallbackTrackIDs(seeds, limit, dislikes.trackRatings)
+		additional = difference(finalTrackIDs, additional)
+		if len(additional) > 0 {
+			extraIDs := make([]string, 0, limit-len(finalTrackIDs))
+			existing := make(map[string]struct{}, len(finalTrackIDs))
+			for _, id := range finalTrackIDs {
+				existing[id] = struct{}{}
+			}
+			for _, id := range additional {
+				if _, dup := existing[id]; dup {
+					continue
+				}
+				if len(finalTrackIDs)+len(extraIDs) >= limit {
+					break
+				}
+				extraIDs = append(extraIDs, id)
+			}
+			if len(extraIDs) > 0 {
+				extraTracks, loadErr := n.loadTracks(ctx, extraIDs)
+				if loadErr == nil {
+					extraTrackMap := make(map[string]model.MediaFile, len(extraTracks))
+					for _, mf := range extraTracks {
+						extraTrackMap[mf.ID] = mf
+					}
+					for _, id := range extraIDs {
+						mf, ok := extraTrackMap[id]
+						if !ok {
+							continue
+						}
+						if dislikes.shouldReject(mf, id, settings.LowRatingPenalty) {
+							continue
+						}
+						finalTrackIDs = append(finalTrackIDs, id)
+						finalTracks = append(finalTracks, mf)
+						if len(finalTrackIDs) >= limit {
+							break
+						}
+					}
+				}
+			}
+		}
+	}
 	return recommendationResponsePayload{
 		Name:     playlistName,
 		Mode:     mode,
-		TrackIDs: trackIDs,
-		Warnings: result.Warnings,
-		Tracks:   tracks,
+		TrackIDs: finalTrackIDs,
+		Warnings: combinedWarnings,
+		Tracks:   finalTracks,
 	}, nil
 }
 
@@ -590,11 +665,15 @@ func (n *Router) loadTracks(ctx context.Context, ids []string) ([]model.MediaFil
 
 func seedsFromMediaFiles(files model.MediaFiles, source string) []subsonic.RecommendationSeed {
 	seeds := make([]subsonic.RecommendationSeed, 0, len(files))
-	for idx, mf := range files {
+	position := 0
+	for _, mf := range files {
 		if mf.ID == "" {
 			continue
 		}
-		weight := 1.0 / float64(idx+1)
+		if mf.Rating > 0 && mf.Rating <= lowRatingDislikeMax {
+			continue
+		}
+		weight := 1.0 / float64(position+1)
 		if weight < 0.1 {
 			weight = 0.1
 		}
@@ -604,16 +683,27 @@ func seedsFromMediaFiles(files model.MediaFiles, source string) []subsonic.Recom
 			Source:   source,
 			PlayedAt: mf.PlayDate,
 		})
+		position++
 	}
 	return seeds
 }
 
-func fallbackTrackIDs(seeds []subsonic.RecommendationSeed, limit int) []string {
+func fallbackTrackIDs(seeds []subsonic.RecommendationSeed, limit int, disliked map[string]int) []string {
 	ids := make([]string, 0, len(seeds))
+	seen := make(map[string]struct{}, len(seeds))
 	for _, seed := range seeds {
 		if seed.TrackID == "" {
 			continue
 		}
+		if disliked != nil {
+			if _, blocked := disliked[seed.TrackID]; blocked {
+				continue
+			}
+		}
+		if _, dup := seen[seed.TrackID]; dup {
+			continue
+		}
+		seen[seed.TrackID] = struct{}{}
 		ids = append(ids, seed.TrackID)
 		if len(ids) >= limit {
 			break
@@ -684,6 +774,269 @@ func defaultPlaylistName(mode string) string {
 	default:
 		return "Mix"
 	}
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+const (
+	dislikeTrackStrongMultiplier    = 1.25
+	dislikeTrackModerateMultiplier  = 0.95
+	dislikeAlbumStrongMultiplier    = 0.95
+	dislikeAlbumModerateMultiplier  = 0.7
+	dislikeArtistStrongMultiplier   = 0.85
+	dislikeArtistModerateMultiplier = 0.65
+)
+
+type dislikeSignals struct {
+	trackRatings  map[string]int
+	albumRatings  map[string]int
+	artistRatings map[string]int
+}
+
+func (s dislikeSignals) empty() bool {
+	return len(s.trackRatings) == 0 && len(s.albumRatings) == 0 && len(s.artistRatings) == 0
+}
+
+func (s dislikeSignals) trackIDs() []string {
+	if len(s.trackRatings) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(s.trackRatings))
+	for id := range s.trackRatings {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+func (s dislikeSignals) artistIDs() []string {
+	if len(s.artistRatings) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(s.artistRatings))
+	for id := range s.artistRatings {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+func (s *dislikeSignals) recordTrack(id string, rating int) {
+	if id == "" {
+		return
+	}
+	if s.trackRatings == nil {
+		s.trackRatings = make(map[string]int)
+	}
+	if existing, ok := s.trackRatings[id]; !ok || rating < existing {
+		s.trackRatings[id] = rating
+	}
+}
+
+func (s *dislikeSignals) recordAlbum(id string, rating int) {
+	if id == "" {
+		return
+	}
+	if s.albumRatings == nil {
+		s.albumRatings = make(map[string]int)
+	}
+	if existing, ok := s.albumRatings[id]; !ok || rating < existing {
+		s.albumRatings[id] = rating
+	}
+}
+
+func (s *dislikeSignals) recordArtist(id string, rating int) {
+	if id == "" {
+		return
+	}
+	if s.artistRatings == nil {
+		s.artistRatings = make(map[string]int)
+	}
+	if existing, ok := s.artistRatings[id]; !ok || rating < existing {
+		s.artistRatings[id] = rating
+	}
+}
+
+func (s dislikeSignals) shouldReject(track model.MediaFile, trackID string, scale float64) bool {
+	if s.empty() || scale <= 0 {
+		return false
+	}
+	if trackID == "" {
+		trackID = track.ID
+	}
+	if trackID != "" {
+		if rating, ok := s.trackRatings[trackID]; ok && rating > 0 && rating <= lowRatingDislikeMax {
+			return true
+		}
+	}
+	scale = clamp(scale, 0.0, 1.0)
+	if pen := s.albumPenalty(track.AlbumID, scale); pen >= dislikeRejectThreshold {
+		return true
+	}
+	if pen := s.artistPenalty(track.AlbumArtistID, scale); pen >= dislikeRejectThreshold {
+		return true
+	}
+	if pen := s.artistPenalty(track.ArtistID, scale); pen >= dislikeRejectThreshold {
+		return true
+	}
+	for _, artistID := range track.Participants.AllIDs() {
+		if pen := s.artistPenalty(artistID, scale); pen >= dislikeRejectThreshold {
+			return true
+		}
+	}
+	return false
+}
+
+func (s dislikeSignals) albumPenalty(id string, scale float64) float64 {
+	if id == "" {
+		return 0
+	}
+	rating, ok := s.albumRatings[id]
+	if !ok {
+		return 0
+	}
+	return penaltyFromRating(rating, scale, dislikeAlbumStrongMultiplier, dislikeAlbumModerateMultiplier)
+}
+
+func (s dislikeSignals) artistPenalty(id string, scale float64) float64 {
+	if id == "" {
+		return 0
+	}
+	rating, ok := s.artistRatings[id]
+	if !ok {
+		return 0
+	}
+	return penaltyFromRating(rating, scale, dislikeArtistStrongMultiplier, dislikeArtistModerateMultiplier)
+}
+
+func penaltyFromRating(rating int, scale float64, strongMultiplier float64, moderateMultiplier float64) float64 {
+	if rating <= 0 || rating > lowRatingDislikeMax {
+		return 0
+	}
+	var multiplier float64
+	if rating == 1 {
+		multiplier = strongMultiplier
+	} else {
+		multiplier = moderateMultiplier
+	}
+	value := scale * multiplier
+	return math.Min(1.0, value)
+}
+
+func clamp(value float64, minValue float64, maxValue float64) float64 {
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
+}
+
+func filterDislikedTracks(tracks []model.MediaFile, trackIDs []string, signals dislikeSignals, scale float64) ([]model.MediaFile, []string, string) {
+	if len(trackIDs) == 0 || signals.empty() || scale <= 0 {
+		return tracks, trackIDs, ""
+	}
+	trackMap := make(map[string]model.MediaFile, len(tracks))
+	for _, mf := range tracks {
+		trackMap[mf.ID] = mf
+	}
+	filteredIDs := make([]string, 0, len(trackIDs))
+	filteredTracks := make([]model.MediaFile, 0, len(tracks))
+	removed := 0
+	for _, id := range trackIDs {
+		mf, ok := trackMap[id]
+		if !ok {
+			continue
+		}
+		if signals.shouldReject(mf, id, scale) {
+			removed++
+			continue
+		}
+		filteredIDs = append(filteredIDs, id)
+		filteredTracks = append(filteredTracks, mf)
+	}
+	if removed == 0 {
+		return filteredTracks, filteredIDs, ""
+	}
+	warning := fmt.Sprintf("%d tracks skipped because you rated them poorly.", removed)
+	return filteredTracks, filteredIDs, warning
+}
+
+func (n *Router) buildDislikeSignals(ctx context.Context, user model.User, settings recommendationSettings) (dislikeSignals, error) {
+	if settings.LowRatingPenalty <= 0 {
+		return dislikeSignals{}, nil
+	}
+	baseFilters := sq.And{
+		sq.Gt{"rating": 0},
+		sq.LtOrEq{"rating": lowRatingDislikeMax},
+	}
+	filters := withLibraryFilter(baseFilters, user)
+	files, err := n.ds.MediaFile(ctx).GetAll(model.QueryOptions{
+		Sort:    "rating",
+		Order:   "asc",
+		Filters: filters,
+	})
+	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			return dislikeSignals{}, nil
+		}
+		return dislikeSignals{}, err
+	}
+	signals := dislikeSignals{}
+	for _, mf := range files {
+		rating := mf.Rating
+		if rating <= 0 || rating > lowRatingDislikeMax {
+			continue
+		}
+		signals.recordTrack(mf.ID, rating)
+		signals.recordAlbum(mf.AlbumID, rating)
+		signals.recordArtist(mf.AlbumArtistID, rating)
+		signals.recordArtist(mf.ArtistID, rating)
+		for _, artistID := range mf.Participants.AllIDs() {
+			signals.recordArtist(artistID, rating)
+		}
+	}
+	return signals, nil
+}
+
+func difference(existing []string, candidates []string) []string {
+	if len(candidates) == 0 {
+		return candidates
+	}
+	seen := make(map[string]struct{}, len(existing))
+	for _, id := range existing {
+		seen[id] = struct{}{}
+	}
+	filtered := make([]string, 0, len(candidates))
+	for _, id := range candidates {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		filtered = append(filtered, id)
+	}
+	return filtered
 }
 
 func normalizeLimit(requested int, fallback int) int {

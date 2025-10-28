@@ -153,6 +153,19 @@ const ExploreSettingsPanel = ({
       }),
       format: (value) => `${Math.round(value * 100)}%`,
     },
+    {
+      key: 'lowRatingPenalty',
+      min: 0.3,
+      max: 1,
+      step: 0.05,
+      label: translate('pages.explore.settings.lowRatingPenalty', {
+        _: 'Low-rating repulsion',
+      }),
+      helper: translate('pages.explore.settings.lowRatingPenaltyHelper', {
+        _: 'Higher values push 1★ and 2★ songs—and their neighbours—further away.',
+      }),
+      format: (value) => `${Math.round(value * 100)}%`,
+    },
   ]
 
   return (

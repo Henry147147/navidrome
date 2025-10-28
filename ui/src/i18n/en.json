@@ -170,11 +170,21 @@
       "recommendationWarning": "Note: %{warning}",
       "savePlaylist": "Save as playlist",
       "searchPlaceholder": "Search for songs to add",
+      "searchLoadMore": "Load more results",
+      "removeTrack": "Remove song",
+      "rerollTrack": "Reroll song",
+      "rerollFailed": "Unable to reroll this song. Please try again.",
+      "rerollUnavailable": "No alternative songs available right now.",
       "selectedEmpty": "No songs selected yet.",
       "suggested": "Explore Suggested",
       "suggestedSubtitle": "Kick off your next listening session with a few hand-picked ideas.",
       "trackCountLabel": "%{count} tracks",
-      "becauseListened": "Because you listened to \"%{song}\" recently"
+      "becauseListened": "Because you listened to \"%{song}\" recently",
+      "settings": {
+        "lowRatingPenalty": "Low-rating repulsion",
+        "lowRatingPenaltyHelper": "Higher values push 1\u2605 and 2\u2605 songs\u2014and their neighbours\u2014further away.",
+        "lowRatingPenaltyError": "Keep the penalty between 30% and 100%."
+      }
     }
   },
   "player": {
