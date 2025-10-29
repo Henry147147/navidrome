@@ -111,10 +111,10 @@ class EmbedSocketServer:
                         cue_file=None,
                     )
                 except Exception:
-                        self.logger.exception(
-                            "Embedding failed for split track %s", track.file_path
-                        )
-                        continue
+                    self.logger.exception(
+                        "Embedding failed for split track %s", track.file_path
+                    )
+                    continue
                 payloads.append(payload)
             if payloads:
                 combined = self._combine_payloads(payloads, music_file=music_file)

@@ -484,17 +484,18 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
         self.max_waveform_length = max_waveform_length
         self.patched = False
 
-    def _load_model(self) -> EncoderDecoder: # Type: Ignore
+    def _load_model(self) -> EncoderDecoder:  # Type: Ignore
         if not self.patched:
             old = torch.load
+
             def patched(*args, **kwargs):
                 if "weights_only" in kwargs:
                     del kwargs["weights_only"]
                 return old(*args, **kwargs, weights_only=False)
-            
+
             torch.load = patched
             self.patched = True
-        
+
         model = EncoderDecoder()
         return model
 
@@ -634,6 +635,7 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
             return np.zeros(0, dtype=np.float32)
         return audio.astype(np.float32, copy=False)
 
+
 def flatten_and_enrich_embedding(embedding: torch.Tensor) -> torch.Tensor:
     print("original_size:", embedding.size())
     pass
@@ -648,7 +650,11 @@ __all__ = [
 
 if __name__ == "__main__":
     m = MusicLatentSpaceModel()
-    example_songs = ["Beach Bunny - Blame Game.flac", "Beach Bunny - Cloud 9.flac", "Beach Bunny - Nice Guys.flac"]
+    example_songs = [
+        "Beach Bunny - Blame Game.flac",
+        "Beach Bunny - Cloud 9.flac",
+        "Beach Bunny - Nice Guys.flac",
+    ]
     a = m.embed_music(example_songs[0], example_songs[0])
 
     breakpoint()

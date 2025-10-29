@@ -118,7 +118,9 @@ def test_add_embedding_drops_track_id_before_upsert(logger: logging.Logger):
     assert stored_payload["model_id"] == "stub-model"
 
 
-def test_process_embedding_request_with_split(monkeypatch, tmp_path, logger: logging.Logger):
+def test_process_embedding_request_with_split(
+    monkeypatch, tmp_path, logger: logging.Logger
+):
     model = StubEmbeddingModel()
 
     def embed_music_override(music_file: str, music_name: str, cue_file=None):

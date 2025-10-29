@@ -229,7 +229,10 @@ def split_flac_with_cue(
         if context_file:
             context_name = Path(str(context_file)).name.lower()
             context_stem = Path(str(context_file)).stem.lower()
-            if context_name not in {candidate_name, candidate_stem} and context_stem not in {
+            if context_name not in {
+                candidate_name,
+                candidate_stem,
+            } and context_stem not in {
                 candidate_name,
                 candidate_stem,
             }:
@@ -247,7 +250,9 @@ def split_flac_with_cue(
         try:
             start_seconds = _cue_time_to_seconds(track.offset)
         except ValueError:
-            log.debug("Skipping track %s due to invalid offset %s", track.number, track.offset)
+            log.debug(
+                "Skipping track %s due to invalid offset %s", track.number, track.offset
+            )
             continue
 
         if idx + 1 < track_count:
@@ -276,7 +281,9 @@ def split_flac_with_cue(
         )
         if duration_seconds is None:
             duration_seconds = waveform.shape[-1] / sample_rate
-        title = (track.title or context.get("title") or f"Track {track.number:02d}").strip()
+        title = (
+            track.title or context.get("title") or f"Track {track.number:02d}"
+        ).strip()
         performer = (track.performer or "").strip()
         if not performer:
             performer = (context.get("performer") or "").strip()
