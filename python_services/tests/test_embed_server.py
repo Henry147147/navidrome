@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 
 import pytest
 
+from cue_splitter import SplitTrack
 from models import SongEmbedding, UploadSettings
 from python_embed_server import EmbedSocketServer
 
@@ -115,3 +116,76 @@ def test_add_embedding_drops_track_id_before_upsert(logger: logging.Logger):
     stored_payload = call["payload"][0]
     assert "track_id" not in stored_payload
     assert stored_payload["model_id"] == "stub-model"
+
+
+def test_process_embedding_request_with_split(monkeypatch, tmp_path, logger: logging.Logger):
+    model = StubEmbeddingModel()
+
+    def embed_music_override(music_file: str, music_name: str, cue_file=None):
+        return {
+            "music_file": music_file,
+            "cue_file": cue_file,
+            "model_id": "stub-model",
+            "segments": [
+                {
+                    "index": 1,
+                    "title": music_name,
+                    "offset_seconds": 0.0,
+                    "duration_seconds": 1.0,
+                    "embedding": [0.1, 0.2],
+                }
+            ],
+        }
+
+    model.embed_music = embed_music_override  # type: ignore[assignment]
+
+    server = EmbedSocketServer(
+        socket_path="/tmp/navidrome-test.sock",
+        milvus_client=RecordingMilvusClient(),
+        model=model,
+    )
+
+    track_a_path = tmp_path / "TrackA.flac"
+    track_a_path.write_text("", encoding="utf-8")
+    track_b_path = tmp_path / "TrackB.flac"
+    track_b_path.write_text("", encoding="utf-8")
+
+    split_tracks = [
+        SplitTrack(
+            index=1,
+            title="Track A",
+            artist="Artist",
+            album="Album",
+            album_artist="Album Artist",
+            file_path=track_a_path,
+            start_seconds=0.0,
+            duration_seconds=2.0,
+        ),
+        SplitTrack(
+            index=2,
+            title="Track B",
+            artist="Artist",
+            album="Album",
+            album_artist="Album Artist",
+            file_path=track_b_path,
+            start_seconds=2.0,
+            duration_seconds=2.0,
+        ),
+    ]
+
+    monkeypatch.setattr(
+        "python_embed_server.split_flac_with_cue",
+        lambda *args, **kwargs: split_tracks,
+    )
+
+    payload, returned_tracks = server._process_embedding_request(
+        "album.flac",
+        "Album",
+        str(tmp_path / "album.cue"),
+    )
+
+    assert len(payload["segments"]) == 2
+    titles = [segment["title"] for segment in payload["segments"]]
+    assert titles == ["Artist - Track A", "Artist - Track B"]
+    assert payload["music_file"] == "album.flac"
+    assert returned_tracks == split_tracks

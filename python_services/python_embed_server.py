@@ -15,6 +15,7 @@ import numpy as np
 from pymilvus import MilvusClient
 
 from embedding_models import BaseEmbeddingModel, MuQEmbeddingModel
+from cue_splitter import SplitTrack, split_flac_with_cue
 from models import SongEmbedding
 from upload_features import UploadFeaturePipeline, UploadSettings
 from database_query import MilvusSimilaritySearcher
@@ -58,6 +59,78 @@ class EmbedSocketServer:
             self.model.ensure_milvus_index(self.milvus_client)
         except Exception:  # pragma: no cover - defensive logging
             self.logger.exception("Failed to ensure Milvus schema or index")
+
+    def _combine_payloads(
+        self,
+        payloads: List[dict],
+        *,
+        music_file: str,
+    ) -> dict:
+        combined: dict = {}
+        segments: List[dict] = []
+        for payload in payloads:
+            if not combined:
+                combined = dict(payload)
+                combined["segments"] = []
+            segments.extend(payload.get("segments") or [])
+        if not combined:
+            combined = {"segments": []}
+        combined["segments"] = segments
+        combined["music_file"] = music_file
+        combined["cue_file"] = None
+        return combined
+
+    def _process_embedding_request(
+        self,
+        music_file: str,
+        music_name: str,
+        cue_file: Optional[str],
+    ) -> tuple[dict, List[SplitTrack]]:
+        split_tracks: List[SplitTrack] = []
+        if cue_file:
+            try:
+                split_tracks = split_flac_with_cue(
+                    music_file,
+                    cue_file,
+                    output_dir=Path(music_file).parent,
+                    logger=self.logger,
+                )
+            except Exception:  # pragma: no cover - defensive logging
+                self.logger.exception(
+                    "Failed to split %s using cuesheet %s", music_file, cue_file
+                )
+                split_tracks = []
+
+        if split_tracks:
+            payloads: List[dict] = []
+            for track in split_tracks:
+                try:
+                    payload = self.model.embed_music(
+                        str(track.file_path),
+                        track.canonical_name(),
+                        cue_file=None,
+                    )
+                except Exception:
+                        self.logger.exception(
+                            "Embedding failed for split track %s", track.file_path
+                        )
+                        continue
+                payloads.append(payload)
+            if payloads:
+                combined = self._combine_payloads(payloads, music_file=music_file)
+                return combined, split_tracks
+            self.logger.warning(
+                "All split tracks failed to embed; falling back to original file."
+            )
+            split_tracks = []
+
+        payload = self.model.embed_music(
+            music_file,
+            music_name,
+            cue_file=None,
+        )
+        payload["cue_file"] = None
+        return payload, []
 
     def serve_forever(self) -> None:
         if os.path.exists(self.socket_path):
@@ -211,8 +284,13 @@ class EmbedSocketServer:
                     cue_file = str(cue_file)
 
                 summary: Optional[dict] = None
+                split_tracks: List[SplitTrack] = []
                 try:
-                    result = self.model.embed_music(music_file, music_name, cue_file)
+                    result, split_tracks = self._process_embedding_request(
+                        music_file,
+                        music_name,
+                        cue_file,
+                    )
                     summary = self.add_embedding_to_db(music_name, result, settings)
                 except Exception as exc:  # pragma: no cover - propagate to client
                     self.logger.exception("Embedding failed for %s", music_file)
@@ -224,6 +302,10 @@ class EmbedSocketServer:
                 response_payload = {"status": "ok"}
                 if isinstance(summary, dict):
                     response_payload.update(summary)
+                if split_tracks:
+                    response_payload["splitFiles"] = [
+                        track.to_response() for track in split_tracks
+                    ]
                 self._write_response(writer, response_payload)
             finally:
                 self.logger.debug("Closing connection")

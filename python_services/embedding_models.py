@@ -19,7 +19,6 @@ import torch
 import torchaudio
 from pymilvus import MilvusClient, DataType
 
-from cuesheet_parser import parse_cuesheet_tracks
 from models import TrackSegment
 
 from muq import MuQMuLan
@@ -149,23 +148,15 @@ class BaseEmbeddingModel(ABC):
     ) -> List[TrackSegment]:
         """
         Prepare track segments that should be embedded for the provided music file.
+
+        Cue-based segmentation is handled upstream by the uploader; models only
+        embed the provided audio file as a single track.
         """
-        music_path = Path(music_file)
-        cue_segments: List[TrackSegment] = []
-        if cue_file:
-            cue_path = Path(cue_file)
-            if cue_path.exists():
-                cue_segments = parse_cuesheet_tracks(
-                    cue_path, str(music_path), candidate_names=[music_name]
-                )
-            else:
-                self.logger.debug("Cuesheet %s does not exist", cue_file)
-
-        if cue_segments:
-            return cue_segments
-
+        segment_title = music_name.strip() if music_name else ""
+        if not segment_title:
+            segment_title = Path(music_file).stem
         return [
-            TrackSegment(index=1, title=music_name, start=0.0, end=None),
+            TrackSegment(index=1, title=segment_title, start=0.0, end=None),
         ]
 
     @abstractmethod
