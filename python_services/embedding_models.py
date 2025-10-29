@@ -671,8 +671,8 @@ def _signed_power(v: torch.Tensor, gamma: float = 0.5) -> torch.Tensor:
 
 def postprocess_enriched(v: torch.Tensor) -> torch.Tensor:
     """Apply block normalization, signed power, then global L2 normalization."""
-    v = _block_normalize(v, num_blocks=6)
-    v = _signed_power(v, gamma=0.5)
+    #v = _block_normalize(v, num_blocks=6)
+    #v = _signed_power(v, gamma=0.5)
     return F.normalize(v, p=2, dim=0)
 
 def flatten_and_enrich_embedding(embedding: torch.Tensor) -> torch.Tensor:
@@ -687,7 +687,7 @@ def flatten_and_enrich_embedding(embedding: torch.Tensor) -> torch.Tensor:
 
     # per-dimension mean and std over time
     mean = x.mean(dim=-1)                                  # [D]
-    std = x.var(dim=-1, unbiased=False).clamp_min(1e-12).sqrt()
+    #std = x.var(dim=-1, unbiased=False).clamp_min(1e-12).sqrt()
 
     # robust spread via IQR
     q25 = torch.quantile(x, 0.25, dim=-1)                  # [D]
@@ -698,17 +698,19 @@ def flatten_and_enrich_embedding(embedding: torch.Tensor) -> torch.Tensor:
     if T >= 2:
         dx = x[:, 1:] - x[:, :-1]                          # [D, T-1]
         dmean = dx.mean(dim=-1)
-        dstd  = dx.var(dim=-1, unbiased=False).clamp_min(1e-12).sqrt()
-        dq25 = torch.quantile(dx, 0.25, dim=-1)
-        dq75 = torch.quantile(dx, 0.75, dim=-1)
-        drobust = (dq75 - dq25) / _IQR_TO_SIGMA
+        #dstd  = dx.var(dim=-1, unbiased=False).clamp_min(1e-12).sqrt()
+        #dq25 = torch.quantile(dx, 0.25, dim=-1)
+        #dq75 = torch.quantile(dx, 0.75, dim=-1)
+        #drobust = (dq75 - dq25) / _IQR_TO_SIGMA
     else:
         # keep length constant when T < 2
         dmean = torch.zeros(D, device=x.device, dtype=x.dtype)
-        dstd  = torch.zeros(D, device=x.device, dtype=x.dtype)
-        drobust = torch.zeros(D, device=x.device, dtype=x.dtype)
+        #dstd  = torch.zeros(D, device=x.device, dtype=x.dtype)
+        #drobust = torch.zeros(D, device=x.device, dtype=x.dtype)
 
-    vec = torch.cat([mean, std, robust, dmean, dstd, drobust], dim=0)  # [6*D]
+    #vec = torch.cat([mean, std, robust, dmean, dstd, drobust], dim=0)  # [6*D]
+    vec = torch.cat([mean, robust, dmean], dim=0)  # [3*D]
+
     return postprocess_enriched(vec).to("cpu")
 
 
