@@ -7,7 +7,6 @@ import logging
 import os
 import socket
 from dataclasses import asdict
-from datetime import UTC, datetime
 from hashlib import sha224
 from pathlib import Path
 from typing import Dict, List, Optional
