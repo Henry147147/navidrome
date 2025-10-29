@@ -41,7 +41,7 @@ type autoPlaySettings struct {
 func defaultAutoPlaySettings() autoPlaySettings {
 	return autoPlaySettings{
 		Mode:               modeRecentRecommendations,
-		BatchSize:          15,
+		BatchSize:          autoPlayBatchMin,
 		ExcludePlaylistIDs: []string{},
 	}
 }

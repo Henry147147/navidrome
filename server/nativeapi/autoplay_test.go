@@ -20,6 +20,13 @@ func TestAutoPlaySettingsApplyDefaults(t *testing.T) {
 	}
 }
 
+func TestDefaultAutoPlayBatchMatchesMinimum(t *testing.T) {
+	defaults := defaultAutoPlaySettings()
+	if defaults.BatchSize != autoPlayBatchMin {
+		t.Fatalf("expected default batch size %d, got %d", autoPlayBatchMin, defaults.BatchSize)
+	}
+}
+
 func TestAutoPlaySettingsValidate(t *testing.T) {
 	valid := autoPlaySettings{
 		Mode:      modeAllRecommendations,

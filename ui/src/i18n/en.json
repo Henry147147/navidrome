@@ -206,17 +206,17 @@
       },
       "controls": {
         "title": "Build your next queue",
-        "modeLabel": "Listening mode",
-        "batchLabel": "Tracks per fetch",
-        "manageExclusions": "Manage exclusions",
+        "modeSummary": "Listening mode: %{mode}",
+        "modeSettingsHint": "Change your listening mode & more in the Settings tab.",
         "textPromptLabel": "Text prompt",
         "seedSearchLabel": "Seed song",
-        "textPromptPlaceholder": "Describe the style you want to hear",
+        "textPromptPlaceholder": "Describe the vibe you want to hear",
         "seedSearchPlaceholder": "Search songs to seed",
         "fetching": "Building...",
         "start": "Start Auto Play",
         "more": "Add more",
-        "resetFeedback": "Reset feedback"
+        "resetFeedback": "Reset feedback",
+        "clearQueue": "Clear queue"
       },
       "queue": {
         "title": "Upcoming queue",
@@ -235,10 +235,8 @@
       },
       "settings": {
         "title": "Auto Play settings",
-        "helper": "Choose your default Auto Play behavior. You can override these on the Mix tab.",
+        "helper": "These defaults are used whenever you start Auto Play from the Mix tab.",
         "modeLabel": "Default mode",
-        "batchLabel": "Batch size",
-        "batchHelper": "How many tracks to request at once.",
         "diversityLabel": "Diversity override",
         "diversityHelper": "Optional value between 0 and 1. Leave blank to follow mix defaults.",
         "textPromptLabel": "Default text prompt",

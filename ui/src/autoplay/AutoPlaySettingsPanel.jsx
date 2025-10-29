@@ -83,11 +83,6 @@ const AutoPlaySettingsPanel = ({
     onFieldChange('mode', event.target.value)
   }
 
-  const handleBatchSizeChange = (event) => {
-    const value = Number(event.target.value)
-    onFieldChange('batchSize', Number.isNaN(value) ? draft.batchSize : value)
-  }
-
   const handleDiversityChange = (event) => {
     const raw = event.target.value
     if (raw === '' || raw === null) {
@@ -117,7 +112,7 @@ const AutoPlaySettingsPanel = ({
           </Typography>
           <Typography variant="body2" className={classes.helperText}>
             {translate('pages.autoplay.settings.helper', {
-              _: 'Choose your default Auto Play behaviour. You can override these on the Mix tab.',
+              _: 'These defaults are used whenever you start Auto Play from the Mix tab.',
             })}
           </Typography>
         </Box>
@@ -154,21 +149,6 @@ const AutoPlaySettingsPanel = ({
           <TextField
             variant="outlined"
             type="number"
-            inputProps={{ min: 5, max: 50 }}
-            label={translate('pages.autoplay.settings.batchLabel', {
-              _: 'Batch size',
-            })}
-            helperText={translate('pages.autoplay.settings.batchHelper', {
-              _: 'How many tracks to request at once.',
-            })}
-            value={draft.batchSize}
-            onChange={handleBatchSizeChange}
-            fullWidth
-          />
-
-          <TextField
-            variant="outlined"
-            type="number"
             inputProps={{ step: 0.05, min: 0, max: 1 }}
             label={translate('pages.autoplay.settings.diversityLabel', {
               _: 'Diversity override',
@@ -192,7 +172,7 @@ const AutoPlaySettingsPanel = ({
             value={draft.textPrompt}
             onChange={handleTextPromptChange}
             multiline
-            rows={3}
+            minRows={3}
             fullWidth
           />
 

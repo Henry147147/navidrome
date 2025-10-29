@@ -10,7 +10,6 @@ import {
   List,
   ListItem,
   ListItemText,
-  MenuItem,
   Tab,
   Tabs,
   TextField,
@@ -18,6 +17,7 @@ import {
   Typography,
   Chip,
 } from '@material-ui/core'
+import ListItemSecondaryAction from '@material-ui/core/ListItemSecondaryAction'
 import { makeStyles } from '@material-ui/core/styles'
 import { Title, useDataProvider, useNotify, useTranslate } from 'react-admin'
 import { useDispatch, useSelector } from 'react-redux'
@@ -28,13 +28,14 @@ import ThumbUpAltOutlinedIcon from '@material-ui/icons/ThumbUpAltOutlined'
 import ThumbDownAltOutlinedIcon from '@material-ui/icons/ThumbDownAltOutlined'
 import ClearIcon from '@material-ui/icons/Clear'
 import AutoPlaySettingsPanel from './AutoPlaySettingsPanel'
-import { addTracks, playTracks } from '../actions'
+import { addTracks, playTracks, clearQueue } from '../actions'
+import { computeFeedback } from './feedbackUtils'
 
 const DEFAULT_SETTINGS = {
   mode: 'recent',
   textPrompt: '',
   excludePlaylistIds: [],
-  batchSize: 15,
+  batchSize: 5,
   diversityOverride: null,
 }
 
@@ -96,21 +97,23 @@ const useStyles = makeStyles((theme) => ({
     maxHeight: 380,
     overflowY: 'auto',
   },
-  feedbackCard: {
-    position: 'fixed',
-    right: theme.spacing(3),
-    bottom: theme.spacing(12),
-    width: 320,
-    zIndex: theme.zIndex.tooltip,
-    padding: theme.spacing(2),
+  modeSummary: {
     display: 'flex',
     flexDirection: 'column',
-    gap: theme.spacing(1.5),
-    boxShadow: theme.shadows[6],
-  },
-  feedbackActions: {
-    display: 'flex',
     gap: theme.spacing(1),
+  },
+  modeSummaryLine: {
+    fontWeight: theme.typography.fontWeightMedium,
+  },
+  exclusionHint: {
+    color: theme.palette.text.secondary,
+  },
+  actionRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing(1.5),
+    alignItems: 'center',
+    marginTop: theme.spacing(2),
   },
   tabs: {
     alignSelf: 'flex-start',
@@ -119,6 +122,12 @@ const useStyles = makeStyles((theme) => ({
     display: 'flex',
     flexWrap: 'wrap',
     gap: theme.spacing(1),
+  },
+  fullWidthGridItem: {
+    gridColumn: '1 / -1',
+  },
+  primaryActionButton: {
+    minWidth: 200,
   },
 }))
 
@@ -147,6 +156,8 @@ const AutoPlayPage = () => {
 
   const playedIdsRef = useRef(new Set())
   const requestedIdsRef = useRef(new Set())
+  const positiveRef = useRef([])
+  const negativeRef = useRef([])
 
   const [seedQuery, setSeedQuery] = useState('')
   const [seedLoading, setSeedLoading] = useState(false)
@@ -168,7 +179,7 @@ const AutoPlayPage = () => {
           mode: data?.mode || DEFAULT_SETTINGS.mode,
           textPrompt: data?.textPrompt || '',
           excludePlaylistIds: data?.excludePlaylistIds || [],
-          batchSize: data?.batchSize || DEFAULT_SETTINGS.batchSize,
+          batchSize: DEFAULT_SETTINGS.batchSize,
           diversityOverride:
             data?.diversityOverride === undefined
               ? null
@@ -235,6 +246,14 @@ const AutoPlayPage = () => {
     requestedIdsRef.current = new Set()
   }
 
+  useEffect(() => {
+    positiveRef.current = positiveTrackIds
+  }, [positiveTrackIds])
+
+  useEffect(() => {
+    negativeRef.current = negativeTrackIds
+  }, [negativeTrackIds])
+
   const handleSaveSettings = () => {
     setSavingSettings(true)
     const payload = {
@@ -245,6 +264,7 @@ const AutoPlayPage = () => {
           ? null
           : settingsDraft.diversityOverride,
     }
+    payload.batchSize = DEFAULT_SETTINGS.batchSize
     dataProvider
       .updateAutoPlaySettings(payload)
       .then(({ data }) => {
@@ -252,7 +272,7 @@ const AutoPlayPage = () => {
           mode: data?.mode || DEFAULT_SETTINGS.mode,
           textPrompt: data?.textPrompt || '',
           excludePlaylistIds: data?.excludePlaylistIds || [],
-          batchSize: data?.batchSize || DEFAULT_SETTINGS.batchSize,
+          batchSize: DEFAULT_SETTINGS.batchSize,
           diversityOverride:
             data?.diversityOverride === undefined
               ? null
@@ -486,6 +506,12 @@ const AutoPlayPage = () => {
     fetchRecommendations({ mode: sessionOptions.mode })
   }
 
+  const handleClearQueue = () => {
+    dispatch(clearQueue())
+    resetFeedback()
+    setSessionActive(false)
+  }
+
   const remainingQueue = useMemo(() => {
     if (player.queue.length === 0) {
       return 0
@@ -520,41 +546,29 @@ const AutoPlayPage = () => {
     }
   }, [sessionActive, remainingQueue, fetchRecommendations, sessionOptions])
 
-  const currentTrack = useMemo(() => {
-    const info = player.current
-    if (!info || info.isRadio) {
-      return null
-    }
-    if (info.trackId && requestedIdsRef.current.has(info.trackId)) {
-      return info.song || null
-    }
-    if (
-      info.song &&
-      info.song.id &&
-      requestedIdsRef.current.has(info.song.id)
-    ) {
-      return info.song
-    }
-    return null
-  }, [player.current])
-
-  const handleThumb = (direction) => {
-    const trackId = player.current?.trackId || player.current?.song?.id
-    if (!trackId) {
-      return
-    }
-    if (direction === 'up') {
-      setPositiveTrackIds((prev) =>
-        prev.includes(trackId) ? prev : [...prev, trackId],
-      )
-    } else {
-      setNegativeTrackIds((prev) =>
-        prev.includes(trackId) ? prev : [...prev, trackId],
-      )
-    }
-  }
-
   const modeOptions = useMemo(() => AUTO_MODE_OPTIONS(translate), [translate])
+  const modeLookup = useMemo(() => {
+    const lookup = {}
+    modeOptions.forEach((option) => {
+      lookup[option.value] = option.label
+    })
+    return lookup
+  }, [modeOptions])
+  const currentModeLabel =
+    modeLookup[sessionOptions.mode] || sessionOptions.mode
+
+  const toggleFeedback = useCallback((trackId, direction) => {
+    const { positive, negative } = computeFeedback(
+      positiveRef.current,
+      negativeRef.current,
+      trackId,
+      direction,
+    )
+    setPositiveTrackIds(positive)
+    setNegativeTrackIds(negative)
+    positiveRef.current = positive
+    negativeRef.current = negative
+  }, [])
 
   return (
     <Box className={classes.root}>
@@ -585,56 +599,28 @@ const AutoPlayPage = () => {
               })}
             </Typography>
             <Box className={classes.controlGrid}>
-              <TextField
-                select
-                label={translate('pages.autoplay.controls.modeLabel', {
-                  _: 'Listening mode',
-                })}
-                value={sessionOptions.mode}
-                onChange={(event) =>
-                  updateSessionOption('mode', event.target.value)
-                }
-                variant="outlined"
-                SelectProps={{ native: false }}
-                fullWidth
-              >
-                {modeOptions.map((option) => (
-                  <MenuItem value={option.value} key={option.value}>
-                    {option.label}
-                  </MenuItem>
-                ))}
-              </TextField>
-
-              <TextField
-                variant="outlined"
-                label={translate('pages.autoplay.controls.batchLabel', {
-                  _: 'Tracks per fetch',
-                })}
-                type="number"
-                inputProps={{ min: 5, max: 50 }}
-                value={sessionOptions.batchSize}
-                onChange={(event) => {
-                  const nextValue = Number(event.target.value)
-                  updateSessionOption(
-                    'batchSize',
-                    Number.isNaN(nextValue)
-                      ? sessionOptions.batchSize
-                      : nextValue,
-                  )
-                }}
-                fullWidth
-              />
-
-              <Button variant="outlined" onClick={() => setTab(1)} fullWidth>
-                {translate('pages.autoplay.controls.manageExclusions', {
-                  _: 'Manage exclusions',
-                })}
-              </Button>
+              <Box className={classes.modeSummary}>
+                <Typography
+                  variant="subtitle1"
+                  className={classes.modeSummaryLine}
+                >
+                  {translate('pages.autoplay.controls.modeSummary', {
+                    _: 'Listening mode: %{mode}',
+                    mode: currentModeLabel,
+                  })}
+                </Typography>
+                <Typography variant="body2" className={classes.exclusionHint}>
+                  {translate('pages.autoplay.controls.modeSettingsHint', {
+                    _: 'Change your listening mode & more in the Settings tab.',
+                  })}
+                </Typography>
+              </Box>
 
               {(sessionOptions.mode === 'text' ||
                 sessionOptions.mode === 'custom') && (
                 <TextField
                   variant="outlined"
+                  className={classes.fullWidthGridItem}
                   label={
                     sessionOptions.mode === 'text'
                       ? translate('pages.autoplay.controls.textPromptLabel', {
@@ -645,7 +631,7 @@ const AutoPlayPage = () => {
                         })
                   }
                   multiline={sessionOptions.mode === 'text'}
-                  rows={sessionOptions.mode === 'text' ? 3 : 1}
+                  minRows={sessionOptions.mode === 'text' ? 3 : 1}
                   value={
                     sessionOptions.mode === 'text'
                       ? sessionOptions.textPrompt
@@ -663,7 +649,7 @@ const AutoPlayPage = () => {
                       ? translate(
                           'pages.autoplay.controls.textPromptPlaceholder',
                           {
-                            _: 'Eg. upbeat morning, studying jazz...',
+                            _: 'Describe the vibe you want to hear',
                           },
                         )
                       : translate(
@@ -728,13 +714,15 @@ const AutoPlayPage = () => {
               </Box>
             )}
 
-            <Box display="flex" gap={16} flexWrap="wrap">
+            <Box className={classes.actionRow}>
               <Button
                 variant="contained"
                 color="primary"
                 startIcon={<PlayArrowIcon />}
                 onClick={handleStartSession}
                 disabled={fetching}
+                size="large"
+                className={classes.primaryActionButton}
               >
                 {fetching
                   ? translate('pages.autoplay.controls.fetching', {
@@ -757,6 +745,11 @@ const AutoPlayPage = () => {
                   _: 'Reset feedback',
                 })}
               </Button>
+              <Button variant="text" onClick={handleClearQueue}>
+                {translate('pages.autoplay.controls.clearQueue', {
+                  _: 'Clear queue',
+                })}
+              </Button>
             </Box>
           </Card>
 
@@ -772,17 +765,80 @@ const AutoPlayPage = () => {
               </Typography>
             ) : (
               <List className={classes.queueList} dense>
-                {player.queue.map((item) => (
-                  <ListItem
-                    key={item.uuid}
-                    selected={item.uuid === player.current?.uuid}
-                  >
-                    <ListItemText
-                      primary={item.song?.title || item.name}
-                      secondary={`${item.song?.artist || ''} · ${item.song?.album || ''}`}
-                    />
-                  </ListItem>
-                ))}
+                {player.queue.map((item) => {
+                  const resolvedId =
+                    item.trackId ||
+                    item.song?.id ||
+                    item.song?.mediaFileId ||
+                    ''
+                  const normalizedId =
+                    typeof resolvedId === 'string'
+                      ? resolvedId.trim()
+                      : resolvedId.toString().trim()
+                  const isPositive =
+                    normalizedId !== '' &&
+                    positiveTrackIds.includes(normalizedId)
+                  const isNegative =
+                    normalizedId !== '' &&
+                    negativeTrackIds.includes(normalizedId)
+                  const disabledFeedback = normalizedId === ''
+
+                  return (
+                    <ListItem
+                      key={item.uuid}
+                      selected={item.uuid === player.current?.uuid}
+                    >
+                      <ListItemText
+                        primary={item.song?.title || item.name}
+                        secondary={`${item.song?.artist || ''} · ${item.song?.album || ''}`}
+                      />
+                      <ListItemSecondaryAction>
+                        <Tooltip
+                          title={translate('pages.autoplay.feedback.like', {
+                            _: 'Thumbs up',
+                          })}
+                        >
+                          <span>
+                            <IconButton
+                              size="small"
+                              color={isPositive ? 'primary' : 'default'}
+                              onClick={() => toggleFeedback(normalizedId, 'up')}
+                              disabled={disabledFeedback}
+                              aria-label={translate(
+                                'pages.autoplay.feedback.like',
+                                { _: 'Thumbs up' },
+                              )}
+                            >
+                              <ThumbUpAltOutlinedIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip
+                          title={translate('pages.autoplay.feedback.dislike', {
+                            _: 'Thumbs down',
+                          })}
+                        >
+                          <span>
+                            <IconButton
+                              size="small"
+                              color={isNegative ? 'secondary' : 'default'}
+                              onClick={() =>
+                                toggleFeedback(normalizedId, 'down')
+                              }
+                              disabled={disabledFeedback}
+                              aria-label={translate(
+                                'pages.autoplay.feedback.dislike',
+                                { _: 'Thumbs down' },
+                              )}
+                            >
+                              <ThumbDownAltOutlinedIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </ListItemSecondaryAction>
+                    </ListItem>
+                  )
+                })}
               </List>
             )}
           </Card>
@@ -802,44 +858,6 @@ const AutoPlayPage = () => {
           playlists={playlists}
           modeOptions={modeOptions}
         />
-      )}
-
-      {sessionActive && currentTrack && (
-        <Card className={classes.feedbackCard} variant="elevation">
-          <Typography variant="subtitle2">
-            {translate('pages.autoplay.feedback.prompt', {
-              _: 'Did you like this song?',
-            })}
-          </Typography>
-          <Typography variant="body1">{currentTrack.title}</Typography>
-          <Typography variant="body2" color="textSecondary">
-            {`${currentTrack.artist || ''}${currentTrack.album ? ' · ' + currentTrack.album : ''}`}
-          </Typography>
-          <Box className={classes.feedbackActions}>
-            <Tooltip
-              title={translate('pages.autoplay.feedback.like', {
-                _: 'Thumbs up',
-              })}
-            >
-              <span>
-                <IconButton color="primary" onClick={() => handleThumb('up')}>
-                  <ThumbUpAltOutlinedIcon />
-                </IconButton>
-              </span>
-            </Tooltip>
-            <Tooltip
-              title={translate('pages.autoplay.feedback.dislike', {
-                _: 'Thumbs down',
-              })}
-            >
-              <span>
-                <IconButton onClick={() => handleThumb('down')}>
-                  <ThumbDownAltOutlinedIcon />
-                </IconButton>
-              </span>
-            </Tooltip>
-          </Box>
-        </Card>
       )}
     </Box>
   )
