@@ -592,14 +592,10 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
             return None
 
         latent = model.encode(music_file, max_waveform_length=self.max_waveform_length)
-        # latent.shape = (dim=64, sequence_length)
-
-        # Average over time to get a fixed-size embedding
-        centroid = latent.mean(dim=1)  # shape (64,)
-        # Normalize to unit length
-        centroid = torch.nn.functional.normalize(centroid, dim=0)
-
-        centroid_cpu = centroid.detach().cpu().tolist()
+        latent_with_mag = add_magnitude_channels(latent)
+        return latent_with_mag
+        
+        enriched = flatten_and_enrich_embedding(latent)
 
         computed_duration: Optional[float]
         if duration is not None:
@@ -612,7 +608,7 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
             title=track_segment.title,
             offset_seconds=offset,
             duration_seconds=computed_duration,
-            embedding=centroid_cpu,
+            embedding=enriched,
         )
 
     def _load_audio_segment(
@@ -636,9 +632,84 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
         return audio.astype(np.float32, copy=False)
 
 
+_IQR_TO_SIGMA = 1.3489795003921634  # sigma ≈ IQR / 1.34898
+import torch.nn.functional as F
+
+def to_R128(x):  # x: [2,64,T] -> [128,T]
+    return x.permute(1,0,2).reshape(128, x.size(-1))
+
+def add_magnitude_channels(x):   # x: [2,64,T]
+    """The latent space is contstructed of [2, 64, T], 
+    where x[0] represents the real and x[1] represents the imaginary, 
+    need to have it in 2D, but there are consequences of concatting the im with real"""
+    re, im = x[0], x[1]          # [64,T]
+    mag = torch.sqrt(re**2 + im**2 + 1e-12)  # [64,T]
+    # Return either just [R,I] (128) or concat [R,I,|z|] (192)
+    return torch.cat([to_R128(x), mag], dim=0)  # [192,T]
+
+
+def _block_normalize(v: torch.Tensor, num_blocks: int = 6) -> torch.Tensor:
+    """L2 normalize each contiguous block of the 1-D vector."""
+    D6 = v.numel()
+    if D6 == 0:
+        return v
+    assert D6 % num_blocks == 0, "vector length must be divisible by num_blocks"
+    block_dim = D6 // num_blocks
+    blocks = []
+    for i in range(num_blocks):
+        block = v[i * block_dim : (i + 1) * block_dim]
+        blocks.append(F.normalize(block, p=2, dim=0))
+    return torch.cat(blocks, dim=0)
+
+
+def _signed_power(v: torch.Tensor, gamma: float = 0.5) -> torch.Tensor:
+    """Apply signed power transform that preserves sign."""
+    if v.numel() == 0:
+        return v
+    return v.sign() * v.abs().clamp_min(1e-12).pow(gamma)
+
+
+def postprocess_enriched(v: torch.Tensor) -> torch.Tensor:
+    """Apply block normalization, signed power, then global L2 normalization."""
+    v = _block_normalize(v, num_blocks=6)
+    v = _signed_power(v, gamma=0.5)
+    return F.normalize(v, p=2, dim=0)
+
 def flatten_and_enrich_embedding(embedding: torch.Tensor) -> torch.Tensor:
-    print("original_size:", embedding.size())
-    pass
+    """
+    embedding: [D, T] float tensor
+    returns: [6*D] L2-normalized vector
+      [mean, std, robust_sigma_iqr, dmean, dstd, d_robust_sigma_iqr]
+    """
+    assert embedding.dim() == 2, "Expected [D, T]"
+    D, T = embedding.shape
+    x = embedding.to("cuda").to(torch.float32)
+
+    # per-dimension mean and std over time
+    mean = x.mean(dim=-1)                                  # [D]
+    std = x.var(dim=-1, unbiased=False).clamp_min(1e-12).sqrt()
+
+    # robust spread via IQR
+    q25 = torch.quantile(x, 0.25, dim=-1)                  # [D]
+    q75 = torch.quantile(x, 0.75, dim=-1)                  # [D]
+    robust = (q75 - q25) / _IQR_TO_SIGMA                   # [D]
+
+    # first differences over time
+    if T >= 2:
+        dx = x[:, 1:] - x[:, :-1]                          # [D, T-1]
+        dmean = dx.mean(dim=-1)
+        dstd  = dx.var(dim=-1, unbiased=False).clamp_min(1e-12).sqrt()
+        dq25 = torch.quantile(dx, 0.25, dim=-1)
+        dq75 = torch.quantile(dx, 0.75, dim=-1)
+        drobust = (dq75 - dq25) / _IQR_TO_SIGMA
+    else:
+        # keep length constant when T < 2
+        dmean = torch.zeros(D, device=x.device, dtype=x.dtype)
+        dstd  = torch.zeros(D, device=x.device, dtype=x.dtype)
+        drobust = torch.zeros(D, device=x.device, dtype=x.dtype)
+
+    vec = torch.cat([mean, std, robust, dmean, dstd, drobust], dim=0)  # [6*D]
+    return postprocess_enriched(vec).to("cpu")
 
 
 __all__ = [
@@ -648,14 +719,110 @@ __all__ = [
     "SegmentEmbedding",
 ]
 
-if __name__ == "__main__":
-    m = MusicLatentSpaceModel()
-    example_songs = [
-        "Beach Bunny - Blame Game.flac",
-        "Beach Bunny - Cloud 9.flac",
-        "Beach Bunny - Nice Guys.flac",
-    ]
-    a = m.embed_music(example_songs[0], example_songs[0])
+import pandas as pd
 
-    breakpoint()
-    print(a)
+def list_audio():
+    files = sorted([*Path(".").glob("*.flac"), *Path(".").glob("*.mp3")])
+    return [str(p) for p in files]
+
+def enriched_vec(e):
+    v = flatten_and_enrich_embedding(e)
+    return F.normalize(v.view(-1), p=2, dim=0)  # [K]
+
+def centroid_vec(e):
+    c = e.mean(dim=1)                           # [D]
+    return F.normalize(c, p=2, dim=0)
+
+def cosine_table(vectors, names=None, outfile="cosine_similarity.png", annotate=True, dpi=400):
+    """
+    Build an NxN cosine similarity heatmap from 1-D torch tensors and save to disk.
+    Returns the output filepath.
+    """
+    import torch
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    # Normalize and keep only valid vectors
+    vs, kept_idx = [], []
+    for i, v in enumerate(vectors):
+        if v is None:
+            continue
+        v = v.view(-1)
+        if v.numel() == 0 or not torch.isfinite(v).all():
+            continue
+        vs.append(torch.nn.functional.normalize(v, p=2, dim=0))
+        kept_idx.append(i)
+
+    N = len(vs)
+    if N == 0:
+        raise ValueError("No valid vectors to plot.")
+
+    X = torch.stack(vs, dim=0)                 # [N, d]
+    S = (X @ X.t()).detach().cpu().numpy()     # [N, N]
+    S = np.clip(S, -1.0, 1.0)
+
+    # Align labels to N
+    if names is None:
+        labels = [f"item_{i}" for i in kept_idx]
+    else:
+        labels = [names[i] for i in kept_idx if i < len(names)]
+        if len(labels) < N:
+            labels += [f"item_{i}" for i in range(len(labels), N)]
+        labels = labels[:N]
+
+    # Plot
+    fig_size = min(0.5 * N + 2, 20)
+    fig, ax = plt.subplots(figsize=(fig_size, fig_size), dpi=dpi)
+    im = ax.imshow(S, vmin=-1, vmax=1)
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("cosine similarity", rotation=270, labelpad=12)
+
+    ax.set_xticks(np.arange(N), labels=labels, rotation=90)
+    ax.set_yticks(np.arange(N), labels=labels)
+    ax.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
+
+    # minor grid for cell borders
+    ax.set_xticks(np.arange(-0.5, N, 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, N, 1), minor=True)
+    ax.grid(which="minor", color="white", linewidth=0.5)
+    ax.set_title("Cosine Similarity")
+
+    # optional numeric annotations for small N
+    if annotate and N <= 25:
+        for i in range(N):
+            for j in range(N):
+                ax.text(j, i, f"{S[i, j]:.2f}", ha="center", va="center", fontsize=8)
+
+    fig.tight_layout()
+    fig.savefig(outfile, bbox_inches="tight")
+    plt.close(fig)
+    return outfile
+
+
+def main():
+    paths = list_audio()
+    if len(paths) < 2:
+        print("need at least two audio files in current directory matching *.flac or *.mp3")
+        return
+
+    m = MusicLatentSpaceModel()
+
+    embeds = []
+    from tqdm import tqdm
+    with torch.no_grad():
+        for p in tqdm(list(paths)):
+            try:
+                e = m.embed_music(p, p)             
+                embeds.append(e)
+            except:
+                print(p, "Failed to parse")
+
+    enriched = [enriched_vec(e) for e in embeds]
+    centroids = [centroid_vec(e) for e in embeds]
+
+    names = [Path(p).name for p in paths]
+    df_enriched = cosine_table(enriched, names, outfile="enriched.png")
+    df_centroid = cosine_table(centroids, names, outfile="centroid.png")
+
+if __name__ == "__main__":
+    main()
