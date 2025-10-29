@@ -70,6 +70,7 @@ func (n *Router) routes() http.Handler {
 		n.addInsightsRoute(r)
 		n.addUploadRoute(r)
 		n.addRecommendationRoutes(r)
+		n.addAutoPlayRoute(r)
 
 		r.With(adminOnlyMiddleware).Group(func(r chi.Router) {
 			n.addInspectRoute(r)

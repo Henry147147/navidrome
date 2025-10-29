@@ -109,6 +109,23 @@ func TestFilterBlockedTracksRemovesMatches(t *testing.T) {
 	}
 }
 
+func TestCombineExcludeTrackIDs(t *testing.T) {
+	payload := recommendationRequestPayload{
+		ExcludeTrackIDs:  []string{"", "a", "b", "a"},
+		NegativeTrackIDs: []string{"b", "c", "  ", "d"},
+	}
+	result := combineExcludeTrackIDs(payload)
+	expected := []string{"a", "b", "c", "d"}
+	if len(result) != len(expected) {
+		t.Fatalf("expected %d ids, got %d (%#v)", len(expected), len(result), result)
+	}
+	for idx, id := range expected {
+		if result[idx] != id {
+			t.Fatalf("expected id %q at %d, got %q", id, idx, result[idx])
+		}
+	}
+}
+
 func TestSelectionBaseWeightClamps(t *testing.T) {
 	w := selectionBaseWeight(0, 3)
 	if w != 1 {

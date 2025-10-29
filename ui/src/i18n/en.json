@@ -43,7 +43,7 @@
       "next_song": "Next Song",
       "prev_song": "Previous Song",
       "show_help": "Show This Help",
-      "toggle_love": "Add this track to favourites",
+      "toggle_love": "Add this track to favorites",
       "toggle_menu": "Toggle Menu Side Bar",
       "toggle_play": "Play / Pause",
       "vol_down": "Volume Down",
@@ -55,6 +55,9 @@
   "menu": {
     "about": "About",
     "albumList": "Albums",
+    "autoplay": {
+      "name": "Auto Play"
+    },
     "explore": {
       "name": "Explore"
     },
@@ -139,7 +142,7 @@
   "pages": {
     "explore": {
       "allDefaultName": "All Metrics Mix",
-      "allDescription": "Blend your recent plays and favourites for a balanced playlist.",
+      "allDescription": "Blend your recent plays and favorites for a balanced playlist.",
       "allTitle": "Generate from all metrics",
       "customDefaultName": "Custom Mix",
       "customNoSeeds": "Try selecting different songs and generate again.",
@@ -164,7 +167,7 @@
       "playlistsEmpty": "You do not have any playlists yet. Create one to see it here.",
       "playlistsError": "We could not load playlists right now. Try again later.",
       "recentDefaultName": "Recent Mix",
-      "recentDescription": "Build a personalised mix using the tracks you have been enjoying lately.",
+      "recentDescription": "Build a personalized mix using the tracks you have been enjoying lately.",
       "recentTitle": "Generate from recent listens",
       "recommendationTitle": "Preview: %{name}",
       "recommendationWarning": "Note: %{warning}",
@@ -185,8 +188,67 @@
       "excludePlaylistsPlaceholder": "No playlists selected",
       "settings": {
         "lowRatingPenalty": "Low-rating repulsion",
-        "lowRatingPenaltyHelper": "Higher values push 1\u2605 and 2\u2605 songs\u2014and their neighbours\u2014further away.",
+        "lowRatingPenaltyHelper": "Higher values push reduce likelihood of 1 starred and 2 starred songs being included",
         "lowRatingPenaltyError": "Keep the penalty between 30% and 100%."
+      }
+    },
+    "autoplay": {
+      "title": "Auto Play",
+      "mixTab": "Mix",
+      "settingsTab": "Settings",
+      "modes": {
+        "recent": "Recent listens",
+        "favorites": "Liked songs",
+        "all": "Holistic mix",
+        "discovery": "Discovery",
+        "text": "Text prompt",
+        "custom": "Specific song"
+      },
+      "controls": {
+        "title": "Build your next queue",
+        "modeLabel": "Listening mode",
+        "batchLabel": "Tracks per fetch",
+        "manageExclusions": "Manage exclusions",
+        "textPromptLabel": "Text prompt",
+        "seedSearchLabel": "Seed song",
+        "textPromptPlaceholder": "Describe the style you want to hear",
+        "seedSearchPlaceholder": "Search songs to seed",
+        "fetching": "Building...",
+        "start": "Start Auto Play",
+        "more": "Add more",
+        "resetFeedback": "Reset feedback"
+      },
+      "queue": {
+        "title": "Upcoming queue",
+        "empty": "Start Auto Play to fill your listening queue."
+      },
+      "feedback": {
+        "prompt": "Did you like this song?",
+        "like": "Thumbs up",
+        "dislike": "Thumbs down"
+      },
+      "notifications": {
+        "needText": "Enter a text prompt before generating this mix.",
+        "noSeeds": "We need more signals to build this mix. Try a different mode.",
+        "needSeed": "Select a song to seed this mix.",
+        "noNew": "No new songs were generated. Adjust your filters or try again."
+      },
+      "settings": {
+        "title": "Auto Play settings",
+        "helper": "Choose your default Auto Play behavior. You can override these on the Mix tab.",
+        "modeLabel": "Default mode",
+        "batchLabel": "Batch size",
+        "batchHelper": "How many tracks to request at once.",
+        "diversityLabel": "Diversity override",
+        "diversityHelper": "Optional value between 0 and 1. Leave blank to follow mix defaults.",
+        "textPromptLabel": "Default text prompt",
+        "textPromptHelper": "Used when the Text mode is selected on the Mix tab.",
+        "excludePlaylistsLabel": "Exclude playlists",
+        "saving": "Saving...",
+        "save": "Save settings",
+        "reset": "Reset changes",
+        "saved": "Auto Play settings updated.",
+        "serverError": "Unable to save settings right now."
       }
     }
   },
@@ -407,7 +469,7 @@
         "random": "Random",
         "recentlyAdded": "Recently Added",
         "recentlyPlayed": "Recently Played",
-        "starred": "Favourites",
+        "starred": "Favorites",
         "topRated": "Top Rated"
       },
       "name": "Album |||| Albums"
@@ -632,7 +694,7 @@
         "rawTags": "Raw tags",
         "sampleRate": "Sample rate",
         "size": "File size",
-        "starred": "Favourite",
+        "starred": "Favorite",
         "tags": "Additional Tags",
         "title": "Title",
         "trackNumber": "#",
@@ -705,7 +767,7 @@
     },
     "progress": {
       "calculating": "Calculating...",
-      "detail": "%{loaded} / %{total} MB \u2022 %{speed} \u2022 %{eta}",
+      "detail": "%{loaded} / %{total} MB | %{speed} | %{eta}",
       "eta": "~%{time} remaining",
       "speed": "%{value} MB/s",
       "uploading": "Uploading %{name}"

@@ -215,9 +215,11 @@ const wrapperDataProvider = {
     }))
   },
   getRecentRecommendations: (options) => postRecommendation('recent', options),
-  getFavoriteRecommendations: (options) => postRecommendation('favorites', options),
+  getFavoriteRecommendations: (options) =>
+    postRecommendation('favorites', options),
   getAllRecommendations: (options) => postRecommendation('all', options),
-  getDiscoveryRecommendations: (options) => postRecommendation('discovery', options),
+  getDiscoveryRecommendations: (options) =>
+    postRecommendation('discovery', options),
   getCustomRecommendations: (options) => postRecommendation('custom', options),
   getRecommendationSettings: () =>
     httpClient(`${REST_URL}/recommendations/settings`).then(({ json }) => ({
@@ -225,6 +227,16 @@ const wrapperDataProvider = {
     })),
   updateRecommendationSettings: (data) =>
     httpClient(`${REST_URL}/recommendations/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).then(({ json }) => ({ data: json })),
+  getAutoPlaySettings: () =>
+    httpClient(`${REST_URL}/autoplay/settings`).then(({ json }) => ({
+      data: json,
+    })),
+  updateAutoPlaySettings: (data) =>
+    httpClient(`${REST_URL}/autoplay/settings`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
