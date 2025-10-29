@@ -13,11 +13,13 @@ class RecordingSearcher:
         self.duplicates = duplicates or []
 
     def identify_duplicates(self, embedding_payload, threshold, *, top_k=None):
-        self.calls.append({
-            "payload": embedding_payload,
-            "threshold": threshold,
-            "top_k": top_k,
-        })
+        self.calls.append(
+            {
+                "payload": embedding_payload,
+                "threshold": threshold,
+                "top_k": top_k,
+            }
+        )
         return list(self.duplicates)
 
 
@@ -33,11 +35,13 @@ class DummyRenamer:
         DummyRenamer.instances.append(self)
 
     def rename_segments(self, name, prompt, metadata):
-        self.calls.append({
-            "name": name,
-            "prompt": prompt,
-            "metadata": metadata,
-        })
+        self.calls.append(
+            {
+                "name": name,
+                "prompt": prompt,
+                "metadata": metadata,
+            }
+        )
         return f"renamed-{name}"
 
 

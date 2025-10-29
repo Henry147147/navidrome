@@ -50,10 +50,12 @@ def test_similarity_searcher_requests_expected_fields(logger: logging.Logger):
 
 
 def test_find_similar_applies_filters_and_returns_hits(logger: logging.Logger):
-    hits = [[
-        {"name": "Track A", "distance": 0.9},
-        {"name": "Track B", "distance": 0.7},
-    ]]
+    hits = [
+        [
+            {"name": "Track A", "distance": 0.9},
+            {"name": "Track B", "distance": 0.7},
+        ]
+    ]
     client = StubMilvusClient(search_result=hits)
     searcher = MilvusSimilaritySearcher(client=client, logger=logger)
 
@@ -71,10 +73,12 @@ def test_find_similar_applies_filters_and_returns_hits(logger: logging.Logger):
 
 
 def test_identify_duplicates_respects_threshold(logger: logging.Logger):
-    hits = [[
-        {"name": "Duplicate", "distance": 0.95},
-        {"name": "Below", "distance": 0.5},
-    ]]
+    hits = [
+        [
+            {"name": "Duplicate", "distance": 0.95},
+            {"name": "Below", "distance": 0.5},
+        ]
+    ]
     client = StubMilvusClient(search_result=hits)
     searcher = MilvusSimilaritySearcher(client=client, logger=logger)
 

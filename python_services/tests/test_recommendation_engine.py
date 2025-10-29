@@ -29,11 +29,13 @@ class RecordingSimilaritySearcher:
         return payload
 
     def search_similar_embeddings(self, embedding, *, top_k, exclude_names):
-        self.search_calls.append({
-            "embedding": list(embedding),
-            "top_k": top_k,
-            "exclude": set(exclude_names),
-        })
+        self.search_calls.append(
+            {
+                "embedding": list(embedding),
+                "top_k": top_k,
+                "exclude": set(exclude_names),
+            }
+        )
         return list(self.hit_map.get("Track One", []))
 
 
@@ -42,7 +44,11 @@ class SimpleResolver(TrackNameResolver):
         self.mapping = mapping
 
     def ids_to_names(self, track_ids):
-        return {track_id: self.mapping.get(track_id, "") for track_id in track_ids if track_id in self.mapping}
+        return {
+            track_id: self.mapping.get(track_id, "")
+            for track_id in track_ids
+            if track_id in self.mapping
+        }
 
     def name_to_id(self, name: str):
         for track_id, mapped in self.mapping.items():
@@ -57,9 +63,12 @@ def logger() -> logging.Logger:
 
 
 def _make_request(**kwargs):
-    seeds = kwargs.pop("seeds", [
-        RecommendationSeed(track_id="1", weight=1.0, source="seed"),
-    ])
+    seeds = kwargs.pop(
+        "seeds",
+        [
+            RecommendationSeed(track_id="1", weight=1.0, source="seed"),
+        ],
+    )
     return RecommendationRequest(
         user_id="user",
         user_name="User",
@@ -100,9 +109,14 @@ def test_recommendation_handles_missing_embeddings(logger):
 def test_recommendation_falls_back_to_seed_order(logger):
     searcher = RecordingSimilaritySearcher(hit_map={"Track One": []})
     resolver = SimpleResolver({"1": "Track One"})
-    engine = RecommendationEngine(searcher=searcher, name_resolver=resolver, debug_logging=True)
+    engine = RecommendationEngine(
+        searcher=searcher, name_resolver=resolver, debug_logging=True
+    )
 
     response = engine.recommend(_make_request())
 
     assert response.track_ids == []
-    assert any("Similarity search did not yield any candidates" in msg for msg in response.warnings)
+    assert any(
+        "Similarity search did not yield any candidates" in msg
+        for msg in response.warnings
+    )

@@ -14,6 +14,7 @@ from threading import Event, Lock, Thread
 from typing import Any, Generator, List, Optional, Sequence
 import librosa
 
+
 import numpy as np
 import torch
 import torchaudio
@@ -140,11 +141,7 @@ class BaseEmbeddingModel(ABC):
         """
         del model
 
-    def prepare_music(
-        self,
-        music_file: str,
-        music_name: str
-    ) -> List[TrackSegment]:
+    def prepare_music(self, music_file: str, music_name: str) -> List[TrackSegment]:
         """
         Prepare track segments that should be embedded for the provided music file.
 
@@ -281,7 +278,7 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
             enable_dynamic_field=False,
         )
         schema.add_field("name", DataType.VARCHAR, is_primary=True, max_length=512)
-        schema.add_field("embedding", DataType.FLOAT_VECTOR, dim=512)
+        schema.add_field("embedding", DataType.FLOAT_VECTOR, dim=1536)
         schema.add_field("offset", DataType.FLOAT)
         schema.add_field("model_id", DataType.VARCHAR, max_length=256)
         client.create_collection("embedding", schema=schema)
@@ -357,9 +354,10 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
             outputs = model(wavs=chunk_tensor)
 
         outputs = torch.nn.functional.normalize(outputs, dim=1)
-        centroid = torch.nn.functional.normalize(outputs.mean(dim=0), dim=0)
 
-        centroid_cpu = centroid.detach().to("cpu", dtype=self.storage_dtype)
+        enriched = enrich_embedding(outputs.T)
+
+        enriched_cpu = enriched.to("cpu", dtype=self.storage_dtype)
 
         computed_duration: Optional[float]
         if duration is not None:
@@ -372,7 +370,7 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
             title=track_segment.title,
             offset_seconds=offset,
             duration_seconds=computed_duration,
-            embedding=centroid_cpu.tolist(),
+            embedding=enriched_cpu.tolist(),
         )
 
     def _load_audio_segment(
@@ -446,8 +444,6 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         offset: float,
         duration: Optional[float],
     ) -> np.ndarray:
-        import librosa  # local import to avoid heavy dependency at module import
-
         safe_offset = max(float(offset), 0.0)
         safe_duration = None if duration is None else max(float(duration), 0.0)
         audio, _ = librosa.load(
@@ -462,10 +458,45 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         return audio.astype(np.float32, copy=False)
 
 
+class ClapMusicModel(MuQEmbeddingModel):
+    def __init__(
+        self,
+        *,
+        model_id: str = "laion/larger_clap_music_and_speech",
+        device: str = "cuda",
+        storage_dtype: torch.dtype = torch.float32,
+        sample_rate: int = 48_000,
+        window_seconds: int = 120,
+        hop_seconds: int = 15,
+        timeout_seconds: int = 360,
+        logger: Optional[logging.Logger] = None,
+    ) -> None:
+        super().__init__(
+            model_id=model_id,
+            device=device,
+            storage_dtype=storage_dtype,
+            sample_rate=sample_rate,
+            window_seconds=window_seconds,
+            hop_seconds=hop_seconds,
+            timeout_seconds=timeout_seconds,
+            logger=logger,
+        )
+        self.model_id = model_id
+        self.device = device
+        self.storage_dtype = storage_dtype
+        self.sample_rate = sample_rate
+        self.window_seconds = window_seconds
+        self.hop_seconds = hop_seconds
+
+    def _load_model(self):
+        # TODO change this and text embeding
+        return super()._load_model()
+
+
 class MusicLatentSpaceModel(BaseEmbeddingModel):
     """
     Embedding model that wraps the Music2Latent EncoderDecoder for audio embeddings.
-    Produces 64-dimensional latent space embeddings by averaging over time.
+    Produces 576-dimensional enriched embeddings.
     """
 
     def __init__(
@@ -516,7 +547,6 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
                     music_file=music_file,
                     track_segment=segment,
                 )
-                return prepared
                 if prepared is not None:
                     payload_segments.append(prepared)
 
@@ -536,7 +566,7 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
         # Music2Latent does not support text embedding natively.
         # Return zero vector as placeholder
         self.logger.warning("embed_string not supported by MusicLatentSpaceModel")
-        return [0.0] * 64
+        return [0.0] * 576
 
     def ensure_milvus_schemas(self, client: MilvusClient) -> None:
         existing = client.list_collections()
@@ -548,7 +578,7 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
             enable_dynamic_field=False,
         )
         schema.add_field("name", DataType.VARCHAR, is_primary=True, max_length=512)
-        schema.add_field("embedding", DataType.FLOAT_VECTOR, dim=64)
+        schema.add_field("embedding", DataType.FLOAT_VECTOR, dim=576)
         schema.add_field("offset", DataType.FLOAT)
         schema.add_field("model_id", DataType.VARCHAR, max_length=256)
         client.create_collection("latent_embedding", schema=schema)
@@ -591,7 +621,7 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
             return None
 
         latent = model.encode(music_file, max_waveform_length=self.max_waveform_length)
-        latent_with_mag = add_magnitude_channels(latent)        
+        latent_with_mag = add_magnitude_channels(latent)
         enriched = enrich_embedding(latent_with_mag)
 
         computed_duration: Optional[float]
@@ -605,7 +635,7 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
             title=track_segment.title,
             offset_seconds=offset,
             duration_seconds=computed_duration,
-            embedding=enriched,
+            embedding=enriched.tolist(),
         )
 
     def _load_audio_segment(
@@ -632,39 +662,42 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
 _IQR_TO_SIGMA = 1.3489795003921634  # sigma ≈ IQR / 1.34898
 import torch.nn.functional as F
 
-def to_R128(x):  # x: [2,64,T] -> [128,T]
-    return x.permute(1,0,2).reshape(128, x.size(-1))
 
-def add_magnitude_channels(x):   # x: [2,64,T]
-    """The latent space is contstructed of [2, 64, T], 
-    where x[0] represents the real and x[1] represents the imaginary, 
+def to_R128(x):  # x: [2,64,T] -> [128,T]
+    return x.permute(1, 0, 2).reshape(128, x.size(-1))
+
+
+def add_magnitude_channels(x):  # x: [2,64,T]
+    """The latent space is contstructed of [2, 64, T],
+    where x[0] represents the real and x[1] represents the imaginary,
     need to have it in 2D, but there are consequences of concatting the im with real"""
-    re, im = x[0], x[1]          # [64,T]
+    re, im = x[0], x[1]  # [64,T]
     mag = torch.sqrt(re**2 + im**2 + 1e-12)  # [64,T]
     # Return either just [R,I] (128) or concat [R,I,|z|] (192)
     return torch.cat([to_R128(x), mag], dim=0)  # [192,T]
 
+
 def enrich_embedding(embedding: torch.Tensor) -> torch.Tensor:
     """
     embedding: [D, T] float tensor
-    returns: [6*D] L2-normalized vector
-      [mean, std, robust_sigma_iqr, dmean, dstd, d_robust_sigma_iqr]
+    returns: [3*D] L2-normalized vector
+      [mean, robust_sigma_iqr, dmean]
     """
     assert embedding.dim() == 2, "Expected [D, T]"
     D, T = embedding.shape
     x = embedding.to("cuda").to(torch.float32)
 
     # per-dimension mean and std over time
-    mean = x.mean(dim=-1)                                  # [D]
+    mean = x.mean(dim=-1)  # [D]
 
     # robust spread via IQR
-    q25 = torch.quantile(x, 0.25, dim=-1)                  # [D]
-    q75 = torch.quantile(x, 0.75, dim=-1)                  # [D]
-    robust = (q75 - q25) / _IQR_TO_SIGMA                   # [D]
+    q25 = torch.quantile(x, 0.25, dim=-1)  # [D]
+    q75 = torch.quantile(x, 0.75, dim=-1)  # [D]
+    robust = (q75 - q25) / _IQR_TO_SIGMA  # [D]
 
     # first differences over time (descreit d/dx)
     if T >= 2:
-        dx = x[:, 1:] - x[:, :-1]                          # [D, T-1]
+        dx = x[:, 1:] - x[:, :-1]  # [D, T-1]
         dmean = dx.mean(dim=-1)
     else:
         dmean = torch.zeros(D, device=x.device, dtype=x.dtype)
