@@ -86,7 +86,7 @@ class BaseEmbeddingModel(ABC):
                 self._model = None
         self._empty_cuda_cache()
 
-    def ensure_model_loaded(self) -> torch.nn.Module:
+    def ensure_model_loaded(self) -> Any:
         """
         Load the model into memory if it is not already available.
         """
@@ -130,7 +130,7 @@ class BaseEmbeddingModel(ABC):
             pass
 
     @abstractmethod
-    def _load_model(self) -> torch.nn.Module:
+    def _load_model(self) -> Any:
         """
         Subclasses must implement model construction/loading.
         """
@@ -159,8 +159,7 @@ class BaseEmbeddingModel(ABC):
     def embed_music(
         self,
         music_file: str,
-        music_name: str,
-        cue_file: Optional[str] = None,
+        music_name: str
     ) -> dict:
         """
         Generate embeddings for the provided music file.
@@ -231,10 +230,9 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
     def embed_music(
         self,
         music_file: str,
-        music_name: str,
-        cue_file: Optional[str] = None,
+        music_name: str
     ) -> dict:
-        segments = self.prepare_music(music_file, music_name, cue_file)
+        segments = self.prepare_music(music_file, music_name)
         if not segments:
             raise RuntimeError("No segments available for embedding.")
 
@@ -254,7 +252,6 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
 
         return {
             "music_file": str(Path(music_file)),
-            "cue_file": cue_file if cue_file else None,
             "model_id": self.model_id,
             "sample_rate": self.sample_rate,
             "window_seconds": self.window_seconds,
@@ -532,10 +529,9 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
     def embed_music(
         self,
         music_file: str,
-        music_name: str,
-        cue_file: Optional[str] = None,
+        music_name: str
     ) -> dict:
-        segments = self.prepare_music(music_file, music_name, cue_file)
+        segments = self.prepare_music(music_file, music_name)
         if not segments:
             raise RuntimeError("No segments available for embedding.")
 
@@ -555,7 +551,6 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
 
         return {
             "music_file": str(Path(music_file)),
-            "cue_file": cue_file if cue_file else None,
             "model_id": "Music2Latent_EncoderDecoder",
             "sample_rate": self.sample_rate,
             "generated_at": datetime.now(UTC).isoformat(),
