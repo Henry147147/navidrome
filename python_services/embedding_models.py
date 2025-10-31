@@ -13,7 +13,7 @@ from pathlib import Path
 from threading import Event, Lock, Thread
 from typing import Any, Generator, List, Optional, Sequence
 import librosa
-
+import torchaudio.transforms as T
 
 import numpy as np
 import torch
@@ -24,6 +24,8 @@ from models import TrackSegment
 
 from muq import MuQMuLan
 from music2latent import EncoderDecoder
+from transformers import Wav2Vec2FeatureExtractor
+from transformers import AutoModel
 
 LOGGER = logging.getLogger("navidrome.embedding_models")
 
@@ -455,11 +457,11 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         return audio.astype(np.float32, copy=False)
 
 
-class ClapMusicModel(MuQEmbeddingModel):
+class MertModel(MuQEmbeddingModel):
     def __init__(
         self,
         *,
-        model_id: str = "laion/larger_clap_music_and_speech",
+        model_id: str = "m-a-p/MERT-v1-330M",
         device: str = "cuda",
         storage_dtype: torch.dtype = torch.float32,
         sample_rate: int = 48_000,
@@ -486,8 +488,10 @@ class ClapMusicModel(MuQEmbeddingModel):
         self.hop_seconds = hop_seconds
 
     def _load_model(self):
-        # TODO change this and text embeding
-        return super()._load_model()
+        model = AutoModel.from_pretrained("m-a-p/MERT-v1-330M", trust_remote_code=True)
+        processor = Wav2Vec2FeatureExtractor.from_pretrained("m-a-p/MERT-v1-330M",trust_remote_code=True)
+        self.sample_rate = processor.sampling_rate
+        return model
 
 
 class MusicLatentSpaceModel(BaseEmbeddingModel):

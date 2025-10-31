@@ -11,3 +11,4 @@ cueparser>=1.4.0
 muq>=0.4.0
 music2latent>=0.1.7
 matplotlib
+transformers
