@@ -33,3 +33,6 @@ AGENTS.md
 *.exe
 *.test
 *.wasm
+__pycache__
+python_services/data
+python_services/data_aug2

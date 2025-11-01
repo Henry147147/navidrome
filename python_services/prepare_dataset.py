@@ -22,7 +22,7 @@ from dataclasses import dataclass
 import h5py
 import numpy as np
 import torch
-import torchaudio
+import soundfile as sf
 from datasets import load_dataset
 from tqdm import tqdm
 
@@ -72,15 +72,15 @@ class AudioEmbeddingExtractor:
 
         # Initialize MuQ model
         logger.info("Loading MuQ-MuLan model...")
-        self.muq_model = MuQEmbeddingModel(device=device, dtype=dtype)
+        self.muq_model = MuQEmbeddingModel(device=device)
 
         # Initialize MERT model
         logger.info("Loading MERT-v1-330M model...")
-        self.mert_model = MertModel(device=device, dtype=dtype)
+        self.mert_model = MertModel(device=device)
 
         # Initialize Music2Latent model
         logger.info("Loading Music2Latent model...")
-        self.latent_model = MusicLatentSpaceModel(device=device, dtype=dtype)
+        self.latent_model = MusicLatentSpaceModel(device=device)
 
         logger.info("All models loaded successfully!")
 
@@ -95,8 +95,21 @@ class AudioEmbeddingExtractor:
             Dictionary with embeddings or None if processing fails
         """
         try:
-            # Load audio file
-            waveform, sample_rate = torchaudio.load(audio_path)
+            # Check if file exists
+            if not os.path.exists(audio_path):
+                logger.warning(f"Audio file not found: {audio_path}")
+                return None
+
+            # Load audio file using soundfile
+            audio_data, sample_rate = sf.read(audio_path, dtype='float32')
+
+            # Convert to torch tensor and ensure correct shape [channels, samples]
+            if len(audio_data.shape) == 1:
+                # Mono audio
+                waveform = torch.from_numpy(audio_data).unsqueeze(0)
+            else:
+                # Stereo or multi-channel: transpose from [samples, channels] to [channels, samples]
+                waveform = torch.from_numpy(audio_data.T)
 
             # Convert to mono if stereo
             if waveform.shape[0] > 1:
@@ -108,7 +121,10 @@ class AudioEmbeddingExtractor:
 
             # Extract MuQ embedding (1536D after enrichment)
             try:
-                muq_emb = self.muq_model.embed_audio(waveform, sample_rate)
+                # Get raw embeddings without enrichment
+                muq_emb = self.muq_model.embed_audio_tensor(
+                    waveform, sample_rate, apply_enrichment=False
+                )
                 if muq_emb is not None and len(muq_emb.shape) == 2:
                     # Apply enrichment
                     muq_enriched = enrich_embedding(muq_emb)
@@ -122,7 +138,10 @@ class AudioEmbeddingExtractor:
 
             # Extract MERT embedding (76,800D after enrichment)
             try:
-                mert_emb = self.mert_model.embed_audio(waveform, sample_rate)
+                # Get raw embeddings without enrichment
+                mert_emb = self.mert_model.embed_audio_tensor(
+                    waveform, sample_rate, apply_enrichment=False
+                )
                 if mert_emb is not None and len(mert_emb.shape) == 2:
                     # Apply enrichment
                     mert_enriched = enrich_embedding(mert_emb)
@@ -136,7 +155,10 @@ class AudioEmbeddingExtractor:
 
             # Extract Music2Latent embedding (576D after enrichment)
             try:
-                latent_emb = self.latent_model.embed_audio(waveform, sample_rate)
+                # Get raw embeddings without enrichment
+                latent_emb = self.latent_model.embed_audio_tensor(
+                    waveform, sample_rate, apply_enrichment=False
+                )
                 if latent_emb is not None and len(latent_emb.shape) == 2:
                     # Apply enrichment
                     latent_enriched = enrich_embedding(latent_emb)
@@ -176,6 +198,31 @@ class MusicBenchProcessor:
 
         logger.info(f"Original train samples: {len(dataset['train'])}")
         logger.info(f"Test samples: {len(dataset['test'])}")
+
+        # Validate that audio files exist
+        logger.info("Validating audio file availability...")
+        sample = dataset['train'][0]
+        audio_path = sample['location']
+
+        if not os.path.exists(audio_path):
+            logger.error("=" * 80)
+            logger.error("AUDIO FILES NOT FOUND")
+            logger.error("=" * 80)
+            logger.error(f"Expected audio file at: {audio_path}")
+            logger.error("")
+            logger.error("The MusicBench dataset contains only metadata.")
+            logger.error("Audio files must be downloaded separately.")
+            logger.error("")
+            logger.error("Please download the MusicBench audio files and ensure they are")
+            logger.error("placed in the correct directory structure matching the 'location'")
+            logger.error("field in the dataset.")
+            logger.error("=" * 80)
+            raise FileNotFoundError(
+                f"Audio files not found. Please download MusicBench audio files. "
+                f"Expected first file at: {audio_path}"
+            )
+
+        logger.info("Audio files found! Proceeding with dataset preparation...")
 
         # Split training data into train/val
         train_val_split = dataset['train'].train_test_split(
@@ -261,29 +308,7 @@ class MusicBenchProcessor:
         idx = 0
         for sample_idx, sample in enumerate(tqdm(split_data, desc=f"Processing {split_name}")):
             # Get audio path (MusicBench provides 'location' or 'audio' field)
-            audio_info = sample.get('audio', {})
-
-            # Handle different possible audio formats
-            if isinstance(audio_info, dict) and 'path' in audio_info:
-                audio_path = audio_info['path']
-            elif isinstance(audio_info, dict) and 'array' in audio_info:
-                # Audio is provided as array, need to save temporarily
-                audio_array = audio_info['array']
-                sample_rate = audio_info.get('sampling_rate', 44100)
-
-                # Create temp file
-                temp_path = f"/tmp/musicbench_temp_{sample_idx}.wav"
-                waveform_tensor = torch.tensor(audio_array, dtype=torch.float32)
-                if len(waveform_tensor.shape) == 1:
-                    waveform_tensor = waveform_tensor.unsqueeze(0)
-                torchaudio.save(temp_path, waveform_tensor, sample_rate)
-                audio_path = temp_path
-            else:
-                logger.warning(f"Cannot extract audio path for sample {sample_idx}")
-                failed += 1
-                failed_ids.append(sample.get('id', f'unknown_{sample_idx}'))
-                continue
-
+            audio_path = sample['location']
             # Extract embeddings
             embeddings = self.extractor.extract_embeddings(audio_path)
 

@@ -254,6 +254,80 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
             "segments": [segment.__dict__ for segment in payload_segments],
         }
 
+    def embed_audio_tensor(
+        self,
+        waveform: torch.Tensor,
+        sample_rate: int,
+        apply_enrichment: bool = True,
+    ) -> torch.Tensor:
+        """
+        Embed audio from an in-memory waveform tensor.
+
+        Args:
+            waveform: Audio tensor of shape [channels, samples] or [samples]
+            sample_rate: Sample rate of the waveform
+            apply_enrichment: If True, apply enrichment to get [3*D] output.
+                            If False, return raw [D, T] embeddings.
+
+        Returns:
+            If apply_enrichment=True: [3*D] enriched embedding tensor
+            If apply_enrichment=False: [D, T] raw embedding tensor
+        """
+        # Ensure mono audio
+        if waveform.dim() > 1 and waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0)
+        else:
+            waveform = waveform.squeeze(0) if waveform.dim() > 1 else waveform
+
+        # Resample if necessary
+        if sample_rate != self.sample_rate:
+            waveform = torchaudio.functional.resample(
+                waveform, sample_rate, self.sample_rate
+            )
+
+        # Convert to numpy for chunking
+        audio = waveform.contiguous().cpu().numpy()
+
+        # Chunk the audio (same logic as _embed_single_segment)
+        chunk_size = int(self.window_seconds * self.sample_rate)
+        hop_size = int(self.hop_seconds * self.sample_rate)
+        total_samples = audio.shape[0]
+        starts = list(range(0, max(total_samples - chunk_size, 0) + 1, hop_size))
+        if not starts or (starts[-1] + chunk_size < total_samples):
+            starts.append(max(total_samples - chunk_size, 0))
+
+        chunk_arrays = []
+        for start_sample in starts:
+            end_sample = min(start_sample + chunk_size, total_samples)
+            chunk = audio[start_sample:end_sample]
+            observed = int(chunk.shape[0])
+            if observed == 0:
+                continue
+            if observed < chunk_size:
+                chunk = np.pad(chunk, (0, chunk_size - observed))
+            chunk_arrays.append(chunk.astype("float32", copy=False))
+
+        if not chunk_arrays:
+            raise RuntimeError("No audio chunks produced")
+
+        chunk_matrix = np.stack(chunk_arrays, axis=0)
+        chunk_tensor = (
+            torch.from_numpy(chunk_matrix).to(self.device).to(self.storage_dtype)
+        )
+
+        # Run inference
+        with self.model_session() as model:
+            with torch.inference_mode():
+                outputs = model(wavs=chunk_tensor)
+
+        # outputs.T is shape [D, T] where T is number of chunks
+        raw_embedding = outputs.T
+
+        if apply_enrichment:
+            return enrich_embedding(raw_embedding)
+        else:
+            return raw_embedding
+
     def embed_string(self, value: str) -> Sequence[float]:
         with self.model_session() as model:
             text_embeds = model(texts=value)
@@ -650,6 +724,104 @@ class MertModel(BaseEmbeddingModel):
             "segments": [segment.__dict__ for segment in payload_segments],
         }
 
+    def embed_audio_tensor(
+        self,
+        waveform: torch.Tensor,
+        sample_rate: int,
+        apply_enrichment: bool = True,
+    ) -> torch.Tensor:
+        """
+        Embed audio from an in-memory waveform tensor.
+
+        Args:
+            waveform: Audio tensor of shape [channels, samples] or [samples]
+            sample_rate: Sample rate of the waveform
+            apply_enrichment: If True, apply enrichment to get [3*D] output.
+                            If False, return raw [D, T] embeddings.
+
+        Returns:
+            If apply_enrichment=True: [76800] enriched embedding tensor
+            If apply_enrichment=False: [25600, T] raw embedding tensor
+        """
+        # Ensure mono audio
+        if waveform.dim() > 1 and waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0)
+        else:
+            waveform = waveform.squeeze(0) if waveform.dim() > 1 else waveform
+
+        # Resample if necessary
+        if sample_rate != self.sample_rate:
+            waveform = torchaudio.functional.resample(
+                waveform, sample_rate, self.sample_rate
+            )
+
+        # Convert to numpy for processing
+        audio = waveform.contiguous().cpu().numpy()
+
+        # Chunk the audio
+        chunk_size = int(self.chunk_duration_seconds * self.sample_rate)
+        hop_size = int(self.hop_duration_seconds * self.sample_rate)
+        total_samples = audio.shape[0]
+
+        starts = list(range(0, max(total_samples - chunk_size, 0) + 1, hop_size))
+        if not starts or (starts[-1] + chunk_size < total_samples):
+            starts.append(max(total_samples - chunk_size, 0))
+
+        with self.model_session() as model:
+            chunk_embeddings = []
+            for start_sample in starts:
+                end_sample = min(start_sample + chunk_size, total_samples)
+                chunk = audio[start_sample:end_sample]
+                observed = int(chunk.shape[0])
+                if observed == 0:
+                    continue
+
+                # Pad if necessary
+                if observed < chunk_size:
+                    chunk = np.pad(chunk, (0, chunk_size - observed))
+
+                # Preprocess with MERT processor
+                inputs = self.processor(
+                    chunk.astype("float32"),
+                    sampling_rate=self.sample_rate,
+                    return_tensors="pt",
+                )
+
+                # Move inputs to device
+                inputs = {
+                    k: v.to(self.device).to(self.storage_dtype) for k, v in inputs.items()
+                }
+
+                # Get model outputs with hidden states
+                with torch.inference_mode():
+                    outputs = model(**inputs, output_hidden_states=True)
+
+                # Extract all 25 hidden state layers
+                all_layer_hidden_states = torch.stack(outputs.hidden_states).squeeze()
+                # Shape: [25, time_steps, 1024]
+
+                # Time-reduce (mean over time dimension)
+                time_reduced = all_layer_hidden_states.mean(dim=1)  # [25, 1024]
+
+                # Concatenate all layers
+                concatenated = time_reduced.reshape(-1)  # [25600]
+
+                chunk_embeddings.append(concatenated)
+
+            if not chunk_embeddings:
+                raise RuntimeError("No audio chunks produced")
+
+            # Stack all chunk embeddings
+            chunk_matrix = torch.stack(chunk_embeddings, dim=0)  # [num_chunks, 25600]
+
+            # Apply enrichment if requested (expects [D, T] format)
+            embeddings_transposed = chunk_matrix.T  # [25600, num_chunks]
+
+            if apply_enrichment:
+                return enrich_embedding(embeddings_transposed)  # [76800]
+            else:
+                return embeddings_transposed  # [25600, num_chunks]
+
     def embed_string(self, value: str) -> Sequence[float]:
         """
         MERT does not support text embedding natively.
@@ -754,6 +926,78 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
             "generated_at": datetime.now(UTC).isoformat(),
             "segments": [segment.__dict__ for segment in payload_segments],
         }
+
+    def embed_audio_tensor(
+        self,
+        waveform: torch.Tensor,
+        sample_rate: int,
+        apply_enrichment: bool = True,
+    ) -> torch.Tensor:
+        """
+        Embed audio from an in-memory waveform tensor.
+
+        Args:
+            waveform: Audio tensor of shape [channels, samples] or [samples]
+            sample_rate: Sample rate of the waveform
+            apply_enrichment: If True, apply enrichment to get [3*D] output.
+                            If False, return raw [D, T] embeddings.
+
+        Returns:
+            If apply_enrichment=True: [576] enriched embedding tensor
+            If apply_enrichment=False: [192, T] raw embedding tensor
+        """
+        import tempfile
+        import soundfile as sf
+
+        # Ensure mono audio
+        if waveform.dim() > 1 and waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0)
+        else:
+            waveform = waveform.squeeze(0) if waveform.dim() > 1 else waveform
+
+        # Resample if necessary
+        if sample_rate != self.sample_rate:
+            waveform = torchaudio.functional.resample(
+                waveform, sample_rate, self.sample_rate
+            )
+
+        # Music2Latent's encode() expects a file path, so save to temp file
+        audio_np = waveform.contiguous().cpu().numpy()
+
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+            tmp_path = tmp_file.name
+            sf.write(tmp_path, audio_np, self.sample_rate)
+
+        try:
+            with self.model_session() as model:
+                # Encode the audio
+                latent = model.encode(tmp_path, max_waveform_length=self.max_waveform_length)
+                # latent may have shape [batch, channels, T] or [channels, T]
+                # Ensure it's [2, 64, T] by removing batch dim if present
+                if latent.dim() == 3 and latent.shape[0] == 1:
+                    latent = latent.squeeze(0)  # Remove batch dimension
+
+                # latent should now be shape: [2, 64, T] (but we're seeing [64, T])
+                # Check if we need to handle single-channel case
+                if latent.dim() == 2:
+                    # Model returned [64, T], we need to create [2, 64, T] structure
+                    # Treat it as real part only, with zero imaginary
+                    real = latent
+                    imag = torch.zeros_like(real)
+                    latent = torch.stack([real, imag], dim=0)  # [2, 64, T]
+
+                # Add magnitude channels
+                latent_with_mag = add_magnitude_channels(latent)  # [192, T]
+
+                if apply_enrichment:
+                    return enrich_embedding(latent_with_mag)  # [576]
+                else:
+                    return latent_with_mag  # [192, T]
+        finally:
+            # Clean up temp file
+            import os
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
     def embed_string(self, value: str) -> Sequence[float]:
         # Music2Latent does not support text embedding natively.
@@ -878,7 +1122,9 @@ def enrich_embedding(embedding: torch.Tensor) -> torch.Tensor:
     """
     assert embedding.dim() == 2, "Expected [D, T]"
     D, T = embedding.shape
-    x = embedding.to("cuda").to(torch.float32)
+    # Use the device of the input tensor instead of hardcoding CUDA
+    device = embedding.device
+    x = embedding.to(device).to(torch.float32)
 
     # per-dimension mean and std over time
     mean = x.mean(dim=-1)  # [D]
