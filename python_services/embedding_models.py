@@ -158,11 +158,7 @@ class BaseEmbeddingModel(ABC):
         ]
 
     @abstractmethod
-    def embed_music(
-        self,
-        music_file: str,
-        music_name: str
-    ) -> dict:
+    def embed_music(self, music_file: str, music_name: str) -> dict:
         """
         Generate embeddings for the provided music file.
         """
@@ -229,11 +225,7 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         model = model.to(self.device).to(self.storage_dtype).eval()
         return model
 
-    def embed_music(
-        self,
-        music_file: str,
-        music_name: str
-    ) -> dict:
+    def embed_music(self, music_file: str, music_name: str) -> dict:
         segments = self.prepare_music(music_file, music_name)
         if not segments:
             raise RuntimeError("No segments available for embedding.")
@@ -457,41 +449,249 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         return audio.astype(np.float32, copy=False)
 
 
-class MertModel(MuQEmbeddingModel):
+class MertModel(BaseEmbeddingModel):
+    """
+    Embedding model that wraps the MERT-v1-330M model for audio embeddings.
+    Produces 76,800-dimensional embeddings (25 layers × 1024 × 3 enrichment).
+    """
+
     def __init__(
         self,
         *,
         model_id: str = "m-a-p/MERT-v1-330M",
         device: str = "cuda",
         storage_dtype: torch.dtype = torch.float32,
-        sample_rate: int = 48_000,
-        window_seconds: int = 120,
-        hop_seconds: int = 15,
+        chunk_duration_seconds: float = 30.0,
+        hop_duration_seconds: float = 5.0,
         timeout_seconds: int = 360,
         logger: Optional[logging.Logger] = None,
     ) -> None:
-        super().__init__(
-            model_id=model_id,
-            device=device,
-            storage_dtype=storage_dtype,
-            sample_rate=sample_rate,
-            window_seconds=window_seconds,
-            hop_seconds=hop_seconds,
-            timeout_seconds=timeout_seconds,
-            logger=logger,
-        )
+        super().__init__(timeout_seconds=timeout_seconds, logger=logger)
         self.model_id = model_id
         self.device = device
         self.storage_dtype = storage_dtype
-        self.sample_rate = sample_rate
-        self.window_seconds = window_seconds
-        self.hop_seconds = hop_seconds
+        self.chunk_duration_seconds = chunk_duration_seconds
+        self.hop_duration_seconds = hop_duration_seconds
+        self.processor = None
+        self.sample_rate = 24_000  # MERT native sample rate
 
-    def _load_model(self):
-        model = AutoModel.from_pretrained("m-a-p/MERT-v1-330M", trust_remote_code=True)
-        processor = Wav2Vec2FeatureExtractor.from_pretrained("m-a-p/MERT-v1-330M",trust_remote_code=True)
+    def _load_model(self) -> torch.nn.Module:
+        """Load MERT model and processor."""
+        model = AutoModel.from_pretrained(self.model_id, trust_remote_code=True)
+        processor = Wav2Vec2FeatureExtractor.from_pretrained(
+            self.model_id, trust_remote_code=True
+        )
+
+        # Store processor for later use
+        self.processor = processor
         self.sample_rate = processor.sampling_rate
+
+        # Move model to device and set to eval mode
+        model = model.to(self.device).to(self.storage_dtype).eval()
         return model
+
+    def _embed_single_segment(
+        self,
+        *,
+        model: torch.nn.Module,
+        music_file: str,
+        track_segment: TrackSegment,
+    ) -> Optional[SegmentEmbedding]:
+        """Embed a single track segment using MERT model."""
+        offset = float(track_segment.start)
+        duration = track_segment.duration
+
+        # Load audio segment
+        audio = self._load_audio_segment(
+            music_file=music_file,
+            offset=offset,
+            duration=duration,
+        )
+        if audio.size == 0:
+            self.logger.warning(
+                "Segment %s produced empty audio buffer; skipping",
+                track_segment.index,
+            )
+            return None
+
+        # Split into chunks with overlap
+        chunk_size = int(self.chunk_duration_seconds * self.sample_rate)
+        hop_size = int(self.hop_duration_seconds * self.sample_rate)
+        total_samples = audio.shape[0]
+
+        # Generate chunk starting positions
+        starts = list(range(0, max(total_samples - chunk_size, 0) + 1, hop_size))
+        if not starts or (starts[-1] + chunk_size < total_samples):
+            starts.append(max(total_samples - chunk_size, 0))
+
+        chunk_embeddings = []
+        for start_sample in starts:
+            end_sample = min(start_sample + chunk_size, total_samples)
+            chunk = audio[start_sample:end_sample]
+            observed = int(chunk.shape[0])
+            if observed == 0:
+                continue
+
+            # Pad if necessary
+            if observed < chunk_size:
+                chunk = np.pad(chunk, (0, chunk_size - observed))
+
+            # Preprocess with MERT processor
+            inputs = self.processor(
+                chunk.astype("float32"),
+                sampling_rate=self.sample_rate,
+                return_tensors="pt",
+            )
+
+            # Move inputs to device
+            inputs = {
+                k: v.to(self.device).to(self.storage_dtype) for k, v in inputs.items()
+            }
+
+            # Get model outputs with hidden states
+            with torch.inference_mode():
+                outputs = model(**inputs, output_hidden_states=True)
+
+            # Extract all 25 hidden state layers
+            all_layer_hidden_states = torch.stack(outputs.hidden_states).squeeze()
+            # Shape: [25, time_steps, 1024]
+
+            # Time-reduce (mean over time dimension)
+            time_reduced = all_layer_hidden_states.mean(dim=1)  # [25, 1024]
+
+            # Concatenate all layers
+            concatenated = time_reduced.reshape(-1)  # [25600]
+
+            chunk_embeddings.append(concatenated)
+
+        if not chunk_embeddings:
+            self.logger.warning(
+                "No audio chunks produced for segment %s",
+                track_segment.index,
+            )
+            return None
+
+        # Stack all chunk embeddings
+        chunk_matrix = torch.stack(chunk_embeddings, dim=0)  # [num_chunks, 25600]
+
+        # Apply enrichment (expects [D, T] format)
+        embeddings_transposed = chunk_matrix.T  # [25600, num_chunks]
+        enriched = enrich_embedding(embeddings_transposed)  # [76800]
+
+        enriched_cpu = enriched.to("cpu", dtype=self.storage_dtype)
+
+        # Compute duration
+        computed_duration: Optional[float]
+        if duration is not None:
+            computed_duration = float(duration)
+        else:
+            computed_duration = total_samples / self.sample_rate
+
+        return SegmentEmbedding(
+            index=track_segment.index,
+            title=track_segment.title,
+            offset_seconds=offset,
+            duration_seconds=computed_duration,
+            embedding=enriched_cpu.tolist(),
+        )
+
+    def _load_audio_segment(
+        self,
+        *,
+        music_file: str,
+        offset: float,
+        duration: Optional[float],
+    ) -> np.ndarray:
+        """Load audio segment at MERT's sample rate."""
+        self.logger.debug(
+            "Loading audio segment from %s (offset=%s, duration=%s)",
+            music_file,
+            offset,
+            duration,
+        )
+        safe_offset = max(float(offset), 0.0)
+        safe_duration = None if duration is None else max(float(duration), 0.0)
+        audio, _ = librosa.load(
+            music_file,
+            sr=self.sample_rate,
+            mono=True,
+            offset=safe_offset,
+            duration=safe_duration,
+        )
+        if audio.size == 0:
+            return np.zeros(0, dtype=np.float32)
+        return audio.astype(np.float32, copy=False)
+
+    def embed_music(self, music_file: str, music_name: str) -> dict:
+        """Generate embeddings for the provided music file."""
+        segments = self.prepare_music(music_file, music_name)
+        if not segments:
+            raise RuntimeError("No segments available for embedding.")
+
+        with self.model_session() as model:
+            payload_segments: List[SegmentEmbedding] = []
+            for segment in segments:
+                prepared = self._embed_single_segment(
+                    model=model,
+                    music_file=music_file,
+                    track_segment=segment,
+                )
+                if prepared is not None:
+                    payload_segments.append(prepared)
+
+        if not payload_segments:
+            raise RuntimeError("Unable to generate embeddings for any segments.")
+
+        return {
+            "music_file": str(Path(music_file)),
+            "model_id": self.model_id,
+            "sample_rate": self.sample_rate,
+            "chunk_duration_seconds": self.chunk_duration_seconds,
+            "hop_duration_seconds": self.hop_duration_seconds,
+            "generated_at": datetime.now(UTC).isoformat(),
+            "segments": [segment.__dict__ for segment in payload_segments],
+        }
+
+    def embed_string(self, value: str) -> Sequence[float]:
+        """
+        MERT does not support text embedding natively.
+        Return zero vector as placeholder.
+        """
+        self.logger.warning("embed_string not supported by MertModel")
+        return [0.0] * 76_800
+
+    def ensure_milvus_schemas(self, client: MilvusClient) -> None:
+        """Create Milvus schema for MERT embeddings."""
+        existing = client.list_collections()
+        if "mert_embedding" in existing:
+            return
+
+        schema = MilvusClient.create_schema(
+            auto_id=False,
+            enable_dynamic_field=False,
+        )
+        schema.add_field("name", DataType.VARCHAR, is_primary=True, max_length=512)
+        schema.add_field("embedding", DataType.FLOAT_VECTOR, dim=76_800)
+        schema.add_field("offset", DataType.FLOAT)
+        schema.add_field("model_id", DataType.VARCHAR, max_length=256)
+        client.create_collection("mert_embedding", schema=schema)
+
+    def ensure_milvus_index(self, client: MilvusClient) -> None:
+        """Ensure Milvus indexes are created for MERT collection."""
+        indexes = client.describe_collection("mert_embedding").get("indexes", [])
+        index_fields = {index.get("field_name") for index in indexes}
+        if "embedding" in index_fields and "name" in index_fields:
+            return
+
+        index_params = MilvusClient.prepare_index_params()
+        index_params.add_index(field_name="name", index_type="INVERTED")
+        index_params.add_index(
+            field_name="embedding",
+            index_type="HNSW",
+            metric_type="COSINE",
+            params={"M": 50, "efConstruction": 250},
+        )
+        client.create_index("mert_embedding", index_params)
 
 
 class MusicLatentSpaceModel(BaseEmbeddingModel):
@@ -530,11 +730,7 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
         model = EncoderDecoder()
         return model
 
-    def embed_music(
-        self,
-        music_file: str,
-        music_name: str
-    ) -> dict:
+    def embed_music(self, music_file: str, music_name: str) -> dict:
         segments = self.prepare_music(music_file, music_name)
         if not segments:
             raise RuntimeError("No segments available for embedding.")
@@ -709,6 +905,7 @@ def enrich_embedding(embedding: torch.Tensor) -> torch.Tensor:
 __all__ = [
     "BaseEmbeddingModel",
     "MuQEmbeddingModel",
+    "MertModel",
     "MusicLatentSpaceModel",
     "SegmentEmbedding",
 ]
