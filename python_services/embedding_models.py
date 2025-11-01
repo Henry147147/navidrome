@@ -344,8 +344,6 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         with torch.inference_mode():
             outputs = model(wavs=chunk_tensor)
 
-        outputs = torch.nn.functional.normalize(outputs, dim=1)
-
         enriched = enrich_embedding(outputs.T)
 
         enriched_cpu = enriched.to("cpu", dtype=self.storage_dtype)
@@ -909,3 +907,24 @@ __all__ = [
     "MusicLatentSpaceModel",
     "SegmentEmbedding",
 ]
+
+if __name__ == "__main__":
+    from glob import glob
+    from tqdm import tqdm
+    songs = list(glob("/mnt/data/share/hosted/music/*Beach Bunny*"))
+    # 1536D
+    muq = MuQEmbeddingModel()
+    # 76800D
+    mert = MertModel()
+    # 576D
+    latent = MusicLatentSpaceModel()
+    embeddings = {}
+    for song in tqdm(songs):
+        a = muq.embed_music(song, song)
+        b = mert.embed_music(song, song)
+        c = latent.embed_music(song, song)
+        embeddings[song] = (a, b, c)
+    print(embeddings)
+    breakpoint()
+    print("done")
+    
