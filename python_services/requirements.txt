@@ -7,6 +7,8 @@ torchaudio
 soundfile
 librosa
 numpy
+pandas
+scikit-learn
 mutagen
 cueparser
 muq
@@ -15,3 +17,7 @@ matplotlib
 transformers
 h5py
 datasets
+tqdm
+requests
+yt-dlp>=2024.1.0
+peft

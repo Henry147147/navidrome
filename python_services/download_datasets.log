@@ -1,0 +1,722 @@
+2025-11-02 10:57:11,955 - INFO - 
+================================================================================
+2025-11-02 10:57:11,955 - INFO - AVAILABLE DATASETS
+2025-11-02 10:57:11,955 - INFO - ================================================================================
+2025-11-02 10:57:11,955 - INFO - 
+SONG_DESCRIBER (✓ READY)
+2025-11-02 10:57:11,955 - INFO -   Priority: HIGH
+2025-11-02 10:57:11,955 - INFO -   Human captions for ~2min clips (~1,100 songs, ~3GB)
+2025-11-02 10:57:11,955 - INFO - 
+JAMENDO_MAX_CAPS (✓ READY)
+2025-11-02 10:57:11,955 - INFO -   Priority: HIGH
+2025-11-02 10:57:11,955 - INFO -   Synthetic captions for full tracks (~28K songs, ~600GB)
+2025-11-02 10:57:11,955 - INFO - 
+MTG_JAMENDO (⚠ PENDING)
+2025-11-02 10:57:11,955 - INFO -   Priority: MEDIUM
+2025-11-02 10:57:11,955 - INFO -   Full tracks with tags (~55K songs, ~1.2TB)
+2025-11-02 10:57:11,955 - INFO - 
+FMA (✓ READY)
+2025-11-02 10:57:11,955 - INFO -   Priority: MEDIUM
+2025-11-02 10:57:11,956 - INFO -   Free Music Archive (8K-106K songs, 7GB-900GB)
+2025-11-02 10:57:11,956 - INFO - 
+DALI (⚠ PENDING)
+2025-11-02 10:57:11,956 - INFO -   Priority: LOW
+2025-11-02 10:57:11,956 - INFO -   Time-aligned lyrics (~5K songs, ~50GB)
+2025-11-02 10:57:11,956 - INFO - 
+CLOTHO (⚠ PENDING)
+2025-11-02 10:57:11,956 - INFO -   Priority: LOW
+2025-11-02 10:57:11,956 - INFO -   General audio captions (~6K clips, ~1GB)
+2025-11-02 10:57:11,956 - INFO - 
+================================================================================
+2025-11-02 10:58:33,461 - ERROR - No datasets specified. Use --datasets or --all
+2025-11-02 10:58:33,461 - INFO - 
+================================================================================
+2025-11-02 10:58:33,462 - INFO - AVAILABLE DATASETS
+2025-11-02 10:58:33,462 - INFO - ================================================================================
+2025-11-02 10:58:33,462 - INFO - 
+SONG_DESCRIBER (✓ READY)
+2025-11-02 10:58:33,462 - INFO -   Priority: HIGH
+2025-11-02 10:58:33,462 - INFO -   Human captions for ~2min clips (~1,100 songs, ~3GB)
+2025-11-02 10:58:33,462 - INFO - 
+JAMENDO_MAX_CAPS (✓ READY)
+2025-11-02 10:58:33,462 - INFO -   Priority: HIGH
+2025-11-02 10:58:33,462 - INFO -   Synthetic captions for full tracks (~28K songs, ~600GB)
+2025-11-02 10:58:33,462 - INFO - 
+MTG_JAMENDO (⚠ PENDING)
+2025-11-02 10:58:33,462 - INFO -   Priority: MEDIUM
+2025-11-02 10:58:33,462 - INFO -   Full tracks with tags (~55K songs, ~1.2TB)
+2025-11-02 10:58:33,462 - INFO - 
+FMA (✓ READY)
+2025-11-02 10:58:33,462 - INFO -   Priority: MEDIUM
+2025-11-02 10:58:33,462 - INFO -   Free Music Archive (8K-106K songs, 7GB-900GB)
+2025-11-02 10:58:33,462 - INFO - 
+DALI (⚠ PENDING)
+2025-11-02 10:58:33,462 - INFO -   Priority: LOW
+2025-11-02 10:58:33,462 - INFO -   Time-aligned lyrics (~5K songs, ~50GB)
+2025-11-02 10:58:33,462 - INFO - 
+CLOTHO (⚠ PENDING)
+2025-11-02 10:58:33,463 - INFO -   Priority: LOW
+2025-11-02 10:58:33,463 - INFO -   General audio captions (~6K clips, ~1GB)
+2025-11-02 10:58:33,463 - INFO - 
+================================================================================
+2025-11-02 10:58:47,761 - INFO - Downloading all ready datasets: ['song_describer', 'jamendo_max_caps', 'fma']
+2025-11-02 10:58:47,762 - INFO - 
+================================================================================
+2025-11-02 10:58:47,762 - INFO - DOWNLOADING: SONG_DESCRIBER
+2025-11-02 10:58:47,762 - INFO - ================================================================================
+2025-11-02 10:58:47,762 - INFO - Output directory: data/raw/song_describer
+2025-11-02 10:58:47,762 - INFO - Resume: True
+2025-11-02 10:58:47,762 - INFO - Dry run: True
+2025-11-02 10:58:47,762 - INFO - Initialized song_describer downloader
+2025-11-02 10:58:47,762 - INFO -   Output dir: data/raw/song_describer
+2025-11-02 10:58:47,762 - INFO -   Resume: True
+2025-11-02 10:58:47,762 - INFO -   Dry run: True
+2025-11-02 10:58:47,763 - INFO - Starting song_describer download...
+2025-11-02 10:58:47,763 - INFO - [DRY RUN] Would download metadata from Zenodo
+2025-11-02 10:58:47,763 - ERROR - Metadata file not found. Download metadata first.
+2025-11-02 10:58:47,763 - ERROR - ✗ song_describer download failed
+2025-11-02 10:58:47,763 - INFO - 
+================================================================================
+2025-11-02 10:58:47,763 - INFO - DOWNLOADING: JAMENDO_MAX_CAPS
+2025-11-02 10:58:47,763 - INFO - ================================================================================
+2025-11-02 10:58:47,763 - INFO - Output directory: data/raw/jamendo_max_caps
+2025-11-02 10:58:47,763 - INFO - Resume: True
+2025-11-02 10:58:47,763 - INFO - Dry run: True
+2025-11-02 10:58:47,763 - INFO - Initialized jamendo_max_caps downloader
+2025-11-02 10:58:47,763 - INFO -   Output dir: data/raw/jamendo_max_caps
+2025-11-02 10:58:47,764 - INFO -   Resume: True
+2025-11-02 10:58:47,764 - INFO -   Dry run: True
+2025-11-02 10:58:47,764 - INFO - Starting jamendo_max_caps download...
+2025-11-02 10:58:52,512 - INFO - Downloading from HuggingFace: amaai-lab/JamendoMaxCaps
+2025-11-02 10:58:52,512 - INFO - This may take a while...
+2025-11-02 10:58:52,512 - INFO - [DRY RUN] Would download dataset from HuggingFace
+2025-11-02 10:58:52,512 - INFO - ✓ jamendo_max_caps download completed successfully
+2025-11-02 10:58:52,512 - INFO - 
+================================================================================
+2025-11-02 10:58:52,512 - INFO - DOWNLOADING: FMA
+2025-11-02 10:58:52,512 - INFO - ================================================================================
+2025-11-02 10:58:52,512 - INFO - Output directory: data/raw/fma
+2025-11-02 10:58:52,512 - INFO - Resume: True
+2025-11-02 10:58:52,512 - INFO - Dry run: True
+2025-11-02 10:58:52,512 - ERROR - Error downloading fma: 'FMADownloader' object has no attribute 'size'
+Traceback (most recent call last):
+  File "/home/henry/navidrome/python_services/download_datasets.py", line 166, in download_dataset
+    downloader = downloader_class(
+  File "/home/henry/navidrome/python_services/dataset_downloaders/fma.py", line 51, in __init__
+    super().__init__(output_dir, **kwargs)
+  File "/home/henry/navidrome/python_services/dataset_downloaders/base.py", line 94, in __init__
+    self.state = DownloadState(dataset_name=self.get_name())
+  File "/home/henry/navidrome/python_services/dataset_downloaders/fma.py", line 60, in get_name
+    return f"{self.DATASET_NAME}_{self.size}"
+AttributeError: 'FMADownloader' object has no attribute 'size'
+2025-11-02 10:58:52,513 - INFO - 
+================================================================================
+2025-11-02 10:58:52,513 - INFO - DOWNLOAD SUMMARY
+2025-11-02 10:58:52,513 - INFO - ================================================================================
+2025-11-02 10:58:52,513 - INFO -   song_describer: ✗ FAILED
+2025-11-02 10:58:52,513 - INFO -   jamendo_max_caps: ✓ SUCCESS
+2025-11-02 10:58:52,513 - INFO -   fma: ✗ FAILED
+2025-11-02 10:58:52,513 - INFO - ================================================================================
+
+2025-11-02 10:59:43,482 - INFO - Downloading all ready datasets: ['song_describer', 'jamendo_max_caps', 'fma']
+2025-11-02 10:59:43,482 - INFO - 
+================================================================================
+2025-11-02 10:59:43,482 - INFO - DOWNLOADING: SONG_DESCRIBER
+2025-11-02 10:59:43,482 - INFO - ================================================================================
+2025-11-02 10:59:43,482 - INFO - Output directory: data/raw/song_describer
+2025-11-02 10:59:43,482 - INFO - Resume: True
+2025-11-02 10:59:43,482 - INFO - Dry run: True
+2025-11-02 10:59:43,482 - INFO - Initialized song_describer downloader
+2025-11-02 10:59:43,482 - INFO -   Output dir: data/raw/song_describer
+2025-11-02 10:59:43,482 - INFO -   Resume: True
+2025-11-02 10:59:43,482 - INFO -   Dry run: True
+2025-11-02 10:59:43,482 - INFO - Starting song_describer download...
+2025-11-02 10:59:43,482 - INFO - [DRY RUN] Would download metadata from Zenodo
+2025-11-02 10:59:43,482 - ERROR - Metadata file not found. Download metadata first.
+2025-11-02 10:59:43,482 - ERROR - ✗ song_describer download failed
+2025-11-02 10:59:43,482 - INFO - 
+================================================================================
+2025-11-02 10:59:43,482 - INFO - DOWNLOADING: JAMENDO_MAX_CAPS
+2025-11-02 10:59:43,482 - INFO - ================================================================================
+2025-11-02 10:59:43,482 - INFO - Output directory: data/raw/jamendo_max_caps
+2025-11-02 10:59:43,482 - INFO - Resume: True
+2025-11-02 10:59:43,482 - INFO - Dry run: True
+2025-11-02 10:59:43,482 - INFO - Initialized jamendo_max_caps downloader
+2025-11-02 10:59:43,482 - INFO -   Output dir: data/raw/jamendo_max_caps
+2025-11-02 10:59:43,482 - INFO -   Resume: True
+2025-11-02 10:59:43,482 - INFO -   Dry run: True
+2025-11-02 10:59:43,482 - INFO - Starting jamendo_max_caps download...
+2025-11-02 10:59:47,462 - INFO - Downloading from HuggingFace: amaai-lab/JamendoMaxCaps
+2025-11-02 10:59:47,462 - INFO - This may take a while...
+2025-11-02 10:59:47,462 - INFO - [DRY RUN] Would download dataset from HuggingFace
+2025-11-02 10:59:47,462 - INFO - ✓ jamendo_max_caps download completed successfully
+2025-11-02 10:59:47,463 - INFO - 
+================================================================================
+2025-11-02 10:59:47,463 - INFO - DOWNLOADING: FMA
+2025-11-02 10:59:47,463 - INFO - ================================================================================
+2025-11-02 10:59:47,463 - INFO - Output directory: data/raw/fma
+2025-11-02 10:59:47,463 - INFO - Resume: True
+2025-11-02 10:59:47,463 - INFO - Dry run: True
+2025-11-02 10:59:47,463 - ERROR - Error downloading fma: 'FMADownloader' object has no attribute 'size'
+Traceback (most recent call last):
+  File "/home/henry/navidrome/python_services/download_datasets.py", line 166, in download_dataset
+    downloader = downloader_class(
+                 ^^^^^^^^^^^^^^^^^
+  File "/home/henry/navidrome/python_services/dataset_downloaders/fma.py", line 51, in __init__
+    super().__init__(output_dir, **kwargs)
+  File "/home/henry/navidrome/python_services/dataset_downloaders/base.py", line 94, in __init__
+    self.state = DownloadState(dataset_name=self.get_name())
+                                            ^^^^^^^^^^^^^^^
+  File "/home/henry/navidrome/python_services/dataset_downloaders/fma.py", line 60, in get_name
+    return f"{self.DATASET_NAME}_{self.size}"
+                                  ^^^^^^^^^
+AttributeError: 'FMADownloader' object has no attribute 'size'
+2025-11-02 10:59:47,464 - INFO - 
+================================================================================
+2025-11-02 10:59:47,464 - INFO - DOWNLOAD SUMMARY
+2025-11-02 10:59:47,464 - INFO - ================================================================================
+2025-11-02 10:59:47,464 - INFO -   song_describer: ✗ FAILED
+2025-11-02 10:59:47,464 - INFO -   jamendo_max_caps: ✓ SUCCESS
+2025-11-02 10:59:47,464 - INFO -   fma: ✗ FAILED
+2025-11-02 10:59:47,464 - INFO - ================================================================================
+
+2025-11-02 11:00:56,493 - INFO - Downloading all ready datasets: ['song_describer', 'jamendo_max_caps', 'fma']
+2025-11-02 11:00:56,493 - INFO - 
+================================================================================
+2025-11-02 11:00:56,493 - INFO - DOWNLOADING: SONG_DESCRIBER
+2025-11-02 11:00:56,493 - INFO - ================================================================================
+2025-11-02 11:00:56,493 - INFO - Output directory: data/raw/song_describer
+2025-11-02 11:00:56,493 - INFO - Resume: True
+2025-11-02 11:00:56,493 - INFO - Dry run: True
+2025-11-02 11:00:56,493 - INFO - Initialized song_describer downloader
+2025-11-02 11:00:56,493 - INFO -   Output dir: data/raw/song_describer
+2025-11-02 11:00:56,493 - INFO -   Resume: True
+2025-11-02 11:00:56,493 - INFO -   Dry run: True
+2025-11-02 11:00:56,494 - INFO - Starting song_describer download...
+2025-11-02 11:00:56,494 - INFO - [DRY RUN] Would download metadata from Zenodo
+2025-11-02 11:00:56,494 - INFO - [DRY RUN] Metadata not found, but would download ~1,100 audio tracks from YouTube
+2025-11-02 11:00:56,494 - INFO - 
+============================================================
+2025-11-02 11:00:56,494 - INFO - song_describer Download Summary
+2025-11-02 11:00:56,494 - INFO - ============================================================
+2025-11-02 11:00:56,494 - INFO - Total files: 0
+2025-11-02 11:00:56,494 - INFO - Downloaded: 0
+2025-11-02 11:00:56,494 - INFO - Failed: 0
+2025-11-02 11:00:56,494 - INFO - Success rate: 0.00%
+2025-11-02 11:00:56,494 - INFO - Total size: 0.00 MB
+2025-11-02 11:00:56,494 - INFO - ============================================================
+
+2025-11-02 11:00:56,494 - INFO - ✓ song_describer download completed successfully
+2025-11-02 11:00:56,494 - INFO - 
+================================================================================
+2025-11-02 11:00:56,494 - INFO - DOWNLOADING: JAMENDO_MAX_CAPS
+2025-11-02 11:00:56,494 - INFO - ================================================================================
+2025-11-02 11:00:56,494 - INFO - Output directory: data/raw/jamendo_max_caps
+2025-11-02 11:00:56,494 - INFO - Resume: True
+2025-11-02 11:00:56,494 - INFO - Dry run: True
+2025-11-02 11:00:56,494 - INFO - Initialized jamendo_max_caps downloader
+2025-11-02 11:00:56,494 - INFO -   Output dir: data/raw/jamendo_max_caps
+2025-11-02 11:00:56,494 - INFO -   Resume: True
+2025-11-02 11:00:56,494 - INFO -   Dry run: True
+2025-11-02 11:00:56,494 - INFO - Starting jamendo_max_caps download...
+2025-11-02 11:00:58,501 - INFO - Downloading from HuggingFace: amaai-lab/JamendoMaxCaps
+2025-11-02 11:00:58,501 - INFO - This may take a while...
+2025-11-02 11:00:58,501 - INFO - [DRY RUN] Would download dataset from HuggingFace
+2025-11-02 11:00:58,501 - INFO - ✓ jamendo_max_caps download completed successfully
+2025-11-02 11:00:58,501 - INFO - 
+================================================================================
+2025-11-02 11:00:58,501 - INFO - DOWNLOADING: FMA
+2025-11-02 11:00:58,501 - INFO - ================================================================================
+2025-11-02 11:00:58,502 - INFO - Output directory: data/raw/fma
+2025-11-02 11:00:58,502 - INFO - Resume: True
+2025-11-02 11:00:58,502 - INFO - Dry run: True
+2025-11-02 11:00:58,502 - INFO - Initialized fma_small downloader
+2025-11-02 11:00:58,502 - INFO -   Output dir: data/raw/fma
+2025-11-02 11:00:58,502 - INFO -   Resume: True
+2025-11-02 11:00:58,502 - INFO -   Dry run: True
+2025-11-02 11:00:58,502 - INFO - FMA dataset size: small (~7.2 GB)
+2025-11-02 11:00:58,502 - INFO - Starting FMA (small) download...
+2025-11-02 11:00:58,502 - INFO - Downloading FMA metadata...
+2025-11-02 11:00:58,502 - INFO - [DRY RUN] Would download: https://os.unil.cloud.switch.ch/fma/fma_metadata.zip -> data/raw/fma/fma_metadata.zip
+2025-11-02 11:00:58,502 - INFO - Downloading FMA audio (small)...
+2025-11-02 11:00:58,502 - INFO - This will download ~7.2 GB
+2025-11-02 11:00:58,502 - INFO - [DRY RUN] Would download: https://os.unil.cloud.switch.ch/fma/fma_small.zip -> data/raw/fma/fma_small.zip
+2025-11-02 11:00:58,502 - INFO - 
+============================================================
+2025-11-02 11:00:58,502 - INFO - fma_small Download Summary
+2025-11-02 11:00:58,502 - INFO - ============================================================
+2025-11-02 11:00:58,502 - INFO - Total files: 0
+2025-11-02 11:00:58,502 - INFO - Downloaded: 0
+2025-11-02 11:00:58,502 - INFO - Failed: 0
+2025-11-02 11:00:58,502 - INFO - Success rate: 0.00%
+2025-11-02 11:00:58,502 - INFO - Total size: 0.00 MB
+2025-11-02 11:00:58,502 - INFO - ============================================================
+
+2025-11-02 11:00:58,502 - INFO - ✓ fma download completed successfully
+2025-11-02 11:00:58,502 - INFO - 
+================================================================================
+2025-11-02 11:00:58,502 - INFO - DOWNLOAD SUMMARY
+2025-11-02 11:00:58,502 - INFO - ================================================================================
+2025-11-02 11:00:58,502 - INFO -   song_describer: ✓ SUCCESS
+2025-11-02 11:00:58,502 - INFO -   jamendo_max_caps: ✓ SUCCESS
+2025-11-02 11:00:58,502 - INFO -   fma: ✓ SUCCESS
+2025-11-02 11:00:58,502 - INFO - ================================================================================
+
+2025-11-02 11:01:04,299 - INFO - 
+================================================================================
+2025-11-02 11:01:04,300 - INFO - AVAILABLE DATASETS
+2025-11-02 11:01:04,300 - INFO - ================================================================================
+2025-11-02 11:01:04,300 - INFO - 
+SONG_DESCRIBER (✓ READY)
+2025-11-02 11:01:04,300 - INFO -   Priority: HIGH
+2025-11-02 11:01:04,300 - INFO -   Human captions for ~2min clips (~1,100 songs, ~3GB)
+2025-11-02 11:01:04,300 - INFO - 
+JAMENDO_MAX_CAPS (✓ READY)
+2025-11-02 11:01:04,300 - INFO -   Priority: HIGH
+2025-11-02 11:01:04,300 - INFO -   Synthetic captions for full tracks (~28K songs, ~600GB)
+2025-11-02 11:01:04,300 - INFO - 
+MTG_JAMENDO (⚠ PENDING)
+2025-11-02 11:01:04,300 - INFO -   Priority: MEDIUM
+2025-11-02 11:01:04,300 - INFO -   Full tracks with tags (~55K songs, ~1.2TB)
+2025-11-02 11:01:04,300 - INFO - 
+FMA (✓ READY)
+2025-11-02 11:01:04,300 - INFO -   Priority: MEDIUM
+2025-11-02 11:01:04,300 - INFO -   Free Music Archive (8K-106K songs, 7GB-900GB)
+2025-11-02 11:01:04,300 - INFO - 
+DALI (⚠ PENDING)
+2025-11-02 11:01:04,300 - INFO -   Priority: LOW
+2025-11-02 11:01:04,300 - INFO -   Time-aligned lyrics (~5K songs, ~50GB)
+2025-11-02 11:01:04,300 - INFO - 
+CLOTHO (⚠ PENDING)
+2025-11-02 11:01:04,300 - INFO -   Priority: LOW
+2025-11-02 11:01:04,300 - INFO -   General audio captions (~6K clips, ~1GB)
+2025-11-02 11:01:04,300 - INFO - 
+================================================================================
+2025-11-02 11:01:08,906 - INFO - 
+================================================================================
+2025-11-02 11:01:08,906 - INFO - DOWNLOADING: SONG_DESCRIBER
+2025-11-02 11:01:08,906 - INFO - ================================================================================
+2025-11-02 11:01:08,906 - INFO - Output directory: data/raw/song_describer
+2025-11-02 11:01:08,906 - INFO - Resume: True
+2025-11-02 11:01:08,906 - INFO - Dry run: True
+2025-11-02 11:01:08,906 - INFO - Initialized song_describer downloader
+2025-11-02 11:01:08,906 - INFO -   Output dir: data/raw/song_describer
+2025-11-02 11:01:08,906 - INFO -   Resume: True
+2025-11-02 11:01:08,906 - INFO -   Dry run: True
+2025-11-02 11:01:08,906 - INFO - Starting song_describer download...
+2025-11-02 11:01:08,906 - INFO - [DRY RUN] Would download metadata from Zenodo
+2025-11-02 11:01:08,906 - INFO - [DRY RUN] Metadata not found, but would download ~1,100 audio tracks from YouTube
+2025-11-02 11:01:08,906 - INFO - 
+============================================================
+2025-11-02 11:01:08,906 - INFO - song_describer Download Summary
+2025-11-02 11:01:08,906 - INFO - ============================================================
+2025-11-02 11:01:08,906 - INFO - Total files: 0
+2025-11-02 11:01:08,906 - INFO - Downloaded: 0
+2025-11-02 11:01:08,906 - INFO - Failed: 0
+2025-11-02 11:01:08,906 - INFO - Success rate: 0.00%
+2025-11-02 11:01:08,906 - INFO - Total size: 0.00 MB
+2025-11-02 11:01:08,906 - INFO - ============================================================
+
+2025-11-02 11:01:08,906 - INFO - ✓ song_describer download completed successfully
+2025-11-02 11:01:08,906 - INFO - 
+================================================================================
+2025-11-02 11:01:08,906 - INFO - DOWNLOAD SUMMARY
+2025-11-02 11:01:08,906 - INFO - ================================================================================
+2025-11-02 11:01:08,906 - INFO -   song_describer: ✓ SUCCESS
+2025-11-02 11:01:08,906 - INFO - ================================================================================
+
+2025-11-02 11:01:13,687 - INFO - 
+================================================================================
+2025-11-02 11:01:13,688 - INFO - DOWNLOADING: FMA
+2025-11-02 11:01:13,688 - INFO - ================================================================================
+2025-11-02 11:01:13,688 - INFO - Output directory: data/raw/fma
+2025-11-02 11:01:13,688 - INFO - Resume: True
+2025-11-02 11:01:13,688 - INFO - Dry run: True
+2025-11-02 11:01:13,688 - INFO - Initialized fma_medium downloader
+2025-11-02 11:01:13,688 - INFO -   Output dir: data/raw/fma
+2025-11-02 11:01:13,688 - INFO -   Resume: True
+2025-11-02 11:01:13,688 - INFO -   Dry run: True
+2025-11-02 11:01:13,688 - INFO - FMA dataset size: medium (~22 GB)
+2025-11-02 11:01:13,688 - INFO - Starting FMA (medium) download...
+2025-11-02 11:01:13,688 - INFO - Downloading FMA metadata...
+2025-11-02 11:01:13,688 - INFO - [DRY RUN] Would download: https://os.unil.cloud.switch.ch/fma/fma_metadata.zip -> data/raw/fma/fma_metadata.zip
+2025-11-02 11:01:13,688 - INFO - Downloading FMA audio (medium)...
+2025-11-02 11:01:13,688 - INFO - This will download ~22 GB
+2025-11-02 11:01:13,688 - INFO - [DRY RUN] Would download: https://os.unil.cloud.switch.ch/fma/fma_medium.zip -> data/raw/fma/fma_medium.zip
+2025-11-02 11:01:13,688 - INFO - 
+============================================================
+2025-11-02 11:01:13,688 - INFO - fma_medium Download Summary
+2025-11-02 11:01:13,688 - INFO - ============================================================
+2025-11-02 11:01:13,688 - INFO - Total files: 0
+2025-11-02 11:01:13,688 - INFO - Downloaded: 0
+2025-11-02 11:01:13,688 - INFO - Failed: 0
+2025-11-02 11:01:13,688 - INFO - Success rate: 0.00%
+2025-11-02 11:01:13,688 - INFO - Total size: 0.00 MB
+2025-11-02 11:01:13,688 - INFO - ============================================================
+
+2025-11-02 11:01:13,688 - INFO - ✓ fma download completed successfully
+2025-11-02 11:01:13,688 - INFO - 
+================================================================================
+2025-11-02 11:01:13,688 - INFO - DOWNLOAD SUMMARY
+2025-11-02 11:01:13,688 - INFO - ================================================================================
+2025-11-02 11:01:13,688 - INFO -   fma: ✓ SUCCESS
+2025-11-02 11:01:13,688 - INFO - ================================================================================
+
+2025-11-02 11:02:30,891 - INFO - Downloading all ready datasets: ['song_describer', 'jamendo_max_caps', 'fma']
+2025-11-02 11:02:30,891 - INFO - 
+================================================================================
+2025-11-02 11:02:30,891 - INFO - DOWNLOADING: SONG_DESCRIBER
+2025-11-02 11:02:30,891 - INFO - ================================================================================
+2025-11-02 11:02:30,891 - INFO - Output directory: data/raw/song_describer
+2025-11-02 11:02:30,891 - INFO - Resume: True
+2025-11-02 11:02:30,891 - INFO - Dry run: True
+2025-11-02 11:02:30,891 - INFO - Initialized song_describer downloader
+2025-11-02 11:02:30,891 - INFO -   Output dir: data/raw/song_describer
+2025-11-02 11:02:30,892 - INFO -   Resume: True
+2025-11-02 11:02:30,892 - INFO -   Dry run: True
+2025-11-02 11:02:30,892 - INFO - Starting song_describer download...
+2025-11-02 11:02:30,892 - INFO - [DRY RUN] Would download metadata from Zenodo
+2025-11-02 11:02:30,892 - INFO - [DRY RUN] Metadata not found, but would download ~1,100 audio tracks from YouTube
+2025-11-02 11:02:30,892 - INFO - 
+============================================================
+2025-11-02 11:02:30,892 - INFO - song_describer Download Summary
+2025-11-02 11:02:30,892 - INFO - ============================================================
+2025-11-02 11:02:30,892 - INFO - Total files: 0
+2025-11-02 11:02:30,892 - INFO - Downloaded: 0
+2025-11-02 11:02:30,892 - INFO - Failed: 0
+2025-11-02 11:02:30,892 - INFO - Success rate: 0.00%
+2025-11-02 11:02:30,892 - INFO - Total size: 0.00 MB
+2025-11-02 11:02:30,892 - INFO - ============================================================
+
+2025-11-02 11:02:30,892 - INFO - ✓ song_describer download completed successfully
+2025-11-02 11:02:30,892 - INFO - 
+================================================================================
+2025-11-02 11:02:30,892 - INFO - DOWNLOADING: JAMENDO_MAX_CAPS
+2025-11-02 11:02:30,892 - INFO - ================================================================================
+2025-11-02 11:02:30,893 - INFO - Output directory: data/raw/jamendo_max_caps
+2025-11-02 11:02:30,893 - INFO - Resume: True
+2025-11-02 11:02:30,893 - INFO - Dry run: True
+2025-11-02 11:02:30,893 - INFO - Initialized jamendo_max_caps downloader
+2025-11-02 11:02:30,893 - INFO -   Output dir: data/raw/jamendo_max_caps
+2025-11-02 11:02:30,893 - INFO -   Resume: True
+2025-11-02 11:02:30,893 - INFO -   Dry run: True
+2025-11-02 11:02:30,893 - INFO - Starting jamendo_max_caps download...
+2025-11-02 11:02:32,652 - INFO - Downloading from HuggingFace: amaai-lab/JamendoMaxCaps
+2025-11-02 11:02:32,652 - INFO - This may take a while...
+2025-11-02 11:02:32,652 - INFO - [DRY RUN] Would download dataset from HuggingFace
+2025-11-02 11:02:32,652 - INFO - ✓ jamendo_max_caps download completed successfully
+2025-11-02 11:02:32,652 - INFO - 
+================================================================================
+2025-11-02 11:02:32,652 - INFO - DOWNLOADING: FMA
+2025-11-02 11:02:32,652 - INFO - ================================================================================
+2025-11-02 11:02:32,652 - INFO - Output directory: data/raw/fma
+2025-11-02 11:02:32,652 - INFO - Resume: True
+2025-11-02 11:02:32,652 - INFO - Dry run: True
+2025-11-02 11:02:32,652 - INFO - Initialized fma_small downloader
+2025-11-02 11:02:32,653 - INFO -   Output dir: data/raw/fma
+2025-11-02 11:02:32,653 - INFO -   Resume: True
+2025-11-02 11:02:32,653 - INFO -   Dry run: True
+2025-11-02 11:02:32,653 - INFO - FMA dataset size: small (~7.2 GB)
+2025-11-02 11:02:32,653 - INFO - Starting FMA (small) download...
+2025-11-02 11:02:32,653 - INFO - Downloading FMA metadata...
+2025-11-02 11:02:32,653 - INFO - [DRY RUN] Would download: https://os.unil.cloud.switch.ch/fma/fma_metadata.zip -> data/raw/fma/fma_metadata.zip
+2025-11-02 11:02:32,653 - INFO - Downloading FMA audio (small)...
+2025-11-02 11:02:32,653 - INFO - This will download ~7.2 GB
+2025-11-02 11:02:32,653 - INFO - [DRY RUN] Would download: https://os.unil.cloud.switch.ch/fma/fma_small.zip -> data/raw/fma/fma_small.zip
+2025-11-02 11:02:32,653 - INFO - 
+============================================================
+2025-11-02 11:02:32,653 - INFO - fma_small Download Summary
+2025-11-02 11:02:32,653 - INFO - ============================================================
+2025-11-02 11:02:32,653 - INFO - Total files: 0
+2025-11-02 11:02:32,653 - INFO - Downloaded: 0
+2025-11-02 11:02:32,653 - INFO - Failed: 0
+2025-11-02 11:02:32,653 - INFO - Success rate: 0.00%
+2025-11-02 11:02:32,654 - INFO - Total size: 0.00 MB
+2025-11-02 11:02:32,654 - INFO - ============================================================
+
+2025-11-02 11:02:32,654 - INFO - ✓ fma download completed successfully
+2025-11-02 11:02:32,654 - INFO - 
+================================================================================
+2025-11-02 11:02:32,654 - INFO - DOWNLOAD SUMMARY
+2025-11-02 11:02:32,654 - INFO - ================================================================================
+2025-11-02 11:02:32,654 - INFO -   song_describer: ✓ SUCCESS
+2025-11-02 11:02:32,654 - INFO -   jamendo_max_caps: ✓ SUCCESS
+2025-11-02 11:02:32,654 - INFO -   fma: ✓ SUCCESS
+2025-11-02 11:02:32,654 - INFO - ================================================================================
+
+2025-11-02 11:03:32,325 - INFO - Downloading all ready datasets: ['song_describer', 'jamendo_max_caps', 'fma']
+2025-11-02 11:03:32,325 - INFO - 
+================================================================================
+2025-11-02 11:03:32,325 - INFO - DOWNLOADING: SONG_DESCRIBER
+2025-11-02 11:03:32,325 - INFO - ================================================================================
+2025-11-02 11:03:32,326 - INFO - Output directory: data/raw/song_describer
+2025-11-02 11:03:32,326 - INFO - Resume: True
+2025-11-02 11:03:32,326 - INFO - Dry run: False
+2025-11-02 11:03:32,327 - INFO - Initialized song_describer downloader
+2025-11-02 11:03:32,327 - INFO -   Output dir: data/raw/song_describer
+2025-11-02 11:03:32,327 - INFO -   Resume: True
+2025-11-02 11:03:32,327 - INFO -   Dry run: False
+2025-11-02 11:03:32,327 - INFO - Starting song_describer download...
+2025-11-02 11:03:32,327 - INFO - Downloading metadata from Zenodo...
+2025-11-02 11:03:33,448 - INFO - Metadata saved to data/raw/song_describer/metadata.json
+2025-11-02 11:03:33,449 - ERROR - Error downloading song_describer: Expecting value: line 1 column 1 (char 0)
+Traceback (most recent call last):
+  File "/home/henry/navidrome/python_services/download_datasets.py", line 180, in download_dataset
+    success = downloader.download()
+  File "/home/henry/navidrome/python_services/dataset_downloaders/song_describer.py", line 51, in download
+    if not self._download_audio():
+  File "/home/henry/navidrome/python_services/dataset_downloaders/song_describer.py", line 132, in _download_audio
+    metadata = json.load(f)
+  File "/usr/lib/python3.10/json/__init__.py", line 293, in load
+    return loads(fp.read(),
+  File "/usr/lib/python3.10/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+  File "/usr/lib/python3.10/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+  File "/usr/lib/python3.10/json/decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+2025-11-02 11:03:33,451 - INFO - 
+================================================================================
+2025-11-02 11:03:33,452 - INFO - DOWNLOADING: JAMENDO_MAX_CAPS
+2025-11-02 11:03:33,452 - INFO - ================================================================================
+2025-11-02 11:03:33,452 - INFO - Output directory: data/raw/jamendo_max_caps
+2025-11-02 11:03:33,452 - INFO - Resume: True
+2025-11-02 11:03:33,452 - INFO - Dry run: False
+2025-11-02 11:03:33,452 - INFO - Initialized jamendo_max_caps downloader
+2025-11-02 11:03:33,452 - INFO -   Output dir: data/raw/jamendo_max_caps
+2025-11-02 11:03:33,452 - INFO -   Resume: True
+2025-11-02 11:03:33,452 - INFO -   Dry run: False
+2025-11-02 11:03:33,452 - INFO - Starting jamendo_max_caps download...
+2025-11-02 11:03:34,816 - INFO - Downloading from HuggingFace: amaai-lab/JamendoMaxCaps
+2025-11-02 11:03:34,816 - INFO - This may take a while...
+2025-11-02 11:03:35,047 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2025-11-02 11:03:35,069 - INFO - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/amaai-lab/JamendoMaxCaps/a61576e63a370344090f95aa519c0a1d7fbdbb37/README.md "HTTP/1.1 200 OK"
+2025-11-02 11:03:35,099 - INFO - HTTP Request: GET https://huggingface.co/api/resolve-cache/datasets/amaai-lab/JamendoMaxCaps/a61576e63a370344090f95aa519c0a1d7fbdbb37/README.md "HTTP/1.1 200 OK"
+2025-11-02 11:03:35,128 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/JamendoMaxCaps.py "HTTP/1.1 404 Not Found"
+2025-11-02 11:03:35,172 - INFO - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/amaai-lab/JamendoMaxCaps/amaai-lab/JamendoMaxCaps.py "HTTP/1.1 404 Not Found"
+2025-11-02 11:03:36,585 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/revision/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:03:36,629 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/.huggingface.yaml "HTTP/1.1 404 Not Found"
+2025-11-02 11:03:36,717 - INFO - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=amaai-lab/JamendoMaxCaps "HTTP/1.1 200 OK"
+2025-11-02 11:03:40,256 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37/data?recursive=true&expand=false "HTTP/1.1 200 OK"
+2025-11-02 11:03:44,032 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37/data?expand=false&recursive=true&limit=1000&cursor=ZXlKbWFXeGxYMjVoYldVaU9pSmtZWFJoTDNSeVlXbHVMVEF3T1RrNUxXOW1MVEF5TWpjeUxuQmhjbkYxWlhRaUxDSjBjbVZsWDI5cFpDSTZJbVUxTlRNeE4ySmxNbVZtWmpZNU1HRTJZV00xWlRFek5tVTFOMlV4TldFM01XUmhOamhpTm1VaWZRPT06MTAwMA%3D%3D "HTTP/1.1 200 OK"
+2025-11-02 11:03:45,070 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37/data?expand=false&recursive=true&limit=1000&cursor=ZXlKbWFXeGxYMjVoYldVaU9pSmtZWFJoTDNSeVlXbHVMVEF4T1RrNUxXOW1MVEF5TWpjeUxuQmhjbkYxWlhRaUxDSjBjbVZsWDI5cFpDSTZJbVUxTlRNeE4ySmxNbVZtWmpZNU1HRTJZV00xWlRFek5tVTFOMlV4TldFM01XUmhOamhpTm1VaWZRPT06MjAwMA%3D%3D "HTTP/1.1 200 OK"
+2025-11-02 11:03:46,182 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37?recursive=false&expand=false "HTTP/1.1 200 OK"
+2025-11-02 11:03:46,882 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37?expand=false&recursive=false&limit=1000&cursor=ZXlKbWFXeGxYMjVoYldVaU9pSXlNREl4TFRBNExUSTFMbXB6YjI1c0lpd2lkSEpsWlY5dmFXUWlPaUkyTm1KaFlUZzBNakE1WVRVd05qUTRNVFE1TURNM09EQmpZemxoWWpNM09UUTJaRFkyTkRobUluMD06MTAwMA%3D%3D "HTTP/1.1 200 OK"
+2025-11-02 11:03:47,025 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/dataset_infos.json "HTTP/1.1 404 Not Found"
+2025-11-02 11:03:47,634 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/revision/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:03:47,665 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00000-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:03:47,705 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:03:53,961 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00001-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:03:53,979 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:03:59,406 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00002-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:04:00,352 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:04:04,579 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00003-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:04:04,601 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:04:10,473 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00004-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:04:10,493 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:04:15,945 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00005-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:04:15,963 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:04:22,513 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00006-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:04:22,532 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:04:28,075 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00007-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:04:28,097 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:04:31,344 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00008-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:04:31,364 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:23:00,555 - INFO - Downloading all ready datasets: ['song_describer', 'jamendo_max_caps', 'fma']
+2025-11-02 11:23:00,555 - INFO - 
+================================================================================
+2025-11-02 11:23:00,555 - INFO - DOWNLOADING: SONG_DESCRIBER
+2025-11-02 11:23:00,555 - INFO - ================================================================================
+2025-11-02 11:23:00,555 - INFO - Output directory: data/raw/song_describer
+2025-11-02 11:23:00,555 - INFO - Resume: True
+2025-11-02 11:23:00,555 - INFO - Dry run: False
+2025-11-02 11:23:00,556 - INFO - Loaded checkpoint from 2025-11-02T11:03:33.448416
+2025-11-02 11:23:00,556 - INFO -   Downloaded: 1 files
+2025-11-02 11:23:00,556 - INFO -   Failed: 0 files
+2025-11-02 11:23:00,556 - INFO - Initialized song_describer downloader
+2025-11-02 11:23:00,556 - INFO -   Output dir: data/raw/song_describer
+2025-11-02 11:23:00,556 - INFO -   Resume: True
+2025-11-02 11:23:00,556 - INFO -   Dry run: False
+2025-11-02 11:23:00,556 - INFO - Starting song_describer download...
+2025-11-02 11:23:00,556 - INFO - Metadata already downloaded
+2025-11-02 11:23:00,557 - ERROR - Error downloading song_describer: Expecting value: line 1 column 1 (char 0)
+Traceback (most recent call last):
+  File "/home/henry/navidrome/python_services/download_datasets.py", line 180, in download_dataset
+    success = downloader.download()
+  File "/home/henry/navidrome/python_services/dataset_downloaders/song_describer.py", line 51, in download
+    if not self._download_audio():
+  File "/home/henry/navidrome/python_services/dataset_downloaders/song_describer.py", line 132, in _download_audio
+    metadata = json.load(f)
+  File "/usr/lib/python3.10/json/__init__.py", line 293, in load
+    return loads(fp.read(),
+  File "/usr/lib/python3.10/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+  File "/usr/lib/python3.10/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+  File "/usr/lib/python3.10/json/decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+2025-11-02 11:23:00,557 - INFO - 
+================================================================================
+2025-11-02 11:23:00,557 - INFO - DOWNLOADING: JAMENDO_MAX_CAPS
+2025-11-02 11:23:00,557 - INFO - ================================================================================
+2025-11-02 11:23:00,558 - INFO - Output directory: data/raw/jamendo_max_caps
+2025-11-02 11:23:00,558 - INFO - Resume: True
+2025-11-02 11:23:00,558 - INFO - Dry run: False
+2025-11-02 11:23:00,558 - INFO - Initialized jamendo_max_caps downloader
+2025-11-02 11:23:00,558 - INFO -   Output dir: data/raw/jamendo_max_caps
+2025-11-02 11:23:00,558 - INFO -   Resume: True
+2025-11-02 11:23:00,558 - INFO -   Dry run: False
+2025-11-02 11:23:00,558 - INFO - Starting jamendo_max_caps download...
+2025-11-02 11:23:02,379 - INFO - Downloading from HuggingFace: amaai-lab/JamendoMaxCaps
+2025-11-02 11:23:02,379 - INFO - This may take a while...
+2025-11-02 11:23:02,482 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2025-11-02 11:23:02,494 - INFO - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/amaai-lab/JamendoMaxCaps/a61576e63a370344090f95aa519c0a1d7fbdbb37/README.md "HTTP/1.1 200 OK"
+2025-11-02 11:23:02,524 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/JamendoMaxCaps.py "HTTP/1.1 404 Not Found"
+2025-11-02 11:23:02,559 - INFO - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/amaai-lab/JamendoMaxCaps/amaai-lab/JamendoMaxCaps.py "HTTP/1.1 404 Not Found"
+2025-11-02 11:23:02,583 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/revision/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:23:02,650 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/.huggingface.yaml "HTTP/1.1 404 Not Found"
+2025-11-02 11:23:02,749 - INFO - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=amaai-lab/JamendoMaxCaps "HTTP/1.1 200 OK"
+2025-11-02 11:23:02,852 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37/data?recursive=true&expand=false "HTTP/1.1 200 OK"
+2025-11-02 11:23:03,235 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37/data?expand=false&recursive=true&limit=1000&cursor=ZXlKbWFXeGxYMjVoYldVaU9pSmtZWFJoTDNSeVlXbHVMVEF3T1RrNUxXOW1MVEF5TWpjeUxuQmhjbkYxWlhRaUxDSjBjbVZsWDI5cFpDSTZJbVUxTlRNeE4ySmxNbVZtWmpZNU1HRTJZV00xWlRFek5tVTFOMlV4TldFM01XUmhOamhpTm1VaWZRPT06MTAwMA%3D%3D "HTTP/1.1 200 OK"
+2025-11-02 11:23:03,379 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37/data?expand=false&recursive=true&limit=1000&cursor=ZXlKbWFXeGxYMjVoYldVaU9pSmtZWFJoTDNSeVlXbHVMVEF4T1RrNUxXOW1MVEF5TWpjeUxuQmhjbkYxWlhRaUxDSjBjbVZsWDI5cFpDSTZJbVUxTlRNeE4ySmxNbVZtWmpZNU1HRTJZV00xWlRFek5tVTFOMlV4TldFM01XUmhOamhpTm1VaWZRPT06MjAwMA%3D%3D "HTTP/1.1 200 OK"
+2025-11-02 11:23:04,496 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37?recursive=false&expand=false "HTTP/1.1 200 OK"
+2025-11-02 11:23:05,775 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37?expand=false&recursive=false&limit=1000&cursor=ZXlKbWFXeGxYMjVoYldVaU9pSXlNREl4TFRBNExUSTFMbXB6YjI1c0lpd2lkSEpsWlY5dmFXUWlPaUkyTm1KaFlUZzBNakE1WVRVd05qUTRNVFE1TURNM09EQmpZemxoWWpNM09UUTJaRFkyTkRobUluMD06MTAwMA%3D%3D "HTTP/1.1 200 OK"
+2025-11-02 11:23:05,939 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/dataset_infos.json "HTTP/1.1 404 Not Found"
+2025-11-02 11:23:06,257 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/revision/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:23:06,351 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00007-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:23:06,397 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:23:11,606 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00008-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:23:11,630 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:23:16,478 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00009-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:23:16,497 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:23:21,811 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00010-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:23:21,832 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:23:27,797 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00011-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:23:27,815 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:23:32,296 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00012-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:23:32,313 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:23:36,866 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00013-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:23:36,886 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:23:45,198 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00014-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:23:45,217 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:23:51,277 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00015-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:23:51,297 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:24:00,760 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00016-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:24:00,775 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:24:06,410 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00017-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:24:06,427 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:24:11,852 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00018-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:24:11,870 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:24:17,967 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00019-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:24:17,984 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:24:23,811 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00020-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:24:23,829 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:24:30,474 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00021-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:24:30,493 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:24:35,373 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00022-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:24:35,391 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:24:40,383 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00023-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:24:40,400 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:24:45,047 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00024-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:24:45,066 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:24:49,776 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00025-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:24:51,675 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:24:56,676 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00026-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:24:56,698 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:25:02,167 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00027-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:25:02,206 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:25:05,892 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00028-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:25:05,916 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:25:13,663 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00029-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:25:13,690 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:25:20,579 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00030-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:25:20,672 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:25:26,444 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00031-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:25:26,470 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:25:31,493 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00032-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:25:31,510 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:25:35,789 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00033-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:25:35,808 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:25:40,911 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00034-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:25:40,929 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:25:46,824 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00035-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:25:46,839 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:25:51,944 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00036-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:25:51,970 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:25:57,300 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00037-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:25:57,317 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:26:02,556 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00038-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:26:02,576 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:26:03,587 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00039-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:26:03,606 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:30:32,703 - INFO - Downloading all ready datasets: ['song_describer', 'jamendo_max_caps', 'fma']
+2025-11-02 11:30:32,703 - INFO - 
+================================================================================
+2025-11-02 11:30:32,703 - INFO - DOWNLOADING: SONG_DESCRIBER
+2025-11-02 11:30:32,703 - INFO - ================================================================================
+2025-11-02 11:30:32,703 - INFO - Output directory: data/raw/song_describer
+2025-11-02 11:30:32,703 - INFO - Resume: True
+2025-11-02 11:30:32,703 - INFO - Dry run: False
+2025-11-02 11:30:32,704 - INFO - Loaded checkpoint from 2025-11-02T11:03:33.448416
+2025-11-02 11:30:32,704 - INFO -   Downloaded: 1 files
+2025-11-02 11:30:32,704 - INFO -   Failed: 0 files
+2025-11-02 11:30:32,704 - INFO - Initialized song_describer downloader
+2025-11-02 11:30:32,704 - INFO -   Output dir: data/raw/song_describer
+2025-11-02 11:30:32,704 - INFO -   Resume: True
+2025-11-02 11:30:32,704 - INFO -   Dry run: False
+2025-11-02 11:30:32,704 - INFO - Starting song_describer download...
+2025-11-02 11:30:32,705 - WARNING - Existing metadata file is corrupted: Expecting value: line 1 column 1 (char 0)
+2025-11-02 11:30:32,705 - INFO - Re-downloading metadata...
+2025-11-02 11:30:32,705 - INFO - Downloading metadata from Zenodo...
+2025-11-02 11:30:34,597 - INFO - Metadata saved to data/raw/song_describer/metadata.json
+2025-11-02 11:30:34,597 - ERROR - Metadata file is corrupted: Expecting value: line 1 column 1 (char 0)
+2025-11-02 11:30:34,597 - ERROR - Please delete the corrupted file and re-run the download:
+2025-11-02 11:30:34,597 - ERROR -   rm data/raw/song_describer/metadata.json
+2025-11-02 11:30:34,597 - ERROR -   python download_datasets.py --datasets song_describer
+2025-11-02 11:30:34,597 - ERROR - ✗ song_describer download failed
+2025-11-02 11:30:34,597 - INFO - 
+================================================================================
+2025-11-02 11:30:34,597 - INFO - DOWNLOADING: JAMENDO_MAX_CAPS
+2025-11-02 11:30:34,597 - INFO - ================================================================================
+2025-11-02 11:30:34,597 - INFO - Output directory: data/raw/jamendo_max_caps
+2025-11-02 11:30:34,597 - INFO - Resume: True
+2025-11-02 11:30:34,597 - INFO - Dry run: False
+2025-11-02 11:30:34,598 - INFO - Initialized jamendo_max_caps downloader
+2025-11-02 11:30:34,598 - INFO -   Output dir: data/raw/jamendo_max_caps
+2025-11-02 11:30:34,598 - INFO -   Resume: True
+2025-11-02 11:30:34,598 - INFO -   Dry run: False
+2025-11-02 11:30:34,598 - INFO - Starting jamendo_max_caps download...
+2025-11-02 11:30:36,129 - INFO - Downloading from HuggingFace: amaai-lab/JamendoMaxCaps
+2025-11-02 11:30:36,129 - INFO - This may take a while...
+2025-11-02 11:30:36,218 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2025-11-02 11:30:36,225 - INFO - HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/amaai-lab/JamendoMaxCaps/a61576e63a370344090f95aa519c0a1d7fbdbb37/README.md "HTTP/1.1 200 OK"
+2025-11-02 11:30:36,244 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/JamendoMaxCaps.py "HTTP/1.1 404 Not Found"
+2025-11-02 11:30:36,297 - INFO - HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/amaai-lab/JamendoMaxCaps/amaai-lab/JamendoMaxCaps.py "HTTP/1.1 404 Not Found"
+2025-11-02 11:30:36,322 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/revision/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:30:36,355 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/.huggingface.yaml "HTTP/1.1 404 Not Found"
+2025-11-02 11:30:37,708 - INFO - HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=amaai-lab/JamendoMaxCaps "HTTP/1.1 200 OK"
+2025-11-02 11:30:37,784 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37/data?recursive=true&expand=false "HTTP/1.1 200 OK"
+2025-11-02 11:30:38,172 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37/data?expand=false&recursive=true&limit=1000&cursor=ZXlKbWFXeGxYMjVoYldVaU9pSmtZWFJoTDNSeVlXbHVMVEF3T1RrNUxXOW1MVEF5TWpjeUxuQmhjbkYxWlhRaUxDSjBjbVZsWDI5cFpDSTZJbVUxTlRNeE4ySmxNbVZtWmpZNU1HRTJZV00xWlRFek5tVTFOMlV4TldFM01XUmhOamhpTm1VaWZRPT06MTAwMA%3D%3D "HTTP/1.1 200 OK"
+2025-11-02 11:30:38,237 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37/data?expand=false&recursive=true&limit=1000&cursor=ZXlKbWFXeGxYMjVoYldVaU9pSmtZWFJoTDNSeVlXbHVMVEF4T1RrNUxXOW1MVEF5TWpjeUxuQmhjbkYxWlhRaUxDSjBjbVZsWDI5cFpDSTZJbVUxTlRNeE4ySmxNbVZtWmpZNU1HRTJZV00xWlRFek5tVTFOMlV4TldFM01XUmhOamhpTm1VaWZRPT06MjAwMA%3D%3D "HTTP/1.1 200 OK"
+2025-11-02 11:30:39,219 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37?recursive=false&expand=false "HTTP/1.1 200 OK"
+2025-11-02 11:30:39,250 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/tree/a61576e63a370344090f95aa519c0a1d7fbdbb37?expand=false&recursive=false&limit=1000&cursor=ZXlKbWFXeGxYMjVoYldVaU9pSXlNREl4TFRBNExUSTFMbXB6YjI1c0lpd2lkSEpsWlY5dmFXUWlPaUkyTm1KaFlUZzBNakE1WVRVd05qUTRNVFE1TURNM09EQmpZemxoWWpNM09UUTJaRFkyTkRobUluMD06MTAwMA%3D%3D "HTTP/1.1 200 OK"
+2025-11-02 11:30:39,344 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/dataset_infos.json "HTTP/1.1 404 Not Found"
+2025-11-02 11:30:39,611 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/revision/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:30:39,658 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00038-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:30:39,686 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:30:44,800 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00039-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:30:44,814 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:30:49,741 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00040-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:30:49,832 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:30:54,321 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00041-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:30:54,338 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:31:00,543 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00042-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:31:00,559 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:31:07,237 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00043-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:31:07,254 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:31:12,453 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00044-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:31:12,468 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"
+2025-11-02 11:31:17,777 - INFO - HTTP Request: HEAD https://huggingface.co/datasets/amaai-lab/JamendoMaxCaps/resolve/a61576e63a370344090f95aa519c0a1d7fbdbb37/data/train-00045-of-02272.parquet "HTTP/1.1 302 Found"
+2025-11-02 11:31:17,793 - INFO - HTTP Request: GET https://huggingface.co/api/datasets/amaai-lab/JamendoMaxCaps/xet-read-token/a61576e63a370344090f95aa519c0a1d7fbdbb37 "HTTP/1.1 200 OK"

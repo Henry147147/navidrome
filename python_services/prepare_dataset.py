@@ -18,6 +18,7 @@ import logging
 import signal
 import tempfile
 import shutil
+import random
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Set
 from dataclasses import dataclass, field
@@ -32,6 +33,7 @@ from datasets import load_dataset
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterator
+from sklearn.model_selection import train_test_split as sk_train_test_split
 
 # Import existing embedding models
 from embedding_models import (
@@ -275,13 +277,194 @@ class AudioBatchLoader:
         return (len(self.dataset) + self.batch_size - 1) // self.batch_size
 
 
+# ============================================================================
+# Unified Dataset Loader (HuggingFace Dataset-compatible interface)
+# ============================================================================
+
+class UnifiedDatasetSubset:
+    """Subset of unified dataset for train/val/test splits"""
+
+    def __init__(self, parent_loader: 'UnifiedDatasetLoader', indices: List[int]):
+        """
+        Initialize subset.
+
+        Args:
+            parent_loader: Parent UnifiedDatasetLoader
+            indices: List of indices for this subset
+        """
+        self.parent = parent_loader
+        self.indices = indices
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __getitem__(self, idx: int) -> Dict:
+        """Get item by subset index"""
+        actual_idx = self.indices[idx]
+        return self.parent[actual_idx]
+
+    def train_test_split(self, test_size: float, seed: int) -> Dict[str, 'UnifiedDatasetSubset']:
+        """
+        Split this subset further (for creating val/test from temp split).
+
+        Args:
+            test_size: Fraction for test set
+            seed: Random seed
+
+        Returns:
+            Dict with 'train' and 'test' subsets
+        """
+        train_indices, test_indices = sk_train_test_split(
+            self.indices,
+            test_size=test_size,
+            random_state=seed
+        )
+
+        return {
+            'train': UnifiedDatasetSubset(self.parent, train_indices),
+            'test': UnifiedDatasetSubset(self.parent, test_indices)
+        }
+
+
+class UnifiedDatasetLoader:
+    """
+    Loader for unified JSON dataset with HuggingFace Dataset-compatible interface.
+
+    This allows seamless replacement of MusicBench dataset loading with unified
+    multi-dataset JSON format.
+    """
+
+    def __init__(
+        self,
+        dataset_file: str,
+        sample_size: Optional[int] = None,
+        min_duration: float = 0.0,
+        max_duration: float = float('inf'),
+        random_seed: int = 42
+    ):
+        """
+        Initialize unified dataset loader.
+
+        Args:
+            dataset_file: Path to unified JSON file
+            sample_size: Optional sample size limit
+            min_duration: Minimum audio duration (seconds)
+            max_duration: Maximum audio duration (seconds)
+            random_seed: Random seed for sampling
+        """
+        logger.info(f"Loading unified dataset from {dataset_file}...")
+
+        # Load JSON
+        with open(dataset_file, 'r') as f:
+            self.data = json.load(f)
+
+        logger.info(f"Loaded {len(self.data)} tracks from unified dataset")
+
+        # Validate required fields
+        if self.data:
+            required_fields = ['id', 'audio_path', 'caption', 'duration']
+            missing_fields = [f for f in required_fields if f not in self.data[0]]
+            if missing_fields:
+                raise ValueError(f"Unified dataset missing required fields: {missing_fields}")
+
+        # Filter by duration
+        if min_duration > 0 or max_duration < float('inf'):
+            original_count = len(self.data)
+            self.data = [
+                item for item in self.data
+                if min_duration <= item.get('duration', 0) <= max_duration
+            ]
+            logger.info(f"Filtered by duration ({min_duration}s - {max_duration}s): "
+                       f"{original_count} → {len(self.data)} tracks")
+
+        # Sample if specified
+        if sample_size and sample_size < len(self.data):
+            random.seed(random_seed)
+            self.data = random.sample(self.data, sample_size)
+            logger.info(f"Sampled {sample_size} tracks")
+
+        # Dataset statistics
+        by_dataset = defaultdict(int)
+        for item in self.data:
+            by_dataset[item.get('dataset', 'unknown')] += 1
+
+        logger.info(f"Dataset composition:")
+        for dataset, count in sorted(by_dataset.items()):
+            logger.info(f"  {dataset}: {count} tracks")
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, idx: int) -> Dict:
+        """
+        Get item in format compatible with MusicBench expectations.
+
+        Maps unified format to expected format:
+        - audio_path → location
+        - caption → main_caption
+        - alt_captions[0] → alt_caption (if available)
+        """
+        item = self.data[idx]
+
+        # Map to expected format
+        result = {
+            'location': item['audio_path'],
+            'main_caption': item['caption'],
+            'alt_caption': '',
+            'id': item['id']
+        }
+
+        # Add alt caption if available
+        if item.get('alt_captions') and len(item['alt_captions']) > 0:
+            result['alt_caption'] = item['alt_captions'][0]
+
+        return result
+
+    def train_test_split(self, test_size: float, seed: int) -> Dict[str, UnifiedDatasetSubset]:
+        """
+        Split dataset into train and test subsets.
+
+        Args:
+            test_size: Fraction for test set
+            seed: Random seed
+
+        Returns:
+            Dict with 'train' and 'test' UnifiedDatasetSubset instances
+        """
+        indices = list(range(len(self.data)))
+        train_indices, test_indices = sk_train_test_split(
+            indices,
+            test_size=test_size,
+            random_state=seed
+        )
+
+        return {
+            'train': UnifiedDatasetSubset(self, train_indices),
+            'test': UnifiedDatasetSubset(self, test_indices)
+        }
+
+
 @dataclass
 class DatasetConfig:
     """Configuration for dataset preparation"""
-    output_dir: str = "data/musicbench_embeddings"
+    # Input dataset
+    dataset_file: str = "data/unified_dataset.json"  # Path to unified JSON
+    use_musicbench: bool = False  # If True, load MusicBench instead of unified dataset
+
+    # Sampling and filtering
+    sample_size: Optional[int] = None  # Limit total samples processed
+    min_duration: float = 5.0  # Minimum audio duration (seconds)
+    max_duration: float = 600.0  # Maximum audio duration (seconds)
+
+    # Output
+    output_dir: str = "data/processed_embeddings"
     hdf5_filename: str = "embeddings.h5"
     checkpoint_filename: str = "prepare_checkpoint.json"
-    train_val_split: float = 0.9  # 90% train, 10% val
+
+    # Data splitting
+    train_val_split: float = 0.9  # 90% train, 10% val (for MusicBench only)
+
+    # Processing
     compression: str = "gzip"
     compression_level: int = 4
     batch_size: int = 32  # Batch size for parallel processing
@@ -669,8 +852,17 @@ class MusicBenchProcessor:
                 logger.warning("No checkpoint found. Starting from beginning.")
 
     def load_and_split_dataset(self):
-        """Load MusicBench and create train/val/test splits"""
-        logger.info("Loading MusicBench dataset...")
+        """Load dataset and create train/val/test splits"""
+
+        # Choose dataset source
+        if self.config.use_musicbench:
+            return self._load_musicbench_dataset()
+        else:
+            return self._load_unified_dataset()
+
+    def _load_musicbench_dataset(self):
+        """Load MusicBench dataset from HuggingFace (original implementation)"""
+        logger.info("Loading MusicBench dataset from HuggingFace...")
 
         dataset = load_dataset("amaai-lab/MusicBench")
 
@@ -678,29 +870,7 @@ class MusicBenchProcessor:
         logger.info(f"Test samples: {len(dataset['test'])}")
 
         # Validate that audio files exist
-        logger.info("Validating audio file availability...")
-        sample = dataset['train'][0]
-        audio_path = sample['location']
-
-        if not os.path.exists(audio_path):
-            logger.error("=" * 80)
-            logger.error("AUDIO FILES NOT FOUND")
-            logger.error("=" * 80)
-            logger.error(f"Expected audio file at: {audio_path}")
-            logger.error("")
-            logger.error("The MusicBench dataset contains only metadata.")
-            logger.error("Audio files must be downloaded separately.")
-            logger.error("")
-            logger.error("Please download the MusicBench audio files and ensure they are")
-            logger.error("placed in the correct directory structure matching the 'location'")
-            logger.error("field in the dataset.")
-            logger.error("=" * 80)
-            raise FileNotFoundError(
-                f"Audio files not found. Please download MusicBench audio files. "
-                f"Expected first file at: {audio_path}"
-            )
-
-        logger.info("Audio files found! Proceeding with dataset preparation...")
+        self._validate_audio_files(dataset['train'])
 
         # Split training data into train/val
         train_val_split = dataset['train'].train_test_split(
@@ -720,6 +890,77 @@ class MusicBenchProcessor:
         logger.info(f"  Test: {len(splits['test'])} samples")
 
         return splits
+
+    def _load_unified_dataset(self):
+        """Load unified dataset from JSON"""
+        logger.info(f"Loading unified dataset from {self.config.dataset_file}...")
+
+        # Load unified dataset
+        dataset = UnifiedDatasetLoader(
+            dataset_file=self.config.dataset_file,
+            sample_size=self.config.sample_size,
+            min_duration=self.config.min_duration,
+            max_duration=self.config.max_duration,
+            random_seed=self.config.random_seed
+        )
+
+        # Validate audio files
+        if len(dataset) > 0:
+            self._validate_audio_files(dataset)
+
+        # Create train/val/test splits (80/10/10)
+        # First split: 80% train, 20% temp
+        train_temp_split = dataset.train_test_split(
+            test_size=0.2,
+            seed=self.config.random_seed
+        )
+
+        # Second split: split temp into 50/50 for val and test
+        val_test_split = train_temp_split['test'].train_test_split(
+            test_size=0.5,
+            seed=self.config.random_seed
+        )
+
+        splits = {
+            'train': train_temp_split['train'],
+            'val': val_test_split['train'],
+            'test': val_test_split['test']
+        }
+
+        logger.info(f"Final splits:")
+        logger.info(f"  Train: {len(splits['train'])} samples")
+        logger.info(f"  Val: {len(splits['val'])} samples")
+        logger.info(f"  Test: {len(splits['test'])} samples")
+
+        return splits
+
+    def _validate_audio_files(self, dataset_split):
+        """Validate that audio files exist"""
+        logger.info("Validating audio file availability...")
+
+        if len(dataset_split) == 0:
+            logger.warning("Dataset is empty!")
+            return
+
+        sample = dataset_split[0]
+        audio_path = sample['location']
+
+        if not os.path.exists(audio_path):
+            logger.error("=" * 80)
+            logger.error("AUDIO FILES NOT FOUND")
+            logger.error("=" * 80)
+            logger.error(f"Expected audio file at: {audio_path}")
+            logger.error("")
+            logger.error("Please ensure:")
+            logger.error("1. Audio files have been downloaded")
+            logger.error("2. Unified dataset JSON contains correct absolute paths")
+            logger.error("3. The paths are accessible from this machine")
+            logger.error("=" * 80)
+            raise FileNotFoundError(
+                f"Audio files not found. Expected first file at: {audio_path}"
+            )
+
+        logger.info("✓ Audio files found! Proceeding with dataset preparation...")
 
     def process_split(self, split_name: str, split_data, hdf5_file: h5py.File):
         """
@@ -1131,21 +1372,45 @@ class MusicBenchProcessor:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Prepare MusicBench dataset for training")
-    parser.add_argument('--output-dir', type=str, default='data/musicbench_embeddings',
-                       help='Output directory for embeddings')
+    parser = argparse.ArgumentParser(
+        description="Prepare music dataset for training (supports unified JSON or MusicBench)"
+    )
+
+    # Dataset selection
+    parser.add_argument('--dataset-file', type=str, default='data/unified_dataset.json',
+                       help='Path to unified dataset JSON file (default: data/unified_dataset.json)')
+    parser.add_argument('--use-musicbench', action='store_true',
+                       help='Use MusicBench from HuggingFace instead of unified dataset')
+
+    # Sampling and filtering
+    parser.add_argument('--sample-size', type=int, default=None,
+                       help='Limit total number of samples to process (default: all)')
+    parser.add_argument('--min-duration', type=float, default=5.0,
+                       help='Minimum audio duration in seconds (default: 5.0)')
+    parser.add_argument('--max-duration', type=float, default=600.0,
+                       help='Maximum audio duration in seconds (default: 600.0)')
+
+    # Output
+    parser.add_argument('--output-dir', type=str, default='data/processed_embeddings',
+                       help='Output directory for embeddings (default: data/processed_embeddings)')
+
+    # Processing
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu',
                        help='Device to use for embedding extraction')
     parser.add_argument('--dtype', type=str, default='float32',
                        help='Data type for embeddings')
-    parser.add_argument('--train-val-split', type=float, default=0.9,
-                       help='Fraction of training data to use for training (rest for validation)')
-    parser.add_argument('--seed', type=int, default=42,
-                       help='Random seed for reproducibility')
     parser.add_argument('--batch-size', type=int, default=32,
                        help='Batch size for parallel processing (default: 32)')
     parser.add_argument('--num-workers', type=int, default=4,
                        help='Number of parallel workers for audio loading (default: 4)')
+
+    # Splitting (for MusicBench only)
+    parser.add_argument('--train-val-split', type=float, default=0.9,
+                       help='Fraction of training data for training, rest for validation (MusicBench only)')
+
+    # Other
+    parser.add_argument('--seed', type=int, default=42,
+                       help='Random seed for reproducibility')
     parser.add_argument('--continue', dest='continue_from_checkpoint', action='store_true',
                        help='Continue from previous checkpoint if it exists')
 
@@ -1153,6 +1418,11 @@ def main():
 
     # Create config
     config = DatasetConfig(
+        dataset_file=args.dataset_file,
+        use_musicbench=args.use_musicbench,
+        sample_size=args.sample_size,
+        min_duration=args.min_duration,
+        max_duration=args.max_duration,
         output_dir=args.output_dir,
         device=args.device,
         dtype=args.dtype,

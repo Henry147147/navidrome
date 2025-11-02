@@ -9,6 +9,8 @@ Models trained:
 1. MuQ Projection: 2560D → 1536D
 2. MERT Projection: 2560D → 76,800D
 3. Music2Latent Projection: 2560D → 576D
+
+Works with any dataset prepared by prepare_dataset.py (MusicBench, unified datasets, etc.)
 """
 
 import os
@@ -811,12 +813,14 @@ class Trainer:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train text-to-audio projection models")
+    parser = argparse.ArgumentParser(
+        description="Train text-to-audio projection models (works with any prepared dataset)"
+    )
     parser.add_argument('--audio-encoder', type=str, required=True,
                        choices=['muq', 'mert', 'latent'],
                        help='Which audio encoder to train for')
-    parser.add_argument('--data-dir', type=str, default='data/musicbench_embeddings',
-                       help='Directory containing embeddings HDF5 file')
+    parser.add_argument('--data-dir', type=str, default='data/processed_embeddings',
+                       help='Directory containing embeddings HDF5 file (from prepare_dataset.py)')
     parser.add_argument('--checkpoint-dir', type=str, default='checkpoints',
                        help='Directory to save checkpoints')
     parser.add_argument('--resume', type=str, default=None,
