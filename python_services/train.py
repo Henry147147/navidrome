@@ -16,6 +16,7 @@ import sys
 import json
 import argparse
 import logging
+import signal
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, asdict
@@ -45,6 +46,23 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+
+# Global flag for graceful shutdown
+_shutdown_requested = False
+
+
+def signal_handler(signum, frame):
+    """Handle SIGINT and SIGTERM for graceful shutdown"""
+    global _shutdown_requested
+    sig_name = signal.Signals(signum).name
+    logger.warning(f"\n{sig_name} received. Saving checkpoint and exiting gracefully...")
+    _shutdown_requested = True
+
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 
 @dataclass
@@ -88,8 +106,10 @@ class TrainingConfig:
 
     # Checkpointing
     checkpoint_dir: str = "checkpoints"
+    resume_from: Optional[str] = None  # Path to checkpoint to resume from
     save_every_n_epochs: int = 5
     early_stopping_patience: int = 5
+    max_checkpoints_to_keep: int = 3  # Keep only N recent periodic checkpoints
 
     # Logging
     log_dir: str = "logs/tensorboard"
@@ -381,18 +401,37 @@ class Trainer:
 
         # Optimizer
         param_groups = [
-            {'params': self.projection.parameters(), 'lr': config.learning_rate},
+            {'params': self.projection.parameters(), 'lr': config.learning_rate, 'initial_lr': config.learning_rate},
         ]
         if config.use_lora:
             param_groups.append({
                 'params': [p for p in self.text_encoder.parameters() if p.requires_grad],
-                'lr': config.text_lr
+                'lr': config.text_lr,
+                'initial_lr': config.text_lr
             })
 
         self.optimizer = AdamW(param_groups, weight_decay=config.weight_decay)
 
         # Load datasets
         hdf5_path = os.path.join(config.data_dir, config.hdf5_filename)
+
+        # Validate HDF5 file exists and is readable
+        if not os.path.exists(hdf5_path):
+            raise FileNotFoundError(f"HDF5 embeddings file not found: {hdf5_path}")
+
+        try:
+            with h5py.File(hdf5_path, 'r') as f:
+                # Validate required splits exist
+                for split in ['train', 'val', 'test']:
+                    if split not in f:
+                        raise ValueError(f"Split '{split}' not found in HDF5 file")
+                    # Validate required datasets exist
+                    if f'{config.audio_encoder}_embeddings' not in f[split]:
+                        raise ValueError(f"Embeddings for '{config.audio_encoder}' not found in '{split}' split")
+        except Exception as e:
+            logger.error(f"Failed to validate HDF5 file: {e}")
+            raise
+
         self.train_dataset = MusicBenchEmbeddingDataset(hdf5_path, 'train', config.audio_encoder)
         self.val_dataset = MusicBenchEmbeddingDataset(hdf5_path, 'val', config.audio_encoder)
         self.test_dataset = MusicBenchEmbeddingDataset(hdf5_path, 'test', config.audio_encoder)
@@ -441,10 +480,15 @@ class Trainer:
         self.writer = SummaryWriter(log_dir)
 
         # Training state
+        self.start_epoch = 0
         self.global_step = 0
         self.best_val_r1 = 0.0
         self.best_val_loss = float('inf')
         self.epochs_without_improvement = 0
+
+        # Load checkpoint if resuming
+        if config.resume_from:
+            self.load_checkpoint(config.resume_from)
 
         logger.info(f"Training configuration:")
         logger.info(f"  Audio encoder: {config.audio_encoder}")
@@ -456,9 +500,13 @@ class Trainer:
         logger.info(f"  Test samples: {len(self.test_dataset)}")
         logger.info(f"  Effective batch size: {config.batch_size * config.gradient_accumulation_steps}")
         logger.info(f"  Total steps: {self.total_steps}")
+        if self.start_epoch > 0:
+            logger.info(f"  Resuming from epoch: {self.start_epoch + 1}")
 
     def train_epoch(self, epoch: int) -> Dict[str, float]:
         """Train for one epoch"""
+        global _shutdown_requested
+
         self.text_encoder.train()
         self.projection.train()
 
@@ -468,6 +516,10 @@ class Trainer:
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch+1}/{self.config.epochs}")
 
         for batch_idx, batch in enumerate(pbar):
+            # Check for shutdown signal
+            if _shutdown_requested:
+                logger.warning("Shutdown requested during epoch")
+                break
             # Move to device
             audio_emb = batch['audio_embedding'].to(self.config.device)
             captions = batch['caption']
@@ -506,9 +558,10 @@ class Trainer:
 
                 # Warmup or scheduler
                 if self.global_step < self.config.warmup_steps:
+                    # Linear warmup: gradually increase LR from 0 to initial_lr
                     lr_scale = (self.global_step + 1) / self.config.warmup_steps
                     for param_group in self.optimizer.param_groups:
-                        param_group['lr'] = param_group['lr'] * lr_scale / max(lr_scale - 1 + 1, 1e-8)
+                        param_group['lr'] = param_group['initial_lr'] * lr_scale
                 else:
                     self.scheduler.step()
 
@@ -568,70 +621,170 @@ class Trainer:
         return metrics
 
     def save_checkpoint(self, epoch: int, metrics: Dict[str, float], prefix: str = ""):
-        """Save checkpoint"""
+        """Save checkpoint with atomic write"""
+        # Save PEFT model state if using LoRA, otherwise save full model
+        if self.config.use_lora:
+            # Save only the trainable LoRA parameters
+            text_encoder_state = self.text_encoder.model.state_dict()
+        else:
+            text_encoder_state = self.text_encoder.model.state_dict()
+
         checkpoint = {
             'epoch': epoch,
             'global_step': self.global_step,
             'projection_state_dict': self.projection.state_dict(),
-            'text_encoder_state_dict': self.text_encoder.model.state_dict(),
+            'text_encoder_state_dict': text_encoder_state,
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
             'scaler_state_dict': self.scaler.state_dict(),
             'config': asdict(self.config),
             'metrics': metrics,
             'best_val_r1': self.best_val_r1,
-            'best_val_loss': self.best_val_loss
+            'best_val_loss': self.best_val_loss,
+            'epochs_without_improvement': self.epochs_without_improvement
         }
 
-        filename = f"{self.config.audio_encoder}_{prefix}.pt" if prefix else f"{self.config.audio_encoder}_epoch{epoch}.pt"
+        filename = f"{self.config.audio_encoder}_{prefix}.pt" if prefix else f"{self.config.audio_encoder}_epoch{epoch+1}.pt"
         path = os.path.join(self.config.checkpoint_dir, filename)
-        torch.save(checkpoint, path)
-        logger.info(f"Checkpoint saved to {path}")
+
+        # Atomic write: save to temp file first
+        temp_path = path + '.tmp'
+        try:
+            torch.save(checkpoint, temp_path)
+            os.replace(temp_path, path)  # Atomic on POSIX systems
+            logger.info(f"Checkpoint saved to {path}")
+
+            # Cleanup old periodic checkpoints if not a special checkpoint
+            if not prefix:
+                self._cleanup_old_checkpoints(epoch)
+        except Exception as e:
+            logger.error(f"Failed to save checkpoint: {e}")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    def _cleanup_old_checkpoints(self, current_epoch: int):
+        """Remove old periodic checkpoints, keeping only the N most recent"""
+        checkpoint_dir = Path(self.config.checkpoint_dir)
+        pattern = f"{self.config.audio_encoder}_epoch*.pt"
+
+        checkpoints = sorted(checkpoint_dir.glob(pattern), key=lambda p: p.stat().st_mtime)
+
+        # Keep only max_checkpoints_to_keep most recent
+        to_remove = checkpoints[:-self.config.max_checkpoints_to_keep]
+        for ckpt_path in to_remove:
+            try:
+                ckpt_path.unlink()
+                logger.info(f"Removed old checkpoint: {ckpt_path}")
+            except Exception as e:
+                logger.warning(f"Failed to remove old checkpoint {ckpt_path}: {e}")
+
+    def load_checkpoint(self, checkpoint_path: str):
+        """Load checkpoint and restore training state"""
+        if not os.path.exists(checkpoint_path):
+            logger.error(f"Checkpoint not found: {checkpoint_path}")
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+        try:
+            logger.info(f"Loading checkpoint from {checkpoint_path}")
+            checkpoint = torch.load(checkpoint_path, map_location=self.config.device)
+
+            # Validate config compatibility
+            saved_config = checkpoint.get('config', {})
+            if saved_config.get('audio_encoder') != self.config.audio_encoder:
+                raise ValueError(
+                    f"Config mismatch: checkpoint is for {saved_config.get('audio_encoder')}, "
+                    f"but current config is for {self.config.audio_encoder}"
+                )
+
+            # Restore model states
+            self.projection.load_state_dict(checkpoint['projection_state_dict'])
+            self.text_encoder.model.load_state_dict(checkpoint['text_encoder_state_dict'])
+
+            # Restore optimizer and scheduler
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            self.scaler.load_state_dict(checkpoint['scaler_state_dict'])
+
+            # Restore training state
+            self.start_epoch = checkpoint['epoch'] + 1
+            self.global_step = checkpoint['global_step']
+            self.best_val_r1 = checkpoint.get('best_val_r1', 0.0)
+            self.best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+            self.epochs_without_improvement = checkpoint.get('epochs_without_improvement', 0)
+
+            logger.info(f"Resumed from epoch {self.start_epoch}")
+            logger.info(f"  Global step: {self.global_step}")
+            logger.info(f"  Best val R@1: {self.best_val_r1:.2f}%")
+            logger.info(f"  Best val loss: {self.best_val_loss:.4f}")
+
+        except Exception as e:
+            logger.error(f"Failed to load checkpoint: {e}", exc_info=True)
+            raise
 
     def train(self):
         """Main training loop"""
+        global _shutdown_requested
+
         logger.info("Starting training...")
 
-        for epoch in range(self.config.epochs):
-            # Train
-            train_metrics = self.train_epoch(epoch)
-            logger.info(f"Epoch {epoch+1} - Train loss: {train_metrics['loss']:.4f}")
+        try:
+            for epoch in range(self.start_epoch, self.config.epochs):
+                # Check for shutdown signal
+                if _shutdown_requested:
+                    logger.warning("Shutdown requested. Saving checkpoint...")
+                    # Save current state before exiting
+                    val_metrics = self.evaluate(self.val_loader, 'val')
+                    self.save_checkpoint(epoch, val_metrics, prefix="interrupted")
+                    logger.info("Checkpoint saved. Resume with --resume flag.")
+                    return
 
-            # Validate
+                # Train
+                train_metrics = self.train_epoch(epoch)
+                logger.info(f"Epoch {epoch+1} - Train loss: {train_metrics['loss']:.4f}")
+
+                # Validate
+                val_metrics = self.evaluate(self.val_loader, 'val')
+                logger.info(f"Epoch {epoch+1} - Val loss: {val_metrics['loss']:.4f}")
+                logger.info(f"  Val t2a R@1: {val_metrics['t2a_R@1']:.2f}%")
+                logger.info(f"  Val t2a R@5: {val_metrics['t2a_R@5']:.2f}%")
+                logger.info(f"  Val t2a R@10: {val_metrics['t2a_R@10']:.2f}%")
+                logger.info(f"  Val t2a MRR: {val_metrics['t2a_MRR']:.4f}")
+
+                # Log to TensorBoard
+                for key, value in val_metrics.items():
+                    self.writer.add_scalar(f'val/{key}', value, epoch)
+
+                # Save best checkpoints
+                if val_metrics['t2a_R@1'] > self.best_val_r1:
+                    self.best_val_r1 = val_metrics['t2a_R@1']
+                    self.save_checkpoint(epoch, val_metrics, prefix="best_r1")
+                    self.epochs_without_improvement = 0
+                else:
+                    self.epochs_without_improvement += 1
+
+                if val_metrics['loss'] < self.best_val_loss:
+                    self.best_val_loss = val_metrics['loss']
+                    self.save_checkpoint(epoch, val_metrics, prefix="best_loss")
+
+                # Periodic checkpoint
+                if (epoch + 1) % self.config.save_every_n_epochs == 0:
+                    self.save_checkpoint(epoch, val_metrics)
+
+                # Save last
+                self.save_checkpoint(epoch, val_metrics, prefix="last")
+
+                # Early stopping
+                if self.epochs_without_improvement >= self.config.early_stopping_patience:
+                    logger.info(f"Early stopping triggered after {epoch+1} epochs")
+                    break
+
+        except KeyboardInterrupt:
+            logger.warning("\nTraining interrupted. Saving checkpoint...")
             val_metrics = self.evaluate(self.val_loader, 'val')
-            logger.info(f"Epoch {epoch+1} - Val loss: {val_metrics['loss']:.4f}")
-            logger.info(f"  Val t2a R@1: {val_metrics['t2a_R@1']:.2f}%")
-            logger.info(f"  Val t2a R@5: {val_metrics['t2a_R@5']:.2f}%")
-            logger.info(f"  Val t2a R@10: {val_metrics['t2a_R@10']:.2f}%")
-            logger.info(f"  Val t2a MRR: {val_metrics['t2a_MRR']:.4f}")
-
-            # Log to TensorBoard
-            for key, value in val_metrics.items():
-                self.writer.add_scalar(f'val/{key}', value, epoch)
-
-            # Save best checkpoints
-            if val_metrics['t2a_R@1'] > self.best_val_r1:
-                self.best_val_r1 = val_metrics['t2a_R@1']
-                self.save_checkpoint(epoch, val_metrics, prefix="best_r1")
-                self.epochs_without_improvement = 0
-            else:
-                self.epochs_without_improvement += 1
-
-            if val_metrics['loss'] < self.best_val_loss:
-                self.best_val_loss = val_metrics['loss']
-                self.save_checkpoint(epoch, val_metrics, prefix="best_loss")
-
-            # Periodic checkpoint
-            if (epoch + 1) % self.config.save_every_n_epochs == 0:
-                self.save_checkpoint(epoch, val_metrics)
-
-            # Save last
-            self.save_checkpoint(epoch, val_metrics, prefix="last")
-
-            # Early stopping
-            if self.epochs_without_improvement >= self.config.early_stopping_patience:
-                logger.info(f"Early stopping triggered after {epoch+1} epochs")
-                break
+            self.save_checkpoint(epoch, val_metrics, prefix="interrupted")
+            logger.info("Checkpoint saved. Resume with --resume flag.")
+            self.writer.close()
+            return
 
         # Final evaluation on test set
         logger.info("\nEvaluating on test set...")
@@ -666,6 +819,8 @@ def main():
                        help='Directory containing embeddings HDF5 file')
     parser.add_argument('--checkpoint-dir', type=str, default='checkpoints',
                        help='Directory to save checkpoints')
+    parser.add_argument('--resume', type=str, default=None,
+                       help='Path to checkpoint to resume from')
     parser.add_argument('--log-dir', type=str, default='logs/tensorboard',
                        help='Directory for TensorBoard logs')
     parser.add_argument('--epochs', type=int, default=20,
@@ -695,6 +850,7 @@ def main():
         audio_encoder=args.audio_encoder,
         data_dir=args.data_dir,
         checkpoint_dir=args.checkpoint_dir,
+        resume_from=args.resume,
         log_dir=args.log_dir,
         epochs=args.epochs,
         batch_size=args.batch_size,
