@@ -3,8 +3,15 @@ import { Route } from 'react-router-dom'
 import Personal from './personal/Personal'
 import ExploreSuggestions from './explore/ExploreSuggestions'
 import UploadPage from './upload/UploadPage'
+import AutoPlayPage from './autoplay/AutoPlayPage'
 
 const routes = [
+  <Route
+    exact
+    path="/autoplay"
+    render={() => <AutoPlayPage />}
+    key={'autoplay'}
+  />,
   <Route exact path="/upload" render={() => <UploadPage />} key={'upload'} />,
   <Route
     exact

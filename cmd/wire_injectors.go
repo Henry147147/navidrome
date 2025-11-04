@@ -33,6 +33,7 @@ var allProviders = wire.NewSet(
 	subsonic.New,
 	nativeapi.New,
 	public.New,
+	subsonic.NewRecommendationClient,
 	persistence.New,
 	lastfm.NewRouter,
 	listenbrainz.NewRouter,

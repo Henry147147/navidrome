@@ -102,7 +102,8 @@ type configOptions struct {
 	Spotify                         spotifyOptions      `json:",omitzero"`
 	Deezer                          deezerOptions       `json:",omitzero"`
 	ListenBrainz                    listenBrainzOptions `json:",omitzero"`
-	Tags                            map[string]TagConf  `json:",omitempty"`
+	Recommendations                 recommendationsOptions
+	Tags                            map[string]TagConf `json:",omitempty"`
 	Agents                          string
 
 	// DevFlags. These are used to enable/disable debugging and incomplete features
@@ -220,6 +221,13 @@ type inspectOptions struct {
 	BacklogTimeout int
 }
 
+type recommendationsOptions struct {
+	BaseURL      string
+	Timeout      time.Duration
+	DefaultLimit int
+	Diversity    float64
+}
+
 type pluginsOptions struct {
 	Enabled   bool
 	Folder    string
@@ -287,6 +295,19 @@ func Load(noConfigDump bool) {
 			_, _ = fmt.Fprintln(os.Stderr, "FATAL: Error creating backup path:", err)
 			os.Exit(1)
 		}
+	}
+
+	if Server.Recommendations.Timeout <= 0 {
+		Server.Recommendations.Timeout = 5 * time.Second
+	}
+	if Server.Recommendations.DefaultLimit <= 0 {
+		Server.Recommendations.DefaultLimit = 25
+	}
+	if Server.Recommendations.Diversity < 0 {
+		Server.Recommendations.Diversity = 0
+	}
+	if Server.Recommendations.Diversity > 1 {
+		Server.Recommendations.Diversity = 1
 	}
 
 	out := os.Stderr
@@ -500,6 +521,10 @@ func setViperDefaults() {
 	viper.SetDefault("enabledownloads", true)
 	viper.SetDefault("enableexternalservices", true)
 	viper.SetDefault("enablemediafilecoverart", true)
+	viper.SetDefault("recommendations.baseurl", "http://127.0.0.1:9002")
+	viper.SetDefault("recommendations.timeout", 5*time.Second)
+	viper.SetDefault("recommendations.defaultlimit", 25)
+	viper.SetDefault("recommendations.diversity", 0.15)
 	viper.SetDefault("autotranscodedownload", false)
 	viper.SetDefault("defaultdownsamplingformat", consts.DefaultDownsamplingFormat)
 	viper.SetDefault("searchfullstring", false)

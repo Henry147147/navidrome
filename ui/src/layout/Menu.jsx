@@ -6,6 +6,7 @@ import { useTranslate, MenuItemLink, getResources } from 'react-admin'
 import ViewListIcon from '@material-ui/icons/ViewList'
 import AlbumIcon from '@material-ui/icons/Album'
 import ExploreIcon from '@material-ui/icons/Explore'
+import PlayArrowOutlinedIcon from '@material-ui/icons/PlayArrowOutlined'
 import CloudUploadIcon from '@material-ui/icons/CloudUpload'
 import SubMenu from './SubMenu'
 import { humanize, pluralize } from 'inflection'
@@ -115,6 +116,14 @@ const Menu = ({ dense = false }) => {
       })}
     >
       {open && <LibrarySelector />}
+      <MenuItemLink
+        to="/autoplay"
+        activeClassName={classes.active}
+        primaryText={translate('menu.autoplay.name', { _: 'Auto Play' })}
+        leftIcon={<PlayArrowOutlinedIcon />}
+        sidebarIsOpen={open}
+        dense={dense}
+      />
       <MenuItemLink
         to="/explore"
         activeClassName={classes.active}
