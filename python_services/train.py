@@ -24,6 +24,9 @@ from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, asdict
 from collections import defaultdict
 
+# Disable tokenizer parallelism to avoid forking issues with DataLoader workers
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import h5py
 import numpy as np
 import torch
@@ -536,69 +539,75 @@ class Trainer:
 
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch+1}/{self.config.epochs}")
 
-        for batch_idx, batch in enumerate(pbar):
-            # Check for shutdown signal
-            if _shutdown_requested:
-                logger.warning("Shutdown requested during epoch")
-                break
-            # Move to device
-            audio_emb = batch['audio_embedding'].to(self.config.device)
-            captions = batch['caption']
+        try:
+            for batch_idx, batch in enumerate(pbar):
+                # Check for shutdown signal
+                if _shutdown_requested:
+                    logger.warning("Shutdown requested during epoch")
+                    break
 
-            # Forward pass
-            with torch.cuda.amp.autocast(
-                enabled=self.config.use_amp,
-                dtype=torch.bfloat16 if self.config.amp_dtype == "bfloat16" else torch.float16
-            ):
-                # Encode text
-                text_emb = self.text_encoder(captions)
+                # Move to device
+                audio_emb = batch['audio_embedding'].to(self.config.device)
+                captions = batch['caption']
 
-                # Project to audio space
-                text_features, audio_features = self.projection(text_emb, audio_emb)
+                # Forward pass
+                with torch.cuda.amp.autocast(
+                    enabled=self.config.use_amp,
+                    dtype=torch.bfloat16 if self.config.amp_dtype == "bfloat16" else torch.float16
+                ):
+                    # Encode text
+                    text_emb = self.text_encoder(captions)
 
-                # Compute loss
-                loss = self.criterion(text_features, audio_features)
-                loss = loss / self.config.gradient_accumulation_steps
+                    # Project to audio space
+                    text_features, audio_features = self.projection(text_emb, audio_emb)
 
-            # Backward pass
-            self.scaler.scale(loss).backward()
+                    # Compute loss
+                    loss = self.criterion(text_features, audio_features)
+                    loss = loss / self.config.gradient_accumulation_steps
 
-            # Update weights
-            if (batch_idx + 1) % self.config.gradient_accumulation_steps == 0:
-                # Gradient clipping
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(
-                    list(self.projection.parameters()) + list(self.text_encoder.parameters()),
-                    self.config.max_grad_norm
-                )
+                # Backward pass
+                self.scaler.scale(loss).backward()
 
-                # Optimizer step
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-                self.optimizer.zero_grad()
+                # Update weights
+                if (batch_idx + 1) % self.config.gradient_accumulation_steps == 0:
+                    # Gradient clipping
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(
+                        list(self.projection.parameters()) + list(self.text_encoder.parameters()),
+                        self.config.max_grad_norm
+                    )
 
-                # Warmup or scheduler
-                if self.global_step < self.config.warmup_steps:
-                    # Linear warmup: gradually increase LR from 0 to initial_lr
-                    lr_scale = (self.global_step + 1) / self.config.warmup_steps
-                    for param_group in self.optimizer.param_groups:
-                        param_group['lr'] = param_group['initial_lr'] * lr_scale
-                else:
-                    self.scheduler.step()
+                    # Optimizer step
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                    self.optimizer.zero_grad()
 
-                self.global_step += 1
+                    # Warmup or scheduler
+                    if self.global_step < self.config.warmup_steps:
+                        # Linear warmup: gradually increase LR from 0 to initial_lr
+                        lr_scale = (self.global_step + 1) / self.config.warmup_steps
+                        for param_group in self.optimizer.param_groups:
+                            param_group['lr'] = param_group['initial_lr'] * lr_scale
+                    else:
+                        self.scheduler.step()
 
-                # Log
-                if self.global_step % self.config.log_every_n_steps == 0:
-                    self.writer.add_scalar('train/loss', loss.item() * self.config.gradient_accumulation_steps, self.global_step)
-                    self.writer.add_scalar('train/lr', self.optimizer.param_groups[0]['lr'], self.global_step)
+                    self.global_step += 1
 
-            total_loss += loss.item() * self.config.gradient_accumulation_steps
-            num_batches += 1
+                    # Log
+                    if self.global_step % self.config.log_every_n_steps == 0:
+                        self.writer.add_scalar('train/loss', loss.item() * self.config.gradient_accumulation_steps, self.global_step)
+                        self.writer.add_scalar('train/lr', self.optimizer.param_groups[0]['lr'], self.global_step)
 
-            pbar.set_postfix({'loss': total_loss / num_batches})
+                total_loss += loss.item() * self.config.gradient_accumulation_steps
+                num_batches += 1
 
-        return {'loss': total_loss / num_batches}
+                pbar.set_postfix({'loss': total_loss / num_batches})
+
+        except KeyboardInterrupt:
+            logger.warning("KeyboardInterrupt in train_epoch, propagating...")
+            raise
+
+        return {'loss': total_loss / num_batches if num_batches > 0 else 0.0}
 
     @torch.no_grad()
     def evaluate(self, loader: DataLoader, split: str) -> Dict[str, float]:
@@ -610,26 +619,31 @@ class Trainer:
         all_audio_features = []
         total_loss = 0.0
 
-        for batch in tqdm(loader, desc=f"Evaluating {split}"):
-            audio_emb = batch['audio_embedding'].to(self.config.device)
-            captions = batch['caption']
+        try:
+            for batch in tqdm(loader, desc=f"Evaluating {split}"):
+                audio_emb = batch['audio_embedding'].to(self.config.device)
+                captions = batch['caption']
 
-            with torch.cuda.amp.autocast(
-                enabled=self.config.use_amp,
-                dtype=torch.bfloat16 if self.config.amp_dtype == "bfloat16" else torch.float16
-            ):
-                # Encode text
-                text_emb = self.text_encoder(captions)
+                with torch.cuda.amp.autocast(
+                    enabled=self.config.use_amp,
+                    dtype=torch.bfloat16 if self.config.amp_dtype == "bfloat16" else torch.float16
+                ):
+                    # Encode text
+                    text_emb = self.text_encoder(captions)
 
-                # Project
-                text_features, audio_features = self.projection(text_emb, audio_emb)
+                    # Project
+                    text_features, audio_features = self.projection(text_emb, audio_emb)
 
-                # Loss
-                loss = self.criterion(text_features, audio_features)
+                    # Loss
+                    loss = self.criterion(text_features, audio_features)
 
-            total_loss += loss.item()
-            all_text_features.append(text_features.cpu())
-            all_audio_features.append(audio_features.cpu())
+                total_loss += loss.item()
+                all_text_features.append(text_features.cpu())
+                all_audio_features.append(audio_features.cpu())
+
+        except KeyboardInterrupt:
+            logger.warning("KeyboardInterrupt in evaluate, propagating...")
+            raise
 
         # Concatenate all features
         all_text_features = torch.cat(all_text_features, dim=0)
@@ -637,7 +651,7 @@ class Trainer:
 
         # Compute metrics
         metrics = RetrievalMetrics.compute_metrics(all_text_features, all_audio_features)
-        metrics['loss'] = total_loss / len(loader)
+        metrics['loss'] = total_loss / len(loader) if len(loader) > 0 else 0.0
 
         return metrics
 
@@ -707,7 +721,7 @@ class Trainer:
 
         try:
             logger.info(f"Loading checkpoint from {checkpoint_path}")
-            checkpoint = torch.load(checkpoint_path, map_location=self.config.device)
+            checkpoint = torch.load(checkpoint_path, map_location=self.config.device, weights_only=False)
 
             # Validate config compatibility
             saved_config = checkpoint.get('config', {})
@@ -754,10 +768,14 @@ class Trainer:
                 if _shutdown_requested:
                     logger.warning("Shutdown requested. Saving checkpoint...")
                     # Save current state before exiting
-                    val_metrics = self.evaluate(self.val_loader, 'val')
+                    try:
+                        val_metrics = self.evaluate(self.val_loader, 'val')
+                    except KeyboardInterrupt:
+                        logger.warning("Interrupted during evaluation, using dummy metrics")
+                        val_metrics = {'loss': 0.0}
                     self.save_checkpoint(epoch, val_metrics, prefix="interrupted")
                     logger.info("Checkpoint saved. Resume with --resume flag.")
-                    return
+                    sys.exit(0)
 
                 # Train
                 train_metrics = self.train_epoch(epoch)
@@ -800,12 +818,17 @@ class Trainer:
                     break
 
         except KeyboardInterrupt:
-            logger.warning("\nTraining interrupted. Saving checkpoint...")
-            val_metrics = self.evaluate(self.val_loader, 'val')
+            logger.warning("\nTraining interrupted by KeyboardInterrupt. Saving checkpoint...")
+            try:
+                # Try to evaluate, but don't block if interrupted again
+                val_metrics = self.evaluate(self.val_loader, 'val')
+            except KeyboardInterrupt:
+                logger.warning("Interrupted during evaluation, using dummy metrics")
+                val_metrics = {'loss': 0.0}
             self.save_checkpoint(epoch, val_metrics, prefix="interrupted")
             logger.info("Checkpoint saved. Resume with --resume flag.")
             self.writer.close()
-            return
+            sys.exit(0)
 
         # Final evaluation on test set
         logger.info("\nEvaluating on test set...")
