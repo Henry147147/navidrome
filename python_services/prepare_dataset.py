@@ -908,24 +908,46 @@ class MusicBenchProcessor:
         if len(dataset) > 0:
             self._validate_audio_files(dataset)
 
-        # Create train/val/test splits (80/10/10)
-        # First split: 80% train, 20% temp
-        train_temp_split = dataset.train_test_split(
-            test_size=0.2,
-            seed=self.config.random_seed
-        )
+        # Handle small datasets (< 10 samples)
+        if len(dataset) < 10:
+            logger.warning(f"Dataset has only {len(dataset)} samples. Using simplified split.")
+            if len(dataset) < 3:
+                # Too small to split - use all for train
+                logger.warning("Dataset too small to split properly. Using all samples for train.")
+                splits = {
+                    'train': UnifiedDatasetSubset(dataset, list(range(len(dataset)))),
+                    'val': UnifiedDatasetSubset(dataset, []),
+                    'test': UnifiedDatasetSubset(dataset, [])
+                }
+            else:
+                # 3+ samples: put at least 1 in each split
+                indices = list(range(len(dataset)))
+                n = len(dataset)
+                # 1 val, 1 test, rest train
+                splits = {
+                    'train': UnifiedDatasetSubset(dataset, indices[:-2]),
+                    'val': UnifiedDatasetSubset(dataset, [indices[-2]]),
+                    'test': UnifiedDatasetSubset(dataset, [indices[-1]])
+                }
+        else:
+            # Create train/val/test splits (80/10/10)
+            # First split: 80% train, 20% temp
+            train_temp_split = dataset.train_test_split(
+                test_size=0.2,
+                seed=self.config.random_seed
+            )
 
-        # Second split: split temp into 50/50 for val and test
-        val_test_split = train_temp_split['test'].train_test_split(
-            test_size=0.5,
-            seed=self.config.random_seed
-        )
+            # Second split: split temp into 50/50 for val and test
+            val_test_split = train_temp_split['test'].train_test_split(
+                test_size=0.5,
+                seed=self.config.random_seed
+            )
 
-        splits = {
-            'train': train_temp_split['train'],
-            'val': val_test_split['train'],
-            'test': val_test_split['test']
-        }
+            splits = {
+                'train': train_temp_split['train'],
+                'val': val_test_split['train'],
+                'test': val_test_split['test']
+            }
 
         logger.info(f"Final splits:")
         logger.info(f"  Train: {len(splits['train'])} samples")
@@ -1007,37 +1029,47 @@ class MusicBenchProcessor:
             muq_ds = split_group.create_dataset(
                 'muq_embeddings',
                 shape=(total_samples, 1536),
+                maxshape=(None, 1536),  # Allow resizing
                 dtype='float32',
                 compression=self.config.compression,
-                compression_opts=self.config.compression_level
+                compression_opts=self.config.compression_level,
+                chunks=True
             )
 
             mert_ds = split_group.create_dataset(
                 'mert_embeddings',
                 shape=(total_samples, 76800),
+                maxshape=(None, 76800),  # Allow resizing
                 dtype='float32',
                 compression=self.config.compression,
-                compression_opts=self.config.compression_level
+                compression_opts=self.config.compression_level,
+                chunks=True
             )
 
             latent_ds = split_group.create_dataset(
                 'latent_embeddings',
                 shape=(total_samples, 576),
+                maxshape=(None, 576),  # Allow resizing
                 dtype='float32',
                 compression=self.config.compression,
-                compression_opts=self.config.compression_level
+                compression_opts=self.config.compression_level,
+                chunks=True
             )
 
             captions_ds = split_group.create_dataset(
                 'captions',
                 shape=(total_samples,),
-                dtype=dt
+                dtype=dt,
+                maxshape=(None,),  # Allow resizing
+                chunks=True  # Enable chunking for resizing
             )
 
             audio_ids_ds = split_group.create_dataset(
                 'audio_ids',
                 shape=(total_samples,),
-                dtype=dt
+                dtype=dt,
+                maxshape=(None,),  # Allow resizing
+                chunks=True  # Enable chunking for resizing
             )
 
         # Statistics
@@ -1166,7 +1198,12 @@ class MusicBenchProcessor:
         """Process a single model pass with checkpointing"""
         global _shutdown_requested
 
-        batch_loader = AudioBatchLoader(split_data, batch_size=self.config.batch_size)
+        # Use batch size 1 for MERT to avoid VRAM issues
+        batch_size = 1 if model_name == 'mert' else self.config.batch_size
+        if model_name == 'mert' and self.config.batch_size > 1:
+            logger.info(f"Using batch size 1 for MERT (instead of {self.config.batch_size}) to conserve VRAM")
+
+        batch_loader = AudioBatchLoader(split_data, batch_size=batch_size)
 
         # Determine which batches to process
         start_batch = 0

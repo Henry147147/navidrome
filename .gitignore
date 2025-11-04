@@ -36,3 +36,5 @@ AGENTS.md
 __pycache__
 python_services/data
 python_services/data_aug2
+python_services/logs
+python_services/checkpoints

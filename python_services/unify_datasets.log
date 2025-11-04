@@ -1,0 +1,237 @@
+2025-11-02 11:33:26,058 - INFO - Unifying datasets: ['jamendo_max_caps', 'song_describer']
+2025-11-02 11:33:26,058 - INFO - Parsing JamendoMaxCaps dataset...
+2025-11-02 11:33:26,059 - ERROR - Metadata directory not found: data/raw/jamendo_max_caps/metadata
+2025-11-02 11:33:26,059 - INFO - Added 0 tracks from jamendo_max_caps (after filtering)
+2025-11-02 11:33:26,059 - INFO - Parsing Song Describer dataset...
+2025-11-03 07:30:50,905 - INFO - Unifying datasets: ['jamendo_max_caps', 'fma', 'song_describer']
+2025-11-03 07:30:50,905 - INFO - Parsing JamendoMaxCaps dataset...
+2025-11-03 07:30:50,906 - ERROR - Metadata directory not found: data/raw/jamendo_max_caps/metadata
+2025-11-03 07:30:50,906 - INFO - Added 0 tracks from jamendo_max_caps (after filtering)
+2025-11-03 07:30:50,906 - INFO - Parsing FMA dataset...
+2025-11-03 07:30:55,645 - INFO - Parsed 8000 tracks from FMA
+2025-11-03 07:30:55,669 - INFO - Added 8000 tracks from fma (after filtering)
+2025-11-03 07:30:55,669 - INFO - Parsing Song Describer dataset...
+2025-11-03 07:30:55,671 - ERROR - Metadata not found: data/raw/song_describer/metadata.json
+2025-11-03 07:30:55,672 - INFO - Added 0 tracks from song_describer (after filtering)
+2025-11-03 07:30:55,672 - INFO - Saving 8000 tracks to data/unified_dataset.json...
+2025-11-03 07:30:55,745 - INFO - 
+Unified Dataset Statistics:
+2025-11-03 07:30:55,745 - INFO -   Total tracks: 8000
+2025-11-03 07:30:55,749 - INFO - 
+  By dataset:
+2025-11-03 07:30:55,749 - INFO -     fma: 8000
+2025-11-03 07:30:55,750 - INFO - 
+  Duration:
+2025-11-03 07:30:55,750 - INFO -     Min: 60.0s
+2025-11-03 07:30:55,751 - INFO -     Max: 600.0s
+2025-11-03 07:30:55,751 - INFO -     Mean: 228.8s
+2025-11-03 07:30:55,751 - INFO - 
+  File size: 3.11 MB
+2025-11-03 07:30:55,753 - INFO - 
+✓ Successfully created unified dataset: data/unified_dataset.json
+2025-11-03 12:17:52,457 - INFO - Unifying datasets: ['fma']
+2025-11-03 12:17:52,458 - INFO - [DRY RUN] Would parse fma
+2025-11-03 12:17:52,458 - INFO - [DRY RUN] Would unify 1 datasets
+2025-11-03 12:17:52,458 - INFO - 
+[DRY RUN] No files were created
+2025-11-03 12:17:59,199 - INFO - Unifying datasets: ['fma']
+2025-11-03 12:17:59,199 - INFO - Parsing FMA dataset...
+2025-11-03 12:18:04,371 - INFO - Parsed 8000 tracks from FMA
+2025-11-03 12:18:04,402 - INFO - Added 8000 tracks from fma (after filtering)
+2025-11-03 12:18:04,402 - INFO - Sampling 100 from 8000 total tracks...
+2025-11-03 12:18:04,406 - INFO - Saving 100 tracks to data/unified_fma_test.json...
+2025-11-03 12:18:04,409 - INFO - 
+Unified Dataset Statistics:
+2025-11-03 12:18:04,409 - INFO -   Total tracks: 100
+2025-11-03 12:18:04,409 - INFO - 
+  By dataset:
+2025-11-03 12:18:04,409 - INFO -     fma: 100
+2025-11-03 12:18:04,409 - INFO - 
+  Duration:
+2025-11-03 12:18:04,409 - INFO -     Min: 61.0s
+2025-11-03 12:18:04,409 - INFO -     Max: 563.0s
+2025-11-03 12:18:04,409 - INFO -     Mean: 216.2s
+2025-11-03 12:18:04,409 - INFO - 
+  File size: 0.04 MB
+2025-11-03 12:18:04,409 - INFO - 
+✓ Successfully created unified dataset: data/unified_fma_test.json
+2025-11-03 12:18:34,024 - INFO - Unifying datasets: ['fma']
+2025-11-03 12:18:34,024 - INFO - Parsing FMA dataset...
+2025-11-03 12:18:38,596 - INFO - Parsed 8000 tracks from FMA
+2025-11-03 12:18:38,623 - INFO - Added 8000 tracks from fma (after filtering)
+2025-11-03 12:18:38,623 - INFO - Sampling 10 from 8000 total tracks...
+2025-11-03 12:18:38,626 - INFO - Saving 10 tracks to data/unified_fma_test.json...
+2025-11-03 12:18:38,626 - INFO - 
+Unified Dataset Statistics:
+2025-11-03 12:18:38,626 - INFO -   Total tracks: 10
+2025-11-03 12:18:38,626 - INFO - 
+  By dataset:
+2025-11-03 12:18:38,626 - INFO -     fma: 10
+2025-11-03 12:18:38,626 - INFO - 
+  Duration:
+2025-11-03 12:18:38,626 - INFO -     Min: 61.0s
+2025-11-03 12:18:38,626 - INFO -     Max: 563.0s
+2025-11-03 12:18:38,626 - INFO -     Mean: 247.0s
+2025-11-03 12:18:38,626 - INFO - 
+  File size: 0.00 MB
+2025-11-03 12:18:38,626 - INFO - 
+✓ Successfully created unified dataset: data/unified_fma_test.json
+2025-11-03 12:19:03,014 - INFO - Unifying datasets: ['fma']
+2025-11-03 12:19:03,015 - INFO - Parsing FMA dataset...
+2025-11-03 12:19:07,648 - INFO - Parsed 8000 tracks from FMA
+2025-11-03 12:19:07,671 - INFO - Added 8000 tracks from fma (after filtering)
+2025-11-03 12:19:07,671 - INFO - Sampling 10 from 8000 total tracks...
+2025-11-03 12:19:07,673 - INFO - Saving 10 tracks to data/unified_fma_test.json...
+2025-11-03 12:19:07,673 - INFO - 
+Unified Dataset Statistics:
+2025-11-03 12:19:07,673 - INFO -   Total tracks: 10
+2025-11-03 12:19:07,673 - INFO - 
+  By dataset:
+2025-11-03 12:19:07,674 - INFO -     fma: 10
+2025-11-03 12:19:07,674 - INFO - 
+  Duration:
+2025-11-03 12:19:07,674 - INFO -     Min: 61.0s
+2025-11-03 12:19:07,674 - INFO -     Max: 563.0s
+2025-11-03 12:19:07,674 - INFO -     Mean: 247.0s
+2025-11-03 12:19:07,674 - INFO - 
+  File size: 0.00 MB
+2025-11-03 12:19:07,674 - INFO - 
+✓ Successfully created unified dataset: data/unified_fma_test.json
+2025-11-03 12:40:19,894 - INFO - Unifying datasets: ['fma']
+2025-11-03 12:40:19,895 - INFO - [DRY RUN] Would parse fma
+2025-11-03 12:40:19,895 - INFO - [DRY RUN] Would unify 1 datasets
+2025-11-03 12:40:19,895 - INFO - 
+[DRY RUN] No files were created
+2025-11-03 12:40:23,442 - INFO - Unifying datasets: ['fma']
+2025-11-03 12:40:23,442 - INFO - Parsing FMA dataset...
+2025-11-03 12:40:28,324 - INFO - Parsed 8000 tracks from FMA
+2025-11-03 12:40:28,351 - INFO - Added 8000 tracks from fma (after filtering)
+2025-11-03 12:40:28,351 - INFO - Sampling 3 from 8000 total tracks...
+2025-11-03 12:40:28,353 - INFO - Saving 3 tracks to /tmp/test_fma.json...
+2025-11-03 12:40:28,353 - INFO - 
+Unified Dataset Statistics:
+2025-11-03 12:40:28,353 - INFO -   Total tracks: 3
+2025-11-03 12:40:28,354 - INFO - 
+  By dataset:
+2025-11-03 12:40:28,354 - INFO -     fma: 3
+2025-11-03 12:40:28,354 - INFO - 
+  Duration:
+2025-11-03 12:40:28,354 - INFO -     Min: 191.0s
+2025-11-03 12:40:28,354 - INFO -     Max: 289.0s
+2025-11-03 12:40:28,354 - INFO -     Mean: 225.0s
+2025-11-03 12:40:28,354 - INFO - 
+  File size: 0.00 MB
+2025-11-03 12:40:28,354 - INFO - 
+✓ Successfully created unified dataset: /tmp/test_fma.json
+2025-11-03 13:29:15,687 - INFO - Unifying datasets: ['song_describer']
+2025-11-03 13:29:15,687 - INFO - Parsing Song Describer dataset...
+2025-11-03 13:29:15,724 - INFO - Parsed 0 tracks from Song Describer
+2025-11-03 13:29:15,724 - INFO - Added 0 tracks from song_describer (after filtering)
+2025-11-03 13:29:15,725 - ERROR - No tracks found to unify
+2025-11-03 13:29:50,278 - INFO - Unifying datasets: ['song_describer']
+2025-11-03 13:29:50,278 - INFO - Parsing Song Describer dataset...
+2025-11-03 13:29:50,341 - INFO - Parsed 0 tracks from Song Describer
+2025-11-03 13:29:50,342 - INFO - Added 0 tracks from song_describer (after filtering)
+2025-11-03 13:29:50,342 - ERROR - No tracks found to unify
+2025-11-03 14:23:27,959 - INFO - Unifying datasets: ['song_describer']
+2025-11-03 14:23:27,960 - INFO - Parsing Song Describer dataset...
+2025-11-03 14:23:28,159 - INFO - Parsed 706 tracks from Song Describer
+2025-11-03 14:23:28,160 - INFO - Added 706 tracks from song_describer (after filtering)
+2025-11-03 14:23:28,160 - INFO - Sampling 3 from 706 total tracks...
+2025-11-03 14:23:28,160 - INFO - Saving 3 tracks to /tmp/test_song_describer.json...
+2025-11-03 14:23:28,161 - INFO - 
+Unified Dataset Statistics:
+2025-11-03 14:23:28,161 - INFO -   Total tracks: 3
+2025-11-03 14:23:28,161 - INFO - 
+  By dataset:
+2025-11-03 14:23:28,161 - INFO -     song_describer: 3
+2025-11-03 14:23:28,161 - INFO - 
+  Duration:
+2025-11-03 14:23:28,161 - INFO -     Min: 132.6s
+2025-11-03 14:23:28,161 - INFO -     Max: 235.0s
+2025-11-03 14:23:28,161 - INFO -     Mean: 183.7s
+2025-11-03 14:23:28,161 - INFO - 
+  File size: 0.00 MB
+2025-11-03 14:23:28,161 - INFO - 
+✓ Successfully created unified dataset: /tmp/test_song_describer.json
+2025-11-03 15:16:40,490 - INFO - Unifying datasets: ['jamendo_max_caps', 'fma', 'song_describer']
+2025-11-03 15:16:40,491 - INFO - Parsing JamendoMaxCaps dataset...
+2025-11-03 15:16:40,491 - ERROR - Metadata directory not found: data/raw/jamendo_max_caps/metadata
+2025-11-03 15:16:40,491 - INFO - Added 0 tracks from jamendo_max_caps (after filtering)
+2025-11-03 15:16:40,491 - INFO - Parsing FMA dataset...
+2025-11-03 15:16:45,650 - INFO - Parsed 8000 tracks from FMA
+2025-11-03 15:16:45,676 - INFO - Added 8000 tracks from fma (after filtering)
+2025-11-03 15:16:45,677 - INFO - Parsing Song Describer dataset...
+2025-11-03 15:16:45,843 - INFO - Parsed 706 tracks from Song Describer
+2025-11-03 15:16:45,844 - INFO - Added 706 tracks from song_describer (after filtering)
+2025-11-03 15:16:45,844 - INFO - Saving 8706 tracks to data/unified_dataset.json...
+2025-11-03 15:16:45,949 - INFO - 
+Unified Dataset Statistics:
+2025-11-03 15:16:45,949 - INFO -   Total tracks: 8706
+2025-11-03 15:16:45,951 - INFO - 
+  By dataset:
+2025-11-03 15:16:45,951 - INFO -     fma: 8000
+2025-11-03 15:16:45,951 - INFO -     song_describer: 706
+2025-11-03 15:16:45,952 - INFO - 
+  Duration:
+2025-11-03 15:16:45,952 - INFO -     Min: 31.2s
+2025-11-03 15:16:45,952 - INFO -     Max: 753.7s
+2025-11-03 15:16:45,952 - INFO -     Mean: 228.6s
+2025-11-03 15:16:45,953 - INFO - 
+  File size: 3.36 MB
+2025-11-03 15:16:45,954 - INFO - 
+✓ Successfully created unified dataset: data/unified_dataset.json
+2025-11-03 17:11:03,951 - INFO - Unifying datasets: ['jamendo_max_caps', 'fma', 'song_describer']
+2025-11-03 17:11:03,952 - INFO - Parsing JamendoMaxCaps dataset...
+2025-11-03 17:11:03,952 - ERROR - Metadata directory not found: data/raw/jamendo_max_caps/metadata
+2025-11-03 17:11:03,952 - INFO - Added 0 tracks from jamendo_max_caps (after filtering)
+2025-11-03 17:11:03,952 - INFO - Parsing FMA dataset...
+2025-11-03 17:11:07,760 - INFO - Parsed 8000 tracks from FMA
+2025-11-03 17:11:07,779 - INFO - Added 8000 tracks from fma (after filtering)
+2025-11-03 17:11:07,779 - INFO - Parsing Song Describer dataset...
+2025-11-03 17:11:07,918 - INFO - Parsed 706 tracks from Song Describer
+2025-11-03 17:11:07,919 - INFO - Added 706 tracks from song_describer (after filtering)
+2025-11-03 17:11:07,919 - INFO - Saving 8706 tracks to data/unified_dataset.json...
+2025-11-03 17:11:07,990 - INFO - 
+Unified Dataset Statistics:
+2025-11-03 17:11:07,990 - INFO -   Total tracks: 8706
+2025-11-03 17:11:07,990 - INFO - 
+  By dataset:
+2025-11-03 17:11:07,991 - INFO -     fma: 8000
+2025-11-03 17:11:07,991 - INFO -     song_describer: 706
+2025-11-03 17:11:07,991 - INFO - 
+  Duration:
+2025-11-03 17:11:07,991 - INFO -     Min: 31.2s
+2025-11-03 17:11:07,991 - INFO -     Max: 753.7s
+2025-11-03 17:11:07,991 - INFO -     Mean: 228.6s
+2025-11-03 17:11:07,991 - INFO - 
+  File size: 3.36 MB
+2025-11-03 17:11:07,992 - INFO - 
+✓ Successfully created unified dataset: data/unified_dataset.json
+2025-11-03 17:11:17,147 - INFO - Unifying datasets: ['jamendo_max_caps', 'fma', 'song_describer']
+2025-11-03 17:11:17,147 - INFO - Parsing JamendoMaxCaps dataset...
+2025-11-03 17:11:17,148 - ERROR - Metadata directory not found: data/raw/jamendo_max_caps/metadata
+2025-11-03 17:11:17,148 - INFO - Added 0 tracks from jamendo_max_caps (after filtering)
+2025-11-03 17:11:17,148 - INFO - Parsing FMA dataset...
+2025-11-03 17:11:19,754 - INFO - Parsed 8000 tracks from FMA
+2025-11-03 17:11:19,772 - INFO - Added 8000 tracks from fma (after filtering)
+2025-11-03 17:11:19,773 - INFO - Parsing Song Describer dataset...
+2025-11-03 17:11:19,838 - INFO - Parsed 706 tracks from Song Describer
+2025-11-03 17:11:19,839 - INFO - Added 706 tracks from song_describer (after filtering)
+2025-11-03 17:11:19,839 - INFO - Saving 8706 tracks to data/unified_dataset.json...
+2025-11-03 17:11:19,894 - INFO - 
+Unified Dataset Statistics:
+2025-11-03 17:11:19,894 - INFO -   Total tracks: 8706
+2025-11-03 17:11:19,895 - INFO - 
+  By dataset:
+2025-11-03 17:11:19,895 - INFO -     fma: 8000
+2025-11-03 17:11:19,895 - INFO -     song_describer: 706
+2025-11-03 17:11:19,895 - INFO - 
+  Duration:
+2025-11-03 17:11:19,895 - INFO -     Min: 31.2s
+2025-11-03 17:11:19,895 - INFO -     Max: 753.7s
+2025-11-03 17:11:19,896 - INFO -     Mean: 228.6s
+2025-11-03 17:11:19,896 - INFO - 
+  File size: 3.36 MB
+2025-11-03 17:11:19,897 - INFO - 
+✓ Successfully created unified dataset: data/unified_dataset.json

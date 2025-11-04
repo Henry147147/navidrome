@@ -194,7 +194,7 @@ def synthesize_fma_caption(genre: str, tags: List[str]) -> str:
         return f"A {genre} song with {inst_str}"
     elif moods:
         return f"A {moods[0]} {genre} piece"
-    elif characteristics:
+    elif characteristics and characteristics[0]:  # Check not empty
         return f"A {genre} track with {characteristics[0]} style"
     else:
         return f"A {genre} musical composition"
@@ -258,63 +258,71 @@ class SongDescriberParser(BaseParser):
         """Parse Song Describer metadata"""
         logger.info("Parsing Song Describer dataset...")
 
-        metadata_file = self.raw_dir / "metadata.json"
+        metadata_file = self.raw_dir / "metadata.csv"
         if not metadata_file.exists():
             logger.error(f"Metadata not found: {metadata_file}")
             return []
 
-        with open(metadata_file, 'r') as f:
-            metadata = json.load(f)
+        # Load CSV metadata
+        try:
+            df = pd.read_csv(metadata_file)
+        except Exception as e:
+            logger.error(f"Failed to read metadata CSV: {e}")
+            return []
 
         tracks = []
-        audio_dir = self.raw_dir / "audio"
+        audio_dir = self.raw_dir / "audio" / "audio"
 
-        # Handle both list and dict formats
-        items = metadata if isinstance(metadata, list) else metadata.get('tracks', [])
+        # Group by track_id to collect multiple captions per track
+        track_groups = df.groupby('track_id')
 
-        for item in tqdm(items, desc="Song Describer"):
-            youtube_id = item.get('youtube_id') or item.get('ytid') or item.get('id')
-            if not youtube_id:
-                continue
+        for track_id, group in tqdm(track_groups, desc="Song Describer"):
+            # Get audio path from first row (should be same for all captions)
+            first_row = group.iloc[0]
+            audio_rel_path = first_row['path']
 
-            audio_path = audio_dir / f"{youtube_id}.mp3"
+            # Audio path is relative to audio directory
+            audio_path = audio_dir / audio_rel_path
+
+            # Try with .2min.mp3 extension if exact path doesn't exist
             if not audio_path.exists():
-                logger.debug(f"Audio file not found: {audio_path}")
-                continue
+                # Replace .mp3 with .2min.mp3
+                audio_path_alt = audio_dir / audio_rel_path.replace('.mp3', '.2min.mp3')
+                if audio_path_alt.exists():
+                    audio_path = audio_path_alt
+                else:
+                    logger.debug(f"Audio file not found: {audio_path} or {audio_path_alt}")
+                    continue
 
-            # Get captions (Song Describer has 5 human captions)
-            captions = item.get('captions', [])
-            if isinstance(captions, str):
-                captions = [captions]
-
+            # Collect all captions for this track
+            captions = group['caption'].dropna().tolist()
             if not captions:
-                # Fallback to description field
-                desc = item.get('description') or item.get('caption')
-                captions = [desc] if desc else []
-
-            if not captions:
-                logger.warning(f"No captions for {youtube_id}")
+                logger.warning(f"No captions for track {track_id}")
                 continue
 
             # Use first caption as main, rest as alternatives
             main_caption = captions[0]
             alt_captions = captions[1:] if len(captions) > 1 else []
 
-            # Get duration
-            duration = item.get('duration')
-            if not duration:
+            # Get metadata from first row
+            duration = first_row.get('duration')
+            if pd.isna(duration):
                 duration = self.get_audio_duration(str(audio_path))
 
+            # Get artist/album info if available
+            artist_id = first_row.get('artist_id')
+            album_id = first_row.get('album_id')
+
             track = UnifiedTrack(
-                id=f"song_describer_{youtube_id}",
+                id=f"song_describer_{track_id}",
                 audio_path=str(audio_path.resolve()),
                 caption=main_caption,
                 alt_captions=alt_captions,
-                duration=duration or 120.0,  # Default ~2 min
+                duration=float(duration) if duration else 120.0,
                 dataset="song_describer",
-                artist=item.get('artist'),
-                title=item.get('title'),
-                license="YouTube"
+                artist=f"artist_{artist_id}" if pd.notna(artist_id) else None,
+                title=f"track_{track_id}",
+                license="MTG-Jamendo"
             )
             tracks.append(track)
 
@@ -432,8 +440,8 @@ class FMAParser(BaseParser):
                 tags = []
                 if ('track', 'tags') in row.index:
                     tags_str = row[('track', 'tags')]
-                    if pd.notna(tags_str):
-                        tags = [t.strip() for t in str(tags_str).split(',')]
+                    if pd.notna(tags_str) and str(tags_str) not in ['[]', '{}', '']:
+                        tags = [t.strip() for t in str(tags_str).split(',') if t.strip() and t.strip() not in ['[]', '{}', '']]
 
                 # Artist and title
                 artist = row[('artist', 'name')] if ('artist', 'name') in row.index else None

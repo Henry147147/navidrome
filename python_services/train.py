@@ -153,6 +153,22 @@ class MusicBenchEmbeddingDataset(Dataset):
             caption = f[self.split]['captions'][idx]
             audio_id = f[self.split]['audio_ids'][idx]
 
+        # Decode to strings (HDF5 can store strings as bytes, numpy arrays, etc.)
+        # Handle various HDF5 string encodings
+        if isinstance(caption, bytes):
+            caption = caption.decode('utf-8')
+        elif isinstance(caption, np.ndarray):
+            caption = str(caption)
+        elif not isinstance(caption, str):
+            caption = str(caption)
+
+        if isinstance(audio_id, bytes):
+            audio_id = audio_id.decode('utf-8')
+        elif isinstance(audio_id, np.ndarray):
+            audio_id = str(audio_id)
+        elif not isinstance(audio_id, str):
+            audio_id = str(audio_id)
+
         return {
             'audio_embedding': torch.tensor(audio_emb, dtype=torch.float32),
             'caption': caption,
@@ -206,6 +222,9 @@ class TextEncoder(nn.Module):
         Returns:
             Embeddings of shape [batch_size, text_dim]
         """
+        # Ensure all texts are strings (handle any HDF5 encoding issues)
+        texts = [str(t) if not isinstance(t, str) else t for t in texts]
+
         # Tokenize
         inputs = self.tokenizer(
             texts,
@@ -389,32 +408,7 @@ class Trainer:
         os.makedirs(config.checkpoint_dir, exist_ok=True)
         os.makedirs(config.log_dir, exist_ok=True)
 
-        # Initialize models
-        logger.info("Initializing models...")
-        self.text_encoder = TextEncoder(config).to(config.device)
-        self.projection = ProjectionHead(
-            config.text_dim,
-            config.hidden_dim,
-            config.audio_dim
-        ).to(config.device)
-
-        # Loss function
-        self.criterion = InfoNCELoss(temperature=config.temperature)
-
-        # Optimizer
-        param_groups = [
-            {'params': self.projection.parameters(), 'lr': config.learning_rate, 'initial_lr': config.learning_rate},
-        ]
-        if config.use_lora:
-            param_groups.append({
-                'params': [p for p in self.text_encoder.parameters() if p.requires_grad],
-                'lr': config.text_lr,
-                'initial_lr': config.text_lr
-            })
-
-        self.optimizer = AdamW(param_groups, weight_decay=config.weight_decay)
-
-        # Load datasets
+        # Load datasets FIRST to get correct audio_dim
         hdf5_path = os.path.join(config.data_dir, config.hdf5_filename)
 
         # Validate HDF5 file exists and is readable
@@ -440,6 +434,31 @@ class Trainer:
 
         # Update audio_dim from dataset
         config.audio_dim = self.train_dataset.audio_dim
+
+        # Initialize models AFTER loading datasets (so we have correct audio_dim)
+        logger.info("Initializing models...")
+        self.text_encoder = TextEncoder(config).to(config.device)
+        self.projection = ProjectionHead(
+            config.text_dim,
+            config.hidden_dim,
+            config.audio_dim
+        ).to(config.device)
+
+        # Loss function
+        self.criterion = InfoNCELoss(temperature=config.temperature)
+
+        # Optimizer
+        param_groups = [
+            {'params': self.projection.parameters(), 'lr': config.learning_rate, 'initial_lr': config.learning_rate},
+        ]
+        if config.use_lora:
+            param_groups.append({
+                'params': [p for p in self.text_encoder.parameters() if p.requires_grad],
+                'lr': config.text_lr,
+                'initial_lr': config.text_lr
+            })
+
+        self.optimizer = AdamW(param_groups, weight_decay=config.weight_decay)
 
         # DataLoaders
         self.train_loader = DataLoader(

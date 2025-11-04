@@ -172,11 +172,15 @@ class BaseDownloader(ABC):
         Returns:
             True if successful, False otherwise
         """
-        # Check if already downloaded
+        # Check if already downloaded and file exists on disk
         file_id = str(output_path.relative_to(self.output_dir))
-        if file_id in self.state.downloaded_files:
+        if file_id in self.state.downloaded_files and output_path.exists():
             logger.debug(f"Skipping {file_id} (already downloaded)")
             return True
+        elif file_id in self.state.downloaded_files and not output_path.exists():
+            # File was marked as downloaded but doesn't exist - remove from state
+            logger.warning(f"File {file_id} was marked downloaded but doesn't exist. Re-downloading...")
+            self.state.downloaded_files.discard(file_id)
 
         if self.dry_run:
             logger.info(f"[DRY RUN] Would download: {url} -> {output_path}")

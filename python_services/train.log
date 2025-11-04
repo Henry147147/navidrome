@@ -1,0 +1,318 @@
+2025-11-03 19:10:58,404 - INFO - Initializing models...
+2025-11-03 19:10:58,405 - INFO - Loading text encoder: Qwen/Qwen3-Embedding-4B
+2025-11-03 19:12:01,329 - INFO - Applying LoRA (rank=16, alpha=32)
+2025-11-03 19:12:03,093 - INFO - Loaded train split: 7135 samples, audio_dim=576
+2025-11-03 19:12:03,094 - INFO - Loaded val split: 892 samples, audio_dim=576
+2025-11-03 19:12:03,094 - INFO - Loaded test split: 902 samples, audio_dim=576
+2025-11-03 19:12:03,097 - INFO - Training configuration:
+2025-11-03 19:12:03,097 - INFO -   Audio encoder: latent
+2025-11-03 19:12:03,097 - INFO -   Audio dimension: 576
+2025-11-03 19:12:03,097 - INFO -   Text dimension: 2560
+2025-11-03 19:12:03,097 - INFO -   Hidden dimension: 1024
+2025-11-03 19:12:03,097 - INFO -   Training samples: 7135
+2025-11-03 19:12:03,097 - INFO -   Validation samples: 892
+2025-11-03 19:12:03,098 - INFO -   Test samples: 902
+2025-11-03 19:12:03,098 - INFO -   Effective batch size: 256
+2025-11-03 19:12:03,098 - INFO -   Total steps: 540
+2025-11-03 19:12:03,098 - INFO - Starting training...
+2025-11-03 19:13:24,777 - INFO - Initializing models...
+2025-11-03 19:13:24,777 - INFO - Loading text encoder: Qwen/Qwen3-Embedding-4B
+2025-11-03 19:13:34,321 - INFO - Loaded train split: 4 samples, audio_dim=1536
+2025-11-03 19:13:34,322 - INFO - Loaded val split: 1 samples, audio_dim=1536
+2025-11-03 19:13:34,322 - INFO - Loaded test split: 1 samples, audio_dim=1536
+2025-11-03 19:13:34,323 - INFO - Training configuration:
+2025-11-03 19:13:34,323 - INFO -   Audio encoder: muq
+2025-11-03 19:13:34,323 - INFO -   Audio dimension: 1536
+2025-11-03 19:13:34,323 - INFO -   Text dimension: 2560
+2025-11-03 19:13:34,323 - INFO -   Hidden dimension: 1024
+2025-11-03 19:13:34,323 - INFO -   Training samples: 4
+2025-11-03 19:13:34,324 - INFO -   Validation samples: 1
+2025-11-03 19:13:34,324 - INFO -   Test samples: 1
+2025-11-03 19:13:34,324 - INFO -   Effective batch size: 16
+2025-11-03 19:13:34,324 - INFO -   Total steps: 0
+2025-11-03 19:13:34,324 - INFO - Starting training...
+2025-11-03 19:14:49,378 - INFO - Initializing models...
+2025-11-03 19:14:49,379 - INFO - Loading text encoder: Qwen/Qwen3-Embedding-4B
+2025-11-03 19:14:57,003 - INFO - Loaded train split: 4 samples, audio_dim=1536
+2025-11-03 19:14:57,003 - INFO - Loaded val split: 1 samples, audio_dim=1536
+2025-11-03 19:14:57,003 - INFO - Loaded test split: 1 samples, audio_dim=1536
+2025-11-03 19:14:57,005 - INFO - Training configuration:
+2025-11-03 19:14:57,005 - INFO -   Audio encoder: muq
+2025-11-03 19:14:57,005 - INFO -   Audio dimension: 1536
+2025-11-03 19:14:57,005 - INFO -   Text dimension: 2560
+2025-11-03 19:14:57,005 - INFO -   Hidden dimension: 1024
+2025-11-03 19:14:57,005 - INFO -   Training samples: 4
+2025-11-03 19:14:57,005 - INFO -   Validation samples: 1
+2025-11-03 19:14:57,005 - INFO -   Test samples: 1
+2025-11-03 19:14:57,005 - INFO -   Effective batch size: 16
+2025-11-03 19:14:57,005 - INFO -   Total steps: 0
+2025-11-03 19:14:57,005 - INFO - Starting training...
+2025-11-03 19:14:58,011 - INFO - Epoch 1 - Train loss: 0.7085
+2025-11-03 19:14:58,136 - INFO - Epoch 1 - Val loss: 0.0000
+2025-11-03 19:14:58,137 - INFO -   Val t2a R@1: 100.00%
+2025-11-03 19:14:58,137 - INFO -   Val t2a R@5: 100.00%
+2025-11-03 19:14:58,137 - INFO -   Val t2a R@10: 100.00%
+2025-11-03 19:14:58,137 - INFO -   Val t2a MRR: 1.0000
+2025-11-03 19:15:05,346 - INFO - Checkpoint saved to /tmp/test_checkpoints/muq/muq_best_r1.pt
+2025-11-03 19:15:15,669 - INFO - Checkpoint saved to /tmp/test_checkpoints/muq/muq_best_loss.pt
+2025-11-03 19:15:30,549 - INFO - Checkpoint saved to /tmp/test_checkpoints/muq/muq_last.pt
+2025-11-03 19:15:30,556 - INFO - 
+Evaluating on test set...
+2025-11-03 19:15:30,929 - INFO - Test loss: 0.0000
+2025-11-03 19:15:30,929 - INFO - Test t2a R@1: 100.00%
+2025-11-03 19:15:30,929 - INFO - Test t2a R@5: 100.00%
+2025-11-03 19:15:30,929 - INFO - Test t2a R@10: 100.00%
+2025-11-03 19:15:30,929 - INFO - Test t2a MRR: 1.0000
+2025-11-03 19:15:30,930 - INFO - 
+Training complete!
+2025-11-03 19:15:30,930 - INFO - Best val R@1: 100.00%
+2025-11-03 19:15:30,930 - INFO - Best val loss: 0.0000
+2025-11-03 19:22:25,857 - INFO - Initializing models...
+2025-11-03 19:22:25,857 - INFO - Loading text encoder: Qwen/Qwen3-Embedding-4B
+2025-11-03 19:22:33,623 - INFO - Loaded train split: 4 samples, audio_dim=76800
+2025-11-03 19:22:33,623 - INFO - Loaded val split: 1 samples, audio_dim=76800
+2025-11-03 19:22:33,623 - INFO - Loaded test split: 1 samples, audio_dim=76800
+2025-11-03 19:22:33,625 - INFO - Training configuration:
+2025-11-03 19:22:33,625 - INFO -   Audio encoder: mert
+2025-11-03 19:22:33,625 - INFO -   Audio dimension: 76800
+2025-11-03 19:22:33,625 - INFO -   Text dimension: 2560
+2025-11-03 19:22:33,625 - INFO -   Hidden dimension: 2048
+2025-11-03 19:22:33,625 - INFO -   Training samples: 4
+2025-11-03 19:22:33,625 - INFO -   Validation samples: 1
+2025-11-03 19:22:33,625 - INFO -   Test samples: 1
+2025-11-03 19:22:33,625 - INFO -   Effective batch size: 16
+2025-11-03 19:22:33,625 - INFO -   Total steps: 0
+2025-11-03 19:22:33,625 - INFO - Starting training...
+2025-11-03 19:23:28,540 - INFO - Loaded train split: 4 samples, audio_dim=76800
+2025-11-03 19:23:28,542 - INFO - Loaded val split: 1 samples, audio_dim=76800
+2025-11-03 19:23:28,542 - INFO - Loaded test split: 1 samples, audio_dim=76800
+2025-11-03 19:23:28,542 - INFO - Initializing models...
+2025-11-03 19:23:28,542 - INFO - Loading text encoder: Qwen/Qwen3-Embedding-4B
+2025-11-03 19:23:33,697 - INFO - Training configuration:
+2025-11-03 19:23:33,697 - INFO -   Audio encoder: mert
+2025-11-03 19:23:33,697 - INFO -   Audio dimension: 76800
+2025-11-03 19:23:33,697 - INFO -   Text dimension: 2560
+2025-11-03 19:23:33,697 - INFO -   Hidden dimension: 2048
+2025-11-03 19:23:33,697 - INFO -   Training samples: 4
+2025-11-03 19:23:33,698 - INFO -   Validation samples: 1
+2025-11-03 19:23:33,698 - INFO -   Test samples: 1
+2025-11-03 19:23:33,698 - INFO -   Effective batch size: 16
+2025-11-03 19:23:33,698 - INFO -   Total steps: 0
+2025-11-03 19:23:33,698 - INFO - Starting training...
+2025-11-03 19:23:34,438 - INFO - Epoch 1 - Train loss: 0.7031
+2025-11-03 19:23:34,546 - INFO - Epoch 1 - Val loss: 0.0000
+2025-11-03 19:23:34,547 - INFO -   Val t2a R@1: 100.00%
+2025-11-03 19:23:34,547 - INFO -   Val t2a R@5: 100.00%
+2025-11-03 19:23:34,547 - INFO -   Val t2a R@10: 100.00%
+2025-11-03 19:23:34,547 - INFO -   Val t2a MRR: 1.0000
+2025-11-03 19:23:44,914 - INFO - Checkpoint saved to /tmp/test_checkpoints/mert/mert_best_r1.pt
+2025-11-03 19:23:54,750 - INFO - Checkpoint saved to /tmp/test_checkpoints/mert/mert_best_loss.pt
+2025-11-03 19:24:09,449 - INFO - Checkpoint saved to /tmp/test_checkpoints/mert/mert_last.pt
+2025-11-03 19:24:09,665 - INFO - 
+Evaluating on test set...
+2025-11-03 19:24:10,139 - INFO - Test loss: 0.0000
+2025-11-03 19:24:10,139 - INFO - Test t2a R@1: 100.00%
+2025-11-03 19:24:10,139 - INFO - Test t2a R@5: 100.00%
+2025-11-03 19:24:10,139 - INFO - Test t2a R@10: 100.00%
+2025-11-03 19:24:10,140 - INFO - Test t2a MRR: 1.0000
+2025-11-03 19:24:10,140 - INFO - 
+Training complete!
+2025-11-03 19:24:10,140 - INFO - Best val R@1: 100.00%
+2025-11-03 19:24:10,140 - INFO - Best val loss: 0.0000
+2025-11-03 19:24:45,457 - INFO - Loaded train split: 4 samples, audio_dim=576
+2025-11-03 19:24:45,457 - INFO - Loaded val split: 1 samples, audio_dim=576
+2025-11-03 19:24:45,458 - INFO - Loaded test split: 1 samples, audio_dim=576
+2025-11-03 19:24:45,458 - INFO - Initializing models...
+2025-11-03 19:24:45,458 - INFO - Loading text encoder: Qwen/Qwen3-Embedding-4B
+2025-11-03 19:24:51,784 - INFO - Training configuration:
+2025-11-03 19:24:51,784 - INFO -   Audio encoder: latent
+2025-11-03 19:24:51,784 - INFO -   Audio dimension: 576
+2025-11-03 19:24:51,784 - INFO -   Text dimension: 2560
+2025-11-03 19:24:51,784 - INFO -   Hidden dimension: 1024
+2025-11-03 19:24:51,784 - INFO -   Training samples: 4
+2025-11-03 19:24:51,784 - INFO -   Validation samples: 1
+2025-11-03 19:24:51,784 - INFO -   Test samples: 1
+2025-11-03 19:24:51,784 - INFO -   Effective batch size: 16
+2025-11-03 19:24:51,784 - INFO -   Total steps: 0
+2025-11-03 19:24:51,784 - INFO - Starting training...
+2025-11-03 19:24:52,402 - INFO - Epoch 1 - Train loss: 0.9636
+2025-11-03 19:24:52,522 - INFO - Epoch 1 - Val loss: 0.0000
+2025-11-03 19:24:52,522 - INFO -   Val t2a R@1: 100.00%
+2025-11-03 19:24:52,522 - INFO -   Val t2a R@5: 100.00%
+2025-11-03 19:24:52,522 - INFO -   Val t2a R@10: 100.00%
+2025-11-03 19:24:52,522 - INFO -   Val t2a MRR: 1.0000
+2025-11-03 19:25:01,069 - INFO - Checkpoint saved to /tmp/test_checkpoints/latent/latent_best_r1.pt
+2025-11-03 19:25:07,601 - INFO - Checkpoint saved to /tmp/test_checkpoints/latent/latent_best_loss.pt
+2025-11-03 19:25:21,696 - INFO - Checkpoint saved to /tmp/test_checkpoints/latent/latent_last.pt
+2025-11-03 19:25:21,698 - INFO - 
+Evaluating on test set...
+2025-11-03 19:25:21,883 - INFO - Test loss: 0.0000
+2025-11-03 19:25:21,883 - INFO - Test t2a R@1: 100.00%
+2025-11-03 19:25:21,883 - INFO - Test t2a R@5: 100.00%
+2025-11-03 19:25:21,883 - INFO - Test t2a R@10: 100.00%
+2025-11-03 19:25:21,883 - INFO - Test t2a MRR: 1.0000
+2025-11-03 19:25:21,883 - INFO - 
+Training complete!
+2025-11-03 19:25:21,883 - INFO - Best val R@1: 100.00%
+2025-11-03 19:25:21,883 - INFO - Best val loss: 0.0000
+2025-11-03 21:48:54,673 - INFO - Loaded train split: 7135 samples, audio_dim=576
+2025-11-03 21:49:06,062 - INFO - Loaded train split: 7135 samples, audio_dim=576
+2025-11-03 21:49:19,095 - INFO - Loaded train split: 7135 samples, audio_dim=576
+2025-11-03 21:49:19,095 - INFO - Loaded val split: 892 samples, audio_dim=576
+2025-11-03 21:49:19,096 - INFO - Loaded test split: 902 samples, audio_dim=576
+2025-11-03 21:49:19,096 - INFO - Initializing models...
+2025-11-03 21:49:19,096 - INFO - Loading text encoder: Qwen/Qwen3-Embedding-4B
+2025-11-03 21:49:26,058 - INFO - Training configuration:
+2025-11-03 21:49:26,058 - INFO -   Audio encoder: latent
+2025-11-03 21:49:26,058 - INFO -   Audio dimension: 576
+2025-11-03 21:49:26,058 - INFO -   Text dimension: 2560
+2025-11-03 21:49:26,058 - INFO -   Hidden dimension: 1024
+2025-11-03 21:49:26,058 - INFO -   Training samples: 7135
+2025-11-03 21:49:26,058 - INFO -   Validation samples: 892
+2025-11-03 21:49:26,058 - INFO -   Test samples: 902
+2025-11-03 21:49:26,058 - INFO -   Effective batch size: 256
+2025-11-03 21:49:26,059 - INFO -   Total steps: 27
+2025-11-03 21:49:26,059 - INFO - Starting training...
+2025-11-03 21:49:48,108 - INFO - Epoch 1 - Train loss: 3.5027
+2025-11-03 21:49:50,705 - INFO - Epoch 1 - Val loss: 3.4804
+2025-11-03 21:49:50,705 - INFO -   Val t2a R@1: 0.22%
+2025-11-03 21:49:50,705 - INFO -   Val t2a R@5: 1.57%
+2025-11-03 21:49:50,705 - INFO -   Val t2a R@10: 2.47%
+2025-11-03 21:49:50,705 - INFO -   Val t2a MRR: 0.0127
+2025-11-03 21:50:00,580 - INFO - Checkpoint saved to /tmp/quick_test/latent_best_r1.pt
+2025-11-03 21:50:13,828 - INFO - Checkpoint saved to /tmp/quick_test/latent_best_loss.pt
+2025-11-03 21:50:21,814 - INFO - Checkpoint saved to /tmp/quick_test/latent_last.pt
+2025-11-03 21:50:21,852 - INFO - 
+Evaluating on test set...
+2025-11-03 21:50:21,894 - INFO - Test loss: 3.4303
+2025-11-03 21:50:21,895 - INFO - Test t2a R@1: 0.22%
+2025-11-03 21:50:21,895 - INFO - Test t2a R@5: 0.67%
+2025-11-03 21:50:21,895 - INFO - Test t2a R@10: 1.33%
+2025-11-03 21:50:21,895 - INFO - Test t2a MRR: 0.0101
+2025-11-03 21:50:21,895 - INFO - 
+Training complete!
+2025-11-03 21:50:21,895 - INFO - Best val R@1: 0.22%
+2025-11-03 21:50:21,895 - INFO - Best val loss: 3.4804
+2025-11-03 21:52:20,243 - INFO - Loaded train split: 7135 samples, audio_dim=576
+2025-11-03 21:52:20,243 - INFO - Loaded val split: 892 samples, audio_dim=576
+2025-11-03 21:52:20,244 - INFO - Loaded test split: 902 samples, audio_dim=576
+2025-11-03 21:52:20,244 - INFO - Initializing models...
+2025-11-03 21:52:20,244 - INFO - Loading text encoder: Qwen/Qwen3-Embedding-4B
+2025-11-03 21:52:20,903 - INFO - Applying LoRA (rank=16, alpha=32)
+2025-11-03 21:52:28,157 - INFO - Training configuration:
+2025-11-03 21:52:28,157 - INFO -   Audio encoder: latent
+2025-11-03 21:52:28,157 - INFO -   Audio dimension: 576
+2025-11-03 21:52:28,157 - INFO -   Text dimension: 2560
+2025-11-03 21:52:28,157 - INFO -   Hidden dimension: 1024
+2025-11-03 21:52:28,157 - INFO -   Training samples: 7135
+2025-11-03 21:52:28,157 - INFO -   Validation samples: 892
+2025-11-03 21:52:28,157 - INFO -   Test samples: 902
+2025-11-03 21:52:28,157 - INFO -   Effective batch size: 256
+2025-11-03 21:52:28,157 - INFO -   Total steps: 540
+2025-11-03 21:52:28,158 - INFO - Starting training...
+2025-11-03 22:01:35,340 - INFO - Epoch 1 - Train loss: 3.5066
+2025-11-03 22:01:51,651 - INFO - Epoch 1 - Val loss: 3.4760
+2025-11-03 22:01:51,652 - INFO -   Val t2a R@1: 0.34%
+2025-11-03 22:01:51,652 - INFO -   Val t2a R@5: 0.90%
+2025-11-03 22:01:51,652 - INFO -   Val t2a R@10: 1.23%
+2025-11-03 22:01:51,652 - INFO -   Val t2a MRR: 0.0116
+2025-11-03 22:02:26,501 - INFO - Checkpoint saved to checkpoints/latent_best_r1.pt
+2025-11-03 22:02:44,562 - INFO - Checkpoint saved to checkpoints/latent_best_loss.pt
+2025-11-03 22:02:59,143 - INFO - Checkpoint saved to checkpoints/latent_last.pt
+2025-11-03 22:13:09,091 - INFO - Epoch 2 - Train loss: 3.4790
+2025-11-03 22:13:23,370 - INFO - Epoch 2 - Val loss: 3.4435
+2025-11-03 22:13:23,370 - INFO -   Val t2a R@1: 0.22%
+2025-11-03 22:13:23,370 - INFO -   Val t2a R@5: 1.01%
+2025-11-03 22:13:23,370 - INFO -   Val t2a R@10: 1.68%
+2025-11-03 22:13:23,370 - INFO -   Val t2a MRR: 0.0124
+2025-11-03 22:13:32,297 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7882445440 vs 7882445336
+2025-11-03 22:13:40,696 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7882445440 vs 7882445336
+2025-11-03 22:23:42,210 - INFO - Epoch 3 - Train loss: 3.4505
+2025-11-03 22:24:03,418 - INFO - Epoch 3 - Val loss: 3.4057
+2025-11-03 22:24:03,419 - INFO -   Val t2a R@1: 0.22%
+2025-11-03 22:24:03,419 - INFO -   Val t2a R@5: 1.12%
+2025-11-03 22:24:03,419 - INFO -   Val t2a R@10: 2.58%
+2025-11-03 22:24:03,419 - INFO -   Val t2a MRR: 0.0138
+2025-11-03 22:24:11,852 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7882445440 vs 7882445336
+2025-11-03 22:24:21,113 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7882445440 vs 7882445336
+2025-11-03 22:34:07,675 - INFO - Epoch 4 - Train loss: 3.4076
+2025-11-03 22:34:25,059 - INFO - Epoch 4 - Val loss: 3.3655
+2025-11-03 22:34:25,059 - INFO -   Val t2a R@1: 0.34%
+2025-11-03 22:34:25,059 - INFO -   Val t2a R@5: 1.01%
+2025-11-03 22:34:25,059 - INFO -   Val t2a R@10: 3.03%
+2025-11-03 22:34:25,059 - INFO -   Val t2a MRR: 0.0161
+2025-11-03 22:34:32,895 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7882445440 vs 7882445336
+2025-11-03 22:34:42,716 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7882445376 vs 7882445272
+2025-11-03 22:44:17,917 - INFO - Epoch 5 - Train loss: 3.3585
+2025-11-03 22:44:33,830 - INFO - Epoch 5 - Val loss: 3.3172
+2025-11-03 22:44:33,830 - INFO -   Val t2a R@1: 0.34%
+2025-11-03 22:44:33,830 - INFO -   Val t2a R@5: 1.57%
+2025-11-03 22:44:33,830 - INFO -   Val t2a R@10: 3.70%
+2025-11-03 22:44:33,830 - INFO -   Val t2a MRR: 0.0189
+2025-11-03 22:44:44,990 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7882445440 vs 7882445336
+2025-11-03 22:44:51,803 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7882445440 vs 7882445336
+2025-11-03 22:45:01,812 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7882445440 vs 7882445336
+2025-11-03 22:54:46,139 - INFO - Epoch 6 - Train loss: 3.3129
+2025-11-03 22:54:59,770 - INFO - Epoch 6 - Val loss: 3.2724
+2025-11-03 22:54:59,770 - INFO -   Val t2a R@1: 0.34%
+2025-11-03 22:54:59,770 - INFO -   Val t2a R@5: 1.91%
+2025-11-03 22:54:59,770 - INFO -   Val t2a R@10: 4.48%
+2025-11-03 22:54:59,770 - INFO -   Val t2a MRR: 0.0218
+2025-11-03 22:55:08,128 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7882445376 vs 7882445272
+2025-11-03 22:55:17,795 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7882445376 vs 7882445272
+2025-11-03 22:55:18,191 - INFO - Early stopping triggered after 6 epochs
+2025-11-03 22:55:18,191 - INFO - 
+Evaluating on test set...
+2025-11-03 22:55:40,715 - INFO - Test loss: 3.2028
+2025-11-03 22:55:40,715 - INFO - Test t2a R@1: 0.44%
+2025-11-03 22:55:40,715 - INFO - Test t2a R@5: 2.00%
+2025-11-03 22:55:40,715 - INFO - Test t2a R@10: 4.88%
+2025-11-03 22:55:40,715 - INFO - Test t2a MRR: 0.0222
+2025-11-03 22:55:40,716 - INFO - 
+Training complete!
+2025-11-03 22:55:40,716 - INFO - Best val R@1: 0.34%
+2025-11-03 22:55:40,716 - INFO - Best val loss: 3.2724
+2025-11-03 23:55:37,876 - INFO - Loaded train split: 7135 samples, audio_dim=576
+2025-11-03 23:55:37,877 - INFO - Loaded val split: 892 samples, audio_dim=576
+2025-11-03 23:55:37,877 - INFO - Loaded test split: 902 samples, audio_dim=576
+2025-11-03 23:55:37,877 - INFO - Initializing models...
+2025-11-03 23:55:37,877 - INFO - Loading text encoder: Qwen/Qwen3-Embedding-4B
+2025-11-03 23:55:46,927 - INFO - Training configuration:
+2025-11-03 23:55:46,927 - INFO -   Audio encoder: latent
+2025-11-03 23:55:46,927 - INFO -   Audio dimension: 576
+2025-11-03 23:55:46,927 - INFO -   Text dimension: 2560
+2025-11-03 23:55:46,927 - INFO -   Hidden dimension: 1024
+2025-11-03 23:55:46,927 - INFO -   Training samples: 7135
+2025-11-03 23:55:46,927 - INFO -   Validation samples: 892
+2025-11-03 23:55:46,927 - INFO -   Test samples: 902
+2025-11-03 23:55:46,927 - INFO -   Effective batch size: 256
+2025-11-03 23:55:46,927 - INFO -   Total steps: 54
+2025-11-03 23:55:46,927 - INFO - Starting training...
+2025-11-03 23:56:09,050 - INFO - Epoch 1 - Train loss: 3.5027
+2025-11-03 23:56:11,609 - INFO - Epoch 1 - Val loss: 3.4804
+2025-11-03 23:56:11,609 - INFO -   Val t2a R@1: 0.22%
+2025-11-03 23:56:11,609 - INFO -   Val t2a R@5: 1.57%
+2025-11-03 23:56:11,609 - INFO -   Val t2a R@10: 2.47%
+2025-11-03 23:56:11,609 - INFO -   Val t2a MRR: 0.0127
+2025-11-03 23:56:20,316 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7907124736 vs 7907124632
+2025-11-03 23:56:29,142 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7907124736 vs 7907124632
+2025-11-03 23:56:38,887 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7907124736 vs 7907124632
+2025-11-03 23:56:56,988 - INFO - Epoch 2 - Train loss: 3.4849
+2025-11-03 23:56:59,856 - INFO - Epoch 2 - Val loss: 3.4548
+2025-11-03 23:56:59,856 - INFO -   Val t2a R@1: 0.22%
+2025-11-03 23:56:59,856 - INFO -   Val t2a R@5: 1.12%
+2025-11-03 23:56:59,856 - INFO -   Val t2a R@10: 2.58%
+2025-11-03 23:56:59,857 - INFO -   Val t2a MRR: 0.0134
+2025-11-03 23:57:11,333 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7854694720 vs 7854694616
+2025-11-03 23:57:16,430 - ERROR - Failed to save checkpoint: [enforce fail at inline_container.cc:664] . unexpected pos 7854694720 vs 7854694616
+2025-11-03 23:57:16,799 - INFO - 
+Evaluating on test set...
+2025-11-03 23:57:19,662 - INFO - Test loss: 3.4023
+2025-11-03 23:57:19,662 - INFO - Test t2a R@1: 0.44%
+2025-11-03 23:57:19,663 - INFO - Test t2a R@5: 1.00%
+2025-11-03 23:57:19,663 - INFO - Test t2a R@10: 1.88%
+2025-11-03 23:57:19,663 - INFO - Test t2a MRR: 0.0127
+2025-11-03 23:57:19,663 - INFO - 
+Training complete!
+2025-11-03 23:57:19,663 - INFO - Best val R@1: 0.22%
+2025-11-03 23:57:19,663 - INFO - Best val loss: 3.4548

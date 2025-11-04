@@ -6,9 +6,11 @@ Source: https://zenodo.org/records/10072001
 Paper: https://arxiv.org/abs/2311.10057
 """
 
+import csv
 import json
 import logging
 import subprocess
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -32,7 +34,7 @@ class SongDescriberDownloader(BaseDownloader):
         return self.DATASET_NAME
 
     def get_metadata_path(self) -> Path:
-        return self.output_dir / "metadata.json"
+        return self.output_dir / "metadata.csv"
 
     def download(self) -> bool:
         """
@@ -64,18 +66,24 @@ class SongDescriberDownloader(BaseDownloader):
         return True
 
     def _download_metadata(self) -> bool:
-        """Download metadata JSON from Zenodo"""
+        """Download metadata CSV from Zenodo"""
         metadata_path = self.get_metadata_path()
 
         # Check if metadata exists and is valid
         if metadata_path.exists() and self.resume:
             try:
-                # Validate JSON is parseable
-                with open(metadata_path, 'r') as f:
-                    json.load(f)
-                logger.info("Metadata already downloaded and valid")
-                return True
-            except (json.JSONDecodeError, IOError) as e:
+                # Validate CSV is parseable and has content
+                with open(metadata_path, 'r', encoding='utf-8') as f:
+                    reader = csv.reader(f)
+                    header = next(reader)
+                    # Check for expected columns
+                    if 'caption_id' in header or 'track_id' in header:
+                        logger.info("Metadata already downloaded and valid")
+                        return True
+                    else:
+                        logger.warning(f"Metadata file has unexpected format: {header}")
+                        logger.info("Re-downloading metadata...")
+            except (csv.Error, StopIteration, IOError) as e:
                 logger.warning(f"Existing metadata file is corrupted: {e}")
                 logger.info("Re-downloading metadata...")
                 # Continue to re-download
@@ -98,13 +106,17 @@ class SongDescriberDownloader(BaseDownloader):
             files = record.get('files', [])
             metadata_file = None
 
+            # Look specifically for song_describer.csv
             for file in files:
-                if 'metadata' in file['key'].lower() or file['key'].endswith('.json'):
+                if file['key'] == 'song_describer.csv':
                     metadata_file = file
                     break
 
             if not metadata_file:
-                logger.error("Metadata file not found in Zenodo record")
+                logger.error("song_describer.csv not found in Zenodo record")
+                logger.error("Available files:")
+                for file in files:
+                    logger.error(f"  - {file['key']}")
                 return False
 
             # Download metadata file
@@ -125,12 +137,12 @@ class SongDescriberDownloader(BaseDownloader):
             return False
 
     def _download_audio(self) -> bool:
-        """Download audio files from YouTube using yt-dlp"""
+        """Download audio files from Zenodo audio.zip"""
         metadata_path = self.get_metadata_path()
 
         if not metadata_path.exists():
             if self.dry_run:
-                logger.info("[DRY RUN] Metadata not found, but would download ~1,100 audio tracks from YouTube")
+                logger.info("[DRY RUN] Metadata not found, but would download ~1,100 audio tracks")
                 return True
             else:
                 logger.error("Metadata file not found. Download metadata first.")
@@ -138,70 +150,105 @@ class SongDescriberDownloader(BaseDownloader):
 
         # Load metadata with error handling
         try:
-            with open(metadata_path, 'r') as f:
-                metadata = json.load(f)
-        except json.JSONDecodeError as e:
-            logger.error(f"Metadata file is corrupted: {e}")
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                tracks = list(reader)
+        except Exception as e:
+            logger.error(f"Failed to read metadata CSV: {e}")
             logger.error("Please delete the corrupted file and re-run the download:")
             logger.error(f"  rm {metadata_path}")
             logger.error(f"  python download_datasets.py --datasets song_describer")
             return False
-        except IOError as e:
-            logger.error(f"Failed to read metadata file: {e}")
-            return False
 
-        # Extract YouTube IDs
+        self.state.total_files = len(tracks)
+        logger.info(f"Found {len(tracks)} tracks in metadata")
+
+        # Download audio.zip from Zenodo
         audio_dir = self.output_dir / "audio"
         if not self.dry_run:
             audio_dir.mkdir(exist_ok=True)
 
-        # Get list of tracks
-        tracks = metadata if isinstance(metadata, list) else metadata.get('tracks', [])
-        self.state.total_files = len(tracks)
+        # Get Zenodo record to find audio.zip
+        try:
+            zenodo_api_url = f"https://zenodo.org/api/records/{self.ZENODO_RECORD_ID}"
+            response = requests.get(zenodo_api_url, timeout=30)
+            response.raise_for_status()
+            record = response.json()
 
-        logger.info(f"Downloading audio for {len(tracks)} tracks from YouTube...")
+            # Find audio.zip
+            files = record.get('files', [])
+            audio_zip_file = None
+            for file in files:
+                if file['key'] == 'audio.zip':
+                    audio_zip_file = file
+                    break
 
-        # Check yt-dlp availability
-        if not self._check_ytdlp():
-            logger.error("yt-dlp not found. Install with: pip install yt-dlp")
-            return False
+            if not audio_zip_file:
+                logger.error("audio.zip not found in Zenodo record")
+                return False
 
-        # Download each track
-        for track in tqdm(tracks, desc="Downloading audio"):
-            youtube_id = track.get('youtube_id') or track.get('ytid') or track.get('id')
+            # Download audio.zip
+            audio_zip_path = self.output_dir / "audio.zip"
+            audio_zip_url = audio_zip_file['links']['self']
 
-            if not youtube_id:
-                logger.warning(f"No YouTube ID found for track: {track}")
-                continue
+            # Check if we need to download
+            needs_download = True
+            if audio_zip_path.exists() and self.resume:
+                # Validate the zip file
+                try:
+                    with zipfile.ZipFile(audio_zip_path, 'r') as zf:
+                        # Test if it's a valid zip
+                        if len(zf.filelist) > 0:
+                            logger.info("audio.zip already downloaded and valid")
+                            needs_download = False
+                        else:
+                            logger.warning("audio.zip is empty, re-downloading...")
+                            audio_zip_path.unlink()
+                except zipfile.BadZipFile:
+                    logger.warning("audio.zip is corrupted, re-downloading...")
+                    audio_zip_path.unlink()
+                except Exception as e:
+                    logger.warning(f"Could not validate audio.zip: {e}, re-downloading...")
+                    audio_zip_path.unlink()
 
-            output_file = audio_dir / f"{youtube_id}.mp3"
+            if needs_download:
+                logger.info(f"Downloading audio.zip ({audio_zip_file['size'] / (1024**3):.2f} GB)...")
+                success = self.download_file(
+                    audio_zip_url,
+                    audio_zip_path,
+                    description="Audio archive"
+                )
+                if not success:
+                    logger.error("Failed to download audio.zip")
+                    return False
 
-            # Skip if already downloaded
-            file_id = str(output_file.relative_to(self.output_dir))
-            if file_id in self.state.downloaded_files:
-                continue
-
+            # Extract audio.zip
             if self.dry_run:
-                logger.info(f"[DRY RUN] Would download: {youtube_id}")
-                continue
+                logger.info("[DRY RUN] Would extract audio.zip")
+                return True
 
-            # Download using yt-dlp
-            success = self._download_youtube_audio(youtube_id, output_file)
-
-            if success:
-                self.state.downloaded_files.add(file_id)
-                self.state.total_size_bytes += output_file.stat().st_size
+            # Check if already extracted
+            extracted_marker = audio_dir / ".extracted"
+            if extracted_marker.exists():
+                logger.info("Audio files already extracted")
             else:
-                self.state.failed_files.add(file_id)
+                logger.info("Extracting audio files...")
+                with zipfile.ZipFile(audio_zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(audio_dir)
 
-            # Save checkpoint every 10 files
-            if len(self.state.downloaded_files) % 10 == 0:
-                self.save_state()
+                # Create marker file
+                extracted_marker.touch()
+                logger.info(f"Extracted audio files to {audio_dir}")
 
-        # Final save
-        self.save_state()
+                # Clean up zip file after extraction
+                audio_zip_path.unlink()
+                logger.info("Removed audio.zip after extraction")
 
-        return True
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to download audio: {e}", exc_info=True)
+            return False
 
     def _check_ytdlp(self) -> bool:
         """Check if yt-dlp is installed"""
@@ -282,20 +329,24 @@ Human-written captions for music tracks (~2 minute clips).
 ## Directory Structure
 ```
 {self.DATASET_NAME}/
-├── metadata.json      # Song metadata and captions
-├── audio/            # MP3 files (YouTube sourced)
-│   ├── <youtube_id>.mp3
+├── metadata.csv      # Song metadata and captions (CSV format)
+├── audio/            # MP3 files from Zenodo
+│   ├── <track_id>.mp3
 │   └── ...
 └── README.md         # This file
 ```
 
-## Metadata Format
-Each entry contains:
-- `youtube_id`: YouTube video ID
-- `title`: Song title
-- `artist`: Artist name
-- `captions`: List of 5 human-written descriptions
-- `duration`: Clip duration in seconds
+## Metadata Format (CSV)
+Each row contains:
+- `caption_id`: Unique caption identifier
+- `track_id`: Track identifier
+- `caption`: Human-written description
+- `is_valid_subset`: Whether track is in validation set
+- `familiarity`: Familiarity rating (0-2)
+- `artist_id`: Artist identifier
+- `album_id`: Album identifier
+- `path`: Relative path to audio file
+- `duration`: Track duration in seconds
 
 ## Citation
 ```bibtex
@@ -308,7 +359,7 @@ Each entry contains:
 ```
 
 ## License
-Check individual track licenses. YouTube sourced content.
+Check individual track licenses. Audio sourced from MTG-Jamendo dataset via Zenodo.
 
 ## Download Info
 - Downloaded: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}

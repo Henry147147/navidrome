@@ -8,7 +8,7 @@ import logging
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Event, Lock, Thread
 from typing import Any, Generator, List, Optional, Sequence
@@ -45,7 +45,7 @@ class BaseEmbeddingModel(ABC):
         self._timeout = max(int(timeout_seconds), 30)
         self._lock = Lock()
         self._model: Optional[torch.nn.Module] = None
-        self._last_used = datetime.now(UTC)
+        self._last_used = datetime.now(timezone.utc)
         self._stop_event = Event()
         self._unloader = Thread(
             target=self._auto_unload_loop,
@@ -63,7 +63,7 @@ class BaseEmbeddingModel(ABC):
             with self._lock:
                 if self._model is None:
                     continue
-                idle = datetime.now(UTC) - self._last_used
+                idle = datetime.now(timezone.utc) - self._last_used
                 if idle >= timedelta(seconds=self._timeout):
                     self.logger.info(
                         "Model idle for %s seconds, unloading %s",
@@ -96,7 +96,7 @@ class BaseEmbeddingModel(ABC):
             if self._model is None:
                 self.logger.info("Loading embedding model %s", self.__class__.__name__)
                 self._model = self._load_model()
-            self._last_used = datetime.now(UTC)
+            self._last_used = datetime.now(timezone.utc)
             return self._model
 
     @contextmanager
@@ -109,7 +109,7 @@ class BaseEmbeddingModel(ABC):
             yield model
         finally:
             with self._lock:
-                self._last_used = datetime.now(UTC)
+                self._last_used = datetime.now(timezone.utc)
 
     def unload_model(self) -> None:
         """
@@ -250,7 +250,7 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
             "sample_rate": self.sample_rate,
             "window_seconds": self.window_seconds,
             "hop_seconds": self.hop_seconds,
-            "generated_at": datetime.now(UTC).isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "segments": [segment.__dict__ for segment in payload_segments],
         }
 
@@ -815,7 +815,7 @@ class MertModel(BaseEmbeddingModel):
             "sample_rate": self.sample_rate,
             "chunk_duration_seconds": self.chunk_duration_seconds,
             "hop_duration_seconds": self.hop_duration_seconds,
-            "generated_at": datetime.now(UTC).isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "segments": [segment.__dict__ for segment in payload_segments],
         }
 
@@ -1139,7 +1139,7 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
             "music_file": str(Path(music_file)),
             "model_id": "Music2Latent_EncoderDecoder",
             "sample_rate": self.sample_rate,
-            "generated_at": datetime.now(UTC).isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "segments": [segment.__dict__ for segment in payload_segments],
         }
 
