@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Dict, Iterable, Sequence
+from typing import Dict, Iterable, List, Sequence
 
 from fastapi import FastAPI, HTTPException
 import uvicorn
@@ -439,6 +439,66 @@ def create_app() -> FastAPI:
     @app.get("/healthz")
     def healthcheck() -> Dict[str, str]:
         return {"status": "ok"}
+
+    # Batch job endpoints
+    from batch_embedding_job import start_batch_job, get_current_job
+    import threading
+
+    @app.post("/batch/start")
+    def start_batch_embedding(
+        models: List[str] = ["muq", "mert", "latent"],
+        clear_existing: bool = True,
+    ) -> Dict:
+        """Start batch re-embedding job."""
+        current_job = get_current_job()
+        if current_job and current_job.progress.status == "running":
+            raise HTTPException(400, "A job is already running")
+
+        job = start_batch_job(
+            db_path=os.getenv("NAVIDROME_DB_PATH", "navidrome.db"),
+            music_root=os.getenv("NAVIDROME_MUSIC_ROOT", "/music"),
+            milvus_uri=os.getenv("NAVIDROME_MILVUS_URI", "http://localhost:19530"),
+        )
+
+        # Run in background thread
+        thread = threading.Thread(
+            target=job.run, args=(models, clear_existing), daemon=True
+        )
+        thread.start()
+
+        return {"status": "started", "job_id": id(job)}
+
+    @app.get("/batch/progress")
+    def get_batch_progress() -> Dict:
+        """Get current batch job progress."""
+        job = get_current_job()
+        if not job:
+            return {"status": "no_job"}
+
+        progress = job.get_progress()
+        return {
+            "total_tracks": progress.total_tracks,
+            "processed_tracks": progress.processed_tracks,
+            "failed_tracks": progress.failed_tracks,
+            "current_track": progress.current_track,
+            "status": progress.status,
+            "progress_percent": (
+                progress.processed_tracks / progress.total_tracks * 100
+                if progress.total_tracks > 0
+                else 0
+            ),
+            "estimated_completion": progress.estimated_completion,
+        }
+
+    @app.post("/batch/cancel")
+    def cancel_batch_job() -> Dict:
+        """Cancel running batch job."""
+        job = get_current_job()
+        if not job:
+            raise HTTPException(404, "No job running")
+
+        job.cancel()
+        return {"status": "cancelling"}
 
     return app
 
