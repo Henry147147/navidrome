@@ -12,6 +12,10 @@ class MockMilvusClient:
     def __init__(self):
         self.search_results = {}
 
+    def load_collection(self, collection_name):
+        """Mock load_collection method"""
+        pass  # No-op for testing
+
     def search(self, collection_name, data, **kwargs):
         """Mock search method"""
         if collection_name not in self.search_results:
@@ -47,14 +51,14 @@ class TestMultiModelSimilaritySearcher:
 
         # Setup mock results
         muq_results = [
-            {"entity": {"name": "Song A"}, "distance": 0.9},
-            {"entity": {"name": "Song B"}, "distance": 0.8},
-            {"entity": {"name": "Song C"}, "distance": 0.7},
+            {"name": "Song A", "distance": 0.9},
+            {"name": "Song B", "distance": 0.8},
+            {"name": "Song C", "distance": 0.7},
         ]
 
         mert_results = [
-            {"entity": {"name": "Song B"}, "distance": 0.85},
-            {"entity": {"name": "Song D"}, "distance": 0.75},
+            {"name": "Song B", "distance": 0.85},
+            {"name": "Song D", "distance": 0.75},
         ]
 
         client.set_mock_results("embedding", muq_results)
@@ -81,13 +85,13 @@ class TestMultiModelSimilaritySearcher:
 
         # Setup mock results with overlap
         muq_results = [
-            {"entity": {"name": "Song A"}, "distance": 0.9},
-            {"entity": {"name": "Song B"}, "distance": 0.8},
+            {"name": "Song A", "distance": 0.9},
+            {"name": "Song B", "distance": 0.8},
         ]
 
         mert_results = [
-            {"entity": {"name": "Song B"}, "distance": 0.85},
-            {"entity": {"name": "Song C"}, "distance": 0.75},
+            {"name": "Song B", "distance": 0.85},
+            {"name": "Song C", "distance": 0.75},
         ]
 
         client.set_mock_results("embedding", muq_results)
@@ -110,13 +114,13 @@ class TestMultiModelSimilaritySearcher:
 
         # Setup mock results
         muq_results = [
-            {"entity": {"name": "Song A"}, "distance": 0.9},
-            {"entity": {"name": "Song B"}, "distance": 0.8},
+            {"name": "Song A", "distance": 0.9},
+            {"name": "Song B", "distance": 0.8},
         ]
 
         mert_results = [
-            {"entity": {"name": "Song C"}, "distance": 0.95},
-            {"entity": {"name": "Song D"}, "distance": 0.85},
+            {"name": "Song C", "distance": 0.95},
+            {"name": "Song D", "distance": 0.85},
         ]
 
         client.set_mock_results("embedding", muq_results)
@@ -144,17 +148,17 @@ class TestMultiModelSimilaritySearcher:
 
         # Setup results where only Song B appears in multiple models
         muq_results = [
-            {"entity": {"name": "Song A"}, "distance": 0.9},
-            {"entity": {"name": "Song B"}, "distance": 0.8},
+            {"name": "Song A", "distance": 0.9},
+            {"name": "Song B", "distance": 0.8},
         ]
 
         mert_results = [
-            {"entity": {"name": "Song B"}, "distance": 0.85},
-            {"entity": {"name": "Song C"}, "distance": 0.75},
+            {"name": "Song B", "distance": 0.85},
+            {"name": "Song C", "distance": 0.75},
         ]
 
         latent_results = [
-            {"entity": {"name": "Song D"}, "distance": 0.8},
+            {"name": "Song D", "distance": 0.8},
         ]
 
         client.set_mock_results("embedding", muq_results)
@@ -181,8 +185,8 @@ class TestMultiModelSimilaritySearcher:
         searcher = MultiModelSimilaritySearcher(client)
 
         muq_results = [
-            {"entity": {"name": "Song A"}, "distance": 0.9},
-            {"entity": {"name": "Song B"}, "distance": 0.8},
+            {"name": "Song A", "distance": 0.9},
+            {"name": "Song B", "distance": 0.8},
         ]
 
         client.set_mock_results("embedding", muq_results)
@@ -200,11 +204,11 @@ class TestMultiModelSimilaritySearcher:
         searcher = MultiModelSimilaritySearcher(client)
 
         muq_results = [
-            {"entity": {"name": "Song A"}, "distance": 0.9},
+            {"name": "Song A", "distance": 0.9},
         ]
 
         mert_results = [
-            {"entity": {"name": "Song A"}, "distance": 0.85},
+            {"name": "Song A", "distance": 0.85},
         ]
 
         client.set_mock_results("embedding", muq_results)
@@ -252,11 +256,11 @@ class TestMultiModelSimilaritySearcher:
 
         # Same song with different scores in different models
         muq_results = [
-            {"entity": {"name": "Song A"}, "distance": 1.0},
+            {"name": "Song A", "distance": 1.0},
         ]
 
         mert_results = [
-            {"entity": {"name": "Song A"}, "distance": 0.8},
+            {"name": "Song A", "distance": 0.8},
         ]
 
         client.set_mock_results("embedding", muq_results)
