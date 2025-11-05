@@ -221,6 +221,7 @@ const wrapperDataProvider = {
   getDiscoveryRecommendations: (options) =>
     postRecommendation('discovery', options),
   getCustomRecommendations: (options) => postRecommendation('custom', options),
+  getTextRecommendations: (options) => postRecommendation('text', options),
   getRecommendationSettings: () =>
     httpClient(`${REST_URL}/recommendations/settings`).then(({ json }) => ({
       data: json,
@@ -230,6 +231,26 @@ const wrapperDataProvider = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
+    }).then(({ json }) => ({ data: json })),
+  getTextEmbedding: (text, model) =>
+    httpClient(`${REST_URL}/text-embedding`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, model: model || 'muq' }),
+    }).then(({ json }) => ({ data: json })),
+  startBatchEmbedding: (models, clearExisting) =>
+    httpClient(`${REST_URL}/recommendations/batch/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ models, clearExisting }),
+    }).then(({ json }) => ({ data: json })),
+  getBatchEmbeddingProgress: () =>
+    httpClient(`${REST_URL}/recommendations/batch/progress`).then(({ json }) => ({
+      data: json,
+    })),
+  cancelBatchEmbedding: () =>
+    httpClient(`${REST_URL}/recommendations/batch/cancel`, {
+      method: 'POST',
     }).then(({ json }) => ({ data: json })),
   getAutoPlaySettings: () =>
     httpClient(`${REST_URL}/autoplay/settings`).then(({ json }) => ({
