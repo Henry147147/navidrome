@@ -6,14 +6,12 @@ Provides progress tracking, error handling, and graceful cancellation.
 """
 
 import logging
-import os
 import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from pymilvus import MilvusClient
 from tqdm import tqdm
 
 from embedding_models import MertModel, MuQEmbeddingModel, MusicLatentSpaceModel
@@ -238,7 +236,8 @@ class BatchEmbeddingJob:
 
         elapsed = time.time() - self.progress.started_at
         self.logger.info(
-            f"Job completed in {elapsed:.1f}s: {self.progress.processed_tracks}/{self.progress.total_tracks} tracks"
+            f"Job completed in {elapsed:.1f}s: "
+            f"{self.progress.processed_tracks}/{self.progress.total_tracks} tracks"
         )
         self.logger.info(f"Failed tracks: {self.progress.failed_tracks}")
 
@@ -254,8 +253,12 @@ class BatchEmbeddingJob:
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
         # Normalize track name (artist - title format)
-        artist = str(track["artist"]).replace("•", "&").replace("/", "_").replace("\\", "_")
-        title = str(track["title"]).replace("•", "&").replace("/", "_").replace("\\", "_")
+        artist = (
+            str(track["artist"]).replace("•", "&").replace("/", "_").replace("\\", "_")
+        )
+        title = (
+            str(track["title"]).replace("•", "&").replace("/", "_").replace("\\", "_")
+        )
         canonical_name = f"{artist} - {title}".strip()
 
         client = MilvusClient(uri=self.milvus_uri)
@@ -294,11 +297,14 @@ class BatchEmbeddingJob:
 
                 if self.logger.level <= logging.DEBUG:
                     self.logger.debug(
-                        f"Embedded {canonical_name} with {model_name} ({len(result['segments'])} segments)"
+                        f"Embedded {canonical_name} with {model_name} "
+                        f"({len(result['segments'])} segments)"
                     )
 
             except Exception as e:
-                self.logger.error(f"Failed to embed {canonical_name} with {model_name}: {e}")
+                self.logger.error(
+                    f"Failed to embed {canonical_name} with {model_name}: {e}"
+                )
                 raise
 
     def cancel(self) -> None:
@@ -334,7 +340,9 @@ def start_batch_job(
         BatchEmbeddingJob instance
     """
     global _current_job
-    _current_job = BatchEmbeddingJob(db_path, music_root, milvus_uri, checkpoint_interval)
+    _current_job = BatchEmbeddingJob(
+        db_path, music_root, milvus_uri, checkpoint_interval
+    )
     return _current_job
 
 

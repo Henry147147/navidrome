@@ -17,7 +17,7 @@ class TestNegativePromptSchemas:
             user_name="Test User",
             mode="recent",
             negative_prompts=["sad music", "slow tempo"],
-            negative_prompt_penalty=0.8
+            negative_prompt_penalty=0.8,
         )
 
         assert req.negative_prompts == ["sad music", "slow tempo"]
@@ -31,7 +31,7 @@ class TestNegativePromptSchemas:
                 user_id="test_user",
                 user_name="Test User",
                 mode="recent",
-                negative_prompt_penalty=0.2  # Below 0.3
+                negative_prompt_penalty=0.2,  # Below 0.3
             )
 
         # Too high
@@ -40,7 +40,7 @@ class TestNegativePromptSchemas:
                 user_id="test_user",
                 user_name="Test User",
                 mode="recent",
-                negative_prompt_penalty=1.5  # Above 1.0
+                negative_prompt_penalty=1.5,  # Above 1.0
             )
 
     def test_negative_embeddings_field(self):
@@ -51,8 +51,8 @@ class TestNegativePromptSchemas:
             mode="recent",
             negative_embeddings={
                 "muq": [[0.1] * 1536, [0.2] * 1536],
-                "mert": [[0.3] * 76800]
-            }
+                "mert": [[0.3] * 76800],
+            },
         )
 
         assert "muq" in req.negative_embeddings
@@ -88,7 +88,7 @@ class MockRecommender:
             return score
 
         # Exponential penalty: score * (penalty ^ negative_similarity)
-        penalized_score = score * (penalty ** negative_similarity)
+        penalized_score = score * (penalty**negative_similarity)
         return penalized_score
 
 
@@ -121,7 +121,9 @@ class TestNegativePromptLogic:
 
         negative_embeddings = [neg1, neg2]
 
-        similarity = recommender.compute_negative_similarity(track_emb, negative_embeddings)
+        similarity = recommender.compute_negative_similarity(
+            track_emb, negative_embeddings
+        )
 
         # Should return the maximum (1.0 from neg2)
         assert abs(similarity - 1.0) < 0.01
@@ -153,7 +155,7 @@ class TestNegativePromptLogic:
 
         # With penalty=0.85 and similarity=0.5:
         # penalized = 0.9 * (0.85^0.5) ≈ 0.9 * 0.922 ≈ 0.83
-        expected = original_score * (penalty ** negative_similarity)
+        expected = original_score * (penalty**negative_similarity)
         assert abs(penalized - expected) < 0.01
 
     def test_apply_negative_penalty_perfect_match(self):
@@ -219,7 +221,9 @@ class TestNegativePromptLogic:
         penalized = []
         for name, score in tracks:
             neg_sim = negative_similarities[name]
-            penalized_score = recommender.apply_negative_penalty(score, neg_sim, penalty)
+            penalized_score = recommender.apply_negative_penalty(
+                score, neg_sim, penalty
+            )
             penalized.append((name, penalized_score))
 
         # Sort by penalized score
@@ -267,7 +271,7 @@ class TestNegativePromptIntegration:
             user_name="Test User",
             mode="recent",
             negative_prompts=[],
-            seeds=[RecommendationSeed(track_id="123", source="recent")]
+            seeds=[RecommendationSeed(track_id="123", source="recent")],
         )
 
         assert len(req.negative_prompts) == 0
@@ -281,7 +285,7 @@ class TestNegativePromptIntegration:
             mode="recent",
             negative_prompts=["sad music"],
             negative_embeddings=None,
-            seeds=[RecommendationSeed(track_id="123", source="recent")]
+            seeds=[RecommendationSeed(track_id="123", source="recent")],
         )
 
         assert len(req.negative_prompts) == 1
@@ -294,10 +298,8 @@ class TestNegativePromptIntegration:
             user_id="test_user",
             user_name="Test User",
             mode="recent",
-            negative_embeddings={
-                "muq": [[0.1] * 1536]
-            },
-            seeds=[RecommendationSeed(track_id="123", source="recent")]
+            negative_embeddings={"muq": [[0.1] * 1536]},
+            seeds=[RecommendationSeed(track_id="123", source="recent")],
         )
 
         assert req.negative_embeddings is not None

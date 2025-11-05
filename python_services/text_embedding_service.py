@@ -30,7 +30,10 @@ except ImportError:
     logger.warning("inference.py not available, will use stub embedders only")
     REAL_MODELS_AVAILABLE = False
 
-from stub_text_embedders import get_stub_embedder, StubTextEmbedder
+from stub_text_embedders import (  # noqa: E402
+    get_stub_embedder,
+    StubTextEmbedder,
+)
 
 
 class TextEmbeddingRequest(BaseModel):
@@ -94,7 +97,7 @@ class TextEmbeddingService:
 
         self.embedders: Dict[str, object] = {}
 
-        logger.info(f"Initialized TextEmbeddingService")
+        logger.info("Initialized TextEmbeddingService")
         logger.info(f"  Checkpoint dir: {self.checkpoint_dir}")
         logger.info(f"  Device: {self.device}")
         logger.info(f"  Force stubs: {self.use_stubs}")
@@ -118,7 +121,10 @@ class TextEmbeddingService:
 
                 if checkpoint_path.exists():
                     try:
-                        logger.info(f"Loading real model for {model_name} from {checkpoint_path}")
+                        logger.info(
+                            f"Loading real model for {model_name} from "
+                            f"{checkpoint_path}"
+                        )
                         self.embedders[model_name] = TextToAudioEmbedder(
                             str(checkpoint_path), device=self.device
                         )
@@ -283,7 +289,8 @@ if __name__ == "__main__":
     port = int(os.getenv("TEXT_EMBEDDING_PORT", "9003"))
 
     logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     logger.info(f"Starting Text Embedding Service on port {port}")

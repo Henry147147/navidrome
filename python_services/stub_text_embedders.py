@@ -11,7 +11,7 @@ real TextToAudioEmbedder instances loaded from checkpoint files.
 
 import hashlib
 import logging
-from typing import List, Optional
+from typing import List
 
 import numpy as np
 
@@ -184,8 +184,11 @@ if __name__ == "__main__":
 
         # Test reproducibility
         embedding2 = embedder.embed_text(query)
-        print(f"\nReproducibility test:")
-        print(f"Same query twice produces same embedding: {np.allclose(embedding, embedding2)}")
+        print("\nReproducibility test:")
+        print(
+            f"Same query twice produces same embedding: "
+            f"{np.allclose(embedding, embedding2)}"
+        )
 
         # Test batch embedding
         batch_embeddings = embedder.embed_texts(test_queries)

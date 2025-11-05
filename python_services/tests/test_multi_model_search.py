@@ -37,7 +37,7 @@ class TestMultiModelSimilaritySearcher:
         assert searcher.COLLECTION_MAP == {
             "muq": "embedding",
             "mert": "mert_embedding",
-            "latent": "latent_embedding"
+            "latent": "latent_embedding",
         }
 
     def test_union_merge_strategy(self):
@@ -61,15 +61,10 @@ class TestMultiModelSimilaritySearcher:
         client.set_mock_results("mert_embedding", mert_results)
 
         # Search with union strategy
-        embeddings = {
-            "muq": [0.1] * 1536,
-            "mert": [0.2] * 76800
-        }
+        embeddings = {"muq": [0.1] * 1536, "mert": [0.2] * 76800}
 
         results = searcher.search_multi_model(
-            embeddings=embeddings,
-            top_k=10,
-            merge_strategy="union"
+            embeddings=embeddings, top_k=10, merge_strategy="union"
         )
 
         # Union should include all unique tracks
@@ -98,15 +93,10 @@ class TestMultiModelSimilaritySearcher:
         client.set_mock_results("embedding", muq_results)
         client.set_mock_results("mert_embedding", mert_results)
 
-        embeddings = {
-            "muq": [0.1] * 1536,
-            "mert": [0.2] * 76800
-        }
+        embeddings = {"muq": [0.1] * 1536, "mert": [0.2] * 76800}
 
         results = searcher.search_multi_model(
-            embeddings=embeddings,
-            top_k=10,
-            merge_strategy="intersection"
+            embeddings=embeddings, top_k=10, merge_strategy="intersection"
         )
 
         # Only Song B appears in both
@@ -132,17 +122,14 @@ class TestMultiModelSimilaritySearcher:
         client.set_mock_results("embedding", muq_results)
         client.set_mock_results("mert_embedding", mert_results)
 
-        embeddings = {
-            "muq": [0.1] * 1536,
-            "mert": [0.2] * 76800
-        }
+        embeddings = {"muq": [0.1] * 1536, "mert": [0.2] * 76800}
 
         # muq has priority 1 (higher), mert has priority 2 (lower)
         results = searcher.search_multi_model(
             embeddings=embeddings,
             top_k=10,
             merge_strategy="priority",
-            model_priorities={"muq": 1, "mert": 2}
+            model_priorities={"muq": 1, "mert": 2},
         )
 
         # Should prioritize muq results first
@@ -174,18 +161,14 @@ class TestMultiModelSimilaritySearcher:
         client.set_mock_results("mert_embedding", mert_results)
         client.set_mock_results("latent_embedding", latent_results)
 
-        embeddings = {
-            "muq": [0.1] * 1536,
-            "mert": [0.2] * 76800,
-            "latent": [0.3] * 576
-        }
+        embeddings = {"muq": [0.1] * 1536, "mert": [0.2] * 76800, "latent": [0.3] * 576}
 
         # Require at least 2 models to agree
         results = searcher.search_multi_model(
             embeddings=embeddings,
             top_k=10,
             merge_strategy="union",
-            min_model_agreement=2
+            min_model_agreement=2,
         )
 
         # Only Song B appears in 2+ models
@@ -206,10 +189,7 @@ class TestMultiModelSimilaritySearcher:
 
         embeddings = {"muq": [0.1] * 1536}
 
-        results = searcher.search_multi_model(
-            embeddings=embeddings,
-            top_k=10
-        )
+        results = searcher.search_multi_model(embeddings=embeddings, top_k=10)
 
         assert len(results) == 2
         assert results[0]["track_name"] == "Song A"
@@ -230,15 +210,10 @@ class TestMultiModelSimilaritySearcher:
         client.set_mock_results("embedding", muq_results)
         client.set_mock_results("mert_embedding", mert_results)
 
-        embeddings = {
-            "muq": [0.1] * 1536,
-            "mert": [0.2] * 76800
-        }
+        embeddings = {"muq": [0.1] * 1536, "mert": [0.2] * 76800}
 
         results = searcher.search_multi_model(
-            embeddings=embeddings,
-            top_k=10,
-            merge_strategy="union"
+            embeddings=embeddings, top_k=10, merge_strategy="union"
         )
 
         # Check that models metadata is included
@@ -254,10 +229,7 @@ class TestMultiModelSimilaritySearcher:
         # No mock results set - will return empty
         embeddings = {"muq": [0.1] * 1536}
 
-        results = searcher.search_multi_model(
-            embeddings=embeddings,
-            top_k=10
-        )
+        results = searcher.search_multi_model(embeddings=embeddings, top_k=10)
 
         assert len(results) == 0
 
@@ -270,9 +242,7 @@ class TestMultiModelSimilaritySearcher:
 
         with pytest.raises(ValueError, match="Unknown merge strategy"):
             searcher.search_multi_model(
-                embeddings=embeddings,
-                top_k=10,
-                merge_strategy="invalid"
+                embeddings=embeddings, top_k=10, merge_strategy="invalid"
             )
 
     def test_score_normalization(self):
@@ -292,15 +262,10 @@ class TestMultiModelSimilaritySearcher:
         client.set_mock_results("embedding", muq_results)
         client.set_mock_results("mert_embedding", mert_results)
 
-        embeddings = {
-            "muq": [0.1] * 1536,
-            "mert": [0.2] * 76800
-        }
+        embeddings = {"muq": [0.1] * 1536, "mert": [0.2] * 76800}
 
         results = searcher.search_multi_model(
-            embeddings=embeddings,
-            top_k=10,
-            merge_strategy="union"
+            embeddings=embeddings, top_k=10, merge_strategy="union"
         )
 
         # Average score should be (1.0 + 0.8) / 2 = 0.9

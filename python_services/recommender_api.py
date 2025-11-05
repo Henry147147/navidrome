@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, List, Sequence
 
 from fastapi import FastAPI, HTTPException
 import uvicorn
@@ -55,7 +55,7 @@ class RecommendationEngine:
         diversity: float,
         candidate_scores: dict,
         candidate_reason: dict,
-        candidate_models: dict
+        candidate_models: dict,
     ) -> None:
         """Process similarity search hits and update candidate scores."""
         for hit in hits:
@@ -98,7 +98,7 @@ class RecommendationEngine:
         self,
         candidate_scores: dict,
         candidate_names: dict,
-        request: RecommendationRequest
+        request: RecommendationRequest,
     ) -> dict:
         """Apply penalty to candidates similar to negative prompts."""
         if not request.negative_embeddings or not request.negative_prompts:
@@ -114,8 +114,7 @@ class RecommendationEngine:
 
         if self.multi_model_searcher:
             track_embeddings = self.multi_model_searcher.get_embeddings_by_name(
-                candidate_name_list,
-                model=primary_model
+                candidate_name_list, model=primary_model
             )
         else:
             track_embeddings = self.searcher.get_embeddings_by_name(candidate_name_list)
@@ -129,7 +128,9 @@ class RecommendationEngine:
             track_emb_np = np.array(track_emb)
 
             # Get negative embeddings for this model
-            neg_embeddings_for_model = request.negative_embeddings.get(primary_model, [])
+            neg_embeddings_for_model = request.negative_embeddings.get(
+                primary_model, []
+            )
 
             if not neg_embeddings_for_model:
                 continue
@@ -149,7 +150,9 @@ class RecommendationEngine:
 
             if max_negative_sim > 0:
                 # Apply penalty proportional to negative similarity
-                penalty_factor = 1.0 - (max_negative_sim * (1.0 - request.negative_prompt_penalty))
+                penalty_factor = 1.0 - (
+                    max_negative_sim * (1.0 - request.negative_prompt_penalty)
+                )
                 candidate_scores[candidate_id] *= penalty_factor
                 negative_similarities[candidate_id] = max_negative_sim
 
@@ -158,7 +161,7 @@ class RecommendationEngine:
                         "Applied negative penalty to %s: sim=%.3f, factor=%.3f",
                         candidate_id,
                         max_negative_sim,
-                        penalty_factor
+                        penalty_factor,
                     )
 
         return negative_similarities
@@ -166,7 +169,8 @@ class RecommendationEngine:
     def recommend(self, request: RecommendationRequest) -> RecommendationResponse:
         if self.debug_logging:
             self.logger.debug(
-                "Processing recommendation request user=%s mode=%s seeds=%d limit=%d exclude=%d models=%s",
+                "Processing recommendation request user=%s mode=%s seeds=%d "
+                "limit=%d exclude=%d models=%s",
                 request.user_id,
                 request.mode,
                 len(request.seeds),
@@ -192,7 +196,7 @@ class RecommendationEngine:
                 self.logger.debug(
                     "Using direct embedding for seed %s (dim=%d)",
                     seed.track_id,
-                    len(seed.embedding)
+                    len(seed.embedding),
                 )
 
         # Handle track ID seeds (traditional path)
@@ -206,10 +210,13 @@ class RecommendationEngine:
                 name_embeddings = self.searcher.get_embeddings_by_name(unique_names)
             else:
                 # Use first model for embedding lookup (primary model)
-                name_embeddings = self.multi_model_searcher.get_embeddings_by_name(
-                    unique_names,
-                    model=request.models[0]
-                ) if self.multi_model_searcher else {}
+                name_embeddings = (
+                    self.multi_model_searcher.get_embeddings_by_name(
+                        unique_names, model=request.models[0]
+                    )
+                    if self.multi_model_searcher
+                    else {}
+                )
 
             for track_id, name in id_to_name.items():
                 vector = name_embeddings.get(name)
@@ -222,7 +229,9 @@ class RecommendationEngine:
                     s.track_id for s in track_id_seeds if s.track_id not in id_to_name
                 ]
                 if missing_name:
-                    self.logger.debug("No canonical name for %d seeds", len(missing_name))
+                    self.logger.debug(
+                        "No canonical name for %d seeds", len(missing_name)
+                    )
             all_seed_ids = [s.track_id for s in request.seeds]
             unresolved = [
                 track_id for track_id in all_seed_ids if track_id not in seed_embeddings
@@ -238,7 +247,8 @@ class RecommendationEngine:
         if not seed_embeddings:
             return RecommendationResponse(
                 warnings=[
-                    "No matching embeddings found for supplied seeds; returning empty playlist."
+                    "No matching embeddings found for supplied seeds; "
+                    "returning empty playlist."
                 ]
             )
 
@@ -258,11 +268,14 @@ class RecommendationEngine:
                 embedding = seed_embeddings.get(seed.track_id)
                 if embedding is None:
                     if self.debug_logging:
-                        self.logger.debug("Skipping seed without embedding: %s", seed.track_id)
+                        self.logger.debug(
+                            "Skipping seed without embedding: %s", seed.track_id
+                        )
                     continue
 
                 # Build embeddings dict for multi-model search
-                # We assume all models can use the same embedding (from primary model or text)
+                # We assume all models can use the same embedding
+                # (from primary model or text)
                 model_embeddings = {model: embedding for model in request.models}
 
                 try:
@@ -272,18 +285,29 @@ class RecommendationEngine:
                         exclude_names=exclude_names,
                         merge_strategy=request.merge_strategy,
                         model_priorities=request.model_priorities,
-                        min_model_agreement=request.min_model_agreement
+                        min_model_agreement=request.min_model_agreement,
                     )
 
                     if self.debug_logging:
-                        self.logger.debug("Seed %s returned %d hits (multi-model)", seed.track_id, len(hits))
+                        self.logger.debug(
+                            "Seed %s returned %d hits (multi-model)",
+                            seed.track_id,
+                            len(hits),
+                        )
 
                     self._process_hits(
-                        hits, seed, exclude_ids, request.diversity,
-                        candidate_scores, candidate_reason, candidate_models
+                        hits,
+                        seed,
+                        exclude_ids,
+                        request.diversity,
+                        candidate_scores,
+                        candidate_reason,
+                        candidate_models,
                     )
                 except Exception as e:
-                    self.logger.error(f"Multi-model search failed for seed {seed.track_id}: {e}")
+                    self.logger.error(
+                        f"Multi-model search failed for seed {seed.track_id}: {e}"
+                    )
 
         else:
             # Single model search (backwards compatible)
@@ -291,7 +315,9 @@ class RecommendationEngine:
                 embedding = seed_embeddings.get(seed.track_id)
                 if embedding is None:
                     if self.debug_logging:
-                        self.logger.debug("Skipping seed without embedding: %s", seed.track_id)
+                        self.logger.debug(
+                            "Skipping seed without embedding: %s", seed.track_id
+                        )
                     continue
 
                 hits = self.searcher.search_similar_embeddings(
@@ -301,11 +327,18 @@ class RecommendationEngine:
                 )
 
                 if self.debug_logging:
-                    self.logger.debug("Seed %s returned %d hits", seed.track_id, len(hits))
+                    self.logger.debug(
+                        "Seed %s returned %d hits", seed.track_id, len(hits)
+                    )
 
                 self._process_hits(
-                    hits, seed, exclude_ids, request.diversity,
-                    candidate_scores, candidate_reason, candidate_models
+                    hits,
+                    seed,
+                    exclude_ids,
+                    request.diversity,
+                    candidate_scores,
+                    candidate_reason,
+                    candidate_models,
                 )
 
         if not candidate_scores:
@@ -335,7 +368,8 @@ class RecommendationEngine:
                 return fallback
             return RecommendationResponse(
                 warnings=[
-                    "Similarity search did not yield any candidates; returning empty playlist."
+                    "Similarity search did not yield any candidates; "
+                    "returning empty playlist."
                 ]
             )
 
@@ -345,18 +379,18 @@ class RecommendationEngine:
             # Build candidate name mapping for penalty calculation
             candidate_ids = list(candidate_scores.keys())
             id_to_name_map = self.name_resolver.ids_to_names(candidate_ids)
-            candidate_names = {cid: name for cid, name in id_to_name_map.items() if name}
+            candidate_names = {
+                cid: name for cid, name in id_to_name_map.items() if name
+            }
 
             negative_similarities = self._apply_negative_prompt_penalty(
-                candidate_scores,
-                candidate_names,
-                request
+                candidate_scores, candidate_names, request
             )
 
             if self.debug_logging:
                 self.logger.debug(
                     "Applied negative prompt penalties to %d candidates",
-                    len(negative_similarities)
+                    len(negative_similarities),
                 )
 
         # Rank candidates by final score
@@ -377,7 +411,7 @@ class RecommendationEngine:
                     score=score,
                     reason=candidate_reason.get(track_id),
                     models=models if models else None,
-                    negative_similarity=negative_similarities.get(track_id)
+                    negative_similarity=negative_similarities.get(track_id),
                 )
             )
 
@@ -408,10 +442,7 @@ def build_engine() -> RecommendationEngine:
     )
 
     # Create multi-model searcher
-    multi_model_searcher = MultiModelSimilaritySearcher(
-        milvus_uri=uri,
-        logger=LOGGER
-    )
+    multi_model_searcher = MultiModelSimilaritySearcher(milvus_uri=uri, logger=LOGGER)
 
     resolver = TrackNameResolver()
     return RecommendationEngine(

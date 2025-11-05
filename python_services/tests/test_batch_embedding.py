@@ -37,12 +37,8 @@ class MockModel:
         return {
             "model_id": self.model_name,
             "segments": [
-                {
-                    "title": track_name,
-                    "embedding": [0.1] * 100,
-                    "offset_seconds": 0.0
-                }
-            ]
+                {"title": track_name, "embedding": [0.1] * 100, "offset_seconds": 0.0}
+            ],
         }
 
     def ensure_milvus_schemas(self, client):
@@ -66,7 +62,7 @@ class TestBatchJobProgress:
             current_track="Artist - Song",
             status="running",
             started_at=time.time(),
-            estimated_completion=None
+            estimated_completion=None,
         )
 
         assert progress.total_tracks == 100
@@ -84,7 +80,7 @@ class TestBatchEmbeddingJob:
             db_path="/tmp/test.db",
             music_root="/music",
             milvus_uri="http://localhost:19530",
-            checkpoint_interval=50
+            checkpoint_interval=50,
         )
 
         assert job.db_path == "/tmp/test.db"
@@ -98,7 +94,7 @@ class TestBatchEmbeddingJob:
         job = BatchEmbeddingJob(
             db_path="/tmp/test.db",
             music_root="/music",
-            milvus_uri="http://localhost:19530"
+            milvus_uri="http://localhost:19530",
         )
 
         # Mock the models
@@ -117,7 +113,7 @@ class TestBatchEmbeddingJob:
         job = BatchEmbeddingJob(
             db_path="/tmp/test.db",
             music_root="/music",
-            milvus_uri="http://localhost:19530"
+            milvus_uri="http://localhost:19530",
         )
 
         job.progress.total_tracks = 100
@@ -137,7 +133,7 @@ class TestBatchEmbeddingJob:
         job = BatchEmbeddingJob(
             db_path="/tmp/test.db",
             music_root="/music",
-            milvus_uri="http://localhost:19530"
+            milvus_uri="http://localhost:19530",
         )
 
         assert not job._cancelled
@@ -157,8 +153,12 @@ class TestBatchEmbeddingJob:
         ]
 
         for artist, title, expected in test_cases:
-            normalized_artist = artist.replace("•", "&").replace("/", "_").replace("\\", "_")
-            normalized_title = title.replace("•", "&").replace("/", "_").replace("\\", "_")
+            normalized_artist = (
+                artist.replace("•", "&").replace("/", "_").replace("\\", "_")
+            )
+            normalized_title = (
+                title.replace("•", "&").replace("/", "_").replace("\\", "_")
+            )
             result = f"{normalized_artist} - {normalized_title}".strip()
             assert result == expected
 
@@ -167,7 +167,7 @@ class TestBatchEmbeddingJob:
         job = BatchEmbeddingJob(
             db_path="/tmp/test.db",
             music_root="/music",
-            milvus_uri="http://localhost:19530"
+            milvus_uri="http://localhost:19530",
         )
 
         job.progress.total_tracks = 0
@@ -181,7 +181,7 @@ class TestBatchEmbeddingJob:
         job = BatchEmbeddingJob(
             db_path="/tmp/test.db",
             music_root="/music",
-            milvus_uri="http://localhost:19530"
+            milvus_uri="http://localhost:19530",
         )
 
         job.progress.total_tracks = 100
@@ -208,7 +208,7 @@ class TestBatchEmbeddingJob:
         job = BatchEmbeddingJob(
             db_path="/tmp/test.db",
             music_root="/music",
-            milvus_uri="http://localhost:19530"
+            milvus_uri="http://localhost:19530",
         )
 
         # Test: cancelled status
@@ -233,7 +233,7 @@ class TestBatchEmbeddingJob:
             db_path="/tmp/test.db",
             music_root="/music",
             milvus_uri="http://localhost:19530",
-            checkpoint_interval=10
+            checkpoint_interval=10,
         )
 
         assert job.checkpoint_interval == 10
@@ -246,12 +246,7 @@ class TestBatchEmbeddingJob:
 
     def test_collection_mapping(self):
         """Test collection name mapping"""
-        job = BatchEmbeddingJob(
-            db_path="/tmp/test.db",
-            music_root="/music",
-            milvus_uri="http://localhost:19530"
-        )
-
+        # Test the collection mapping is correct
         collection_map = {
             "muq": "embedding",
             "mert": "mert_embedding",
@@ -260,7 +255,11 @@ class TestBatchEmbeddingJob:
 
         # Verify the mapping is correct
         for model_name, collection_name in collection_map.items():
-            assert collection_name in ["embedding", "mert_embedding", "latent_embedding"]
+            assert collection_name in [
+                "embedding",
+                "mert_embedding",
+                "latent_embedding",
+            ]
 
 
 class TestBatchJobAPI:
@@ -268,13 +267,13 @@ class TestBatchJobAPI:
 
     def test_start_batch_job(self):
         """Test starting a new batch job"""
-        from batch_embedding_job import start_batch_job, _current_job
+        from batch_embedding_job import start_batch_job
 
         job = start_batch_job(
             db_path="/tmp/test.db",
             music_root="/music",
             milvus_uri="http://localhost:19530",
-            checkpoint_interval=100
+            checkpoint_interval=100,
         )
 
         assert job is not None
@@ -289,7 +288,7 @@ class TestBatchJobAPI:
         started_job = start_batch_job(
             db_path="/tmp/test.db",
             music_root="/music",
-            milvus_uri="http://localhost:19530"
+            milvus_uri="http://localhost:19530",
         )
 
         # Get the current job
@@ -316,7 +315,7 @@ class TestBatchJobErrorHandling:
         job = BatchEmbeddingJob(
             db_path="/tmp/test.db",
             music_root="/music",
-            milvus_uri="http://localhost:19530"
+            milvus_uri="http://localhost:19530",
         )
 
         # Track with non-existent file
@@ -325,7 +324,7 @@ class TestBatchJobErrorHandling:
             "path": "nonexistent/file.mp3",
             "artist": "Test Artist",
             "title": "Test Song",
-            "album": "Test Album"
+            "album": "Test Album",
         }
 
         job.models = {"muq": MockModel("muq")}
@@ -339,7 +338,7 @@ class TestBatchJobErrorHandling:
         job = BatchEmbeddingJob(
             db_path="/tmp/test.db",
             music_root="/music",
-            milvus_uri="http://localhost:19530"
+            milvus_uri="http://localhost:19530",
         )
 
         job.progress.failed_tracks = 0
@@ -367,7 +366,7 @@ class TestBatchJobErrorHandling:
         job = BatchEmbeddingJob(
             db_path="/tmp/test.db",
             music_root="/music",
-            milvus_uri="http://localhost:19530"
+            milvus_uri="http://localhost:19530",
         )
 
         job.models = {"failing": FailingModel()}
@@ -384,16 +383,16 @@ class TestBatchJobConcurrency:
         """Test that only one job can run at a time"""
         from batch_embedding_job import start_batch_job, get_current_job
 
-        job1 = start_batch_job(
+        _job1 = start_batch_job(  # noqa: F841
             db_path="/tmp/test1.db",
             music_root="/music",
-            milvus_uri="http://localhost:19530"
+            milvus_uri="http://localhost:19530",
         )
 
         job2 = start_batch_job(
             db_path="/tmp/test2.db",
             music_root="/music",
-            milvus_uri="http://localhost:19530"
+            milvus_uri="http://localhost:19530",
         )
 
         # Second job should replace the first
@@ -405,7 +404,7 @@ class TestBatchJobConcurrency:
         job = BatchEmbeddingJob(
             db_path="/tmp/test.db",
             music_root="/music",
-            milvus_uri="http://localhost:19530"
+            milvus_uri="http://localhost:19530",
         )
 
         # Simulate concurrent updates
