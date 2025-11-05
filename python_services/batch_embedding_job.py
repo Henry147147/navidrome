@@ -8,7 +8,7 @@ Provides progress tracking, error handling, and graceful cancellation.
 import logging
 import sqlite3
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -314,7 +314,7 @@ class BatchEmbeddingJob:
 
     def get_progress(self) -> BatchJobProgress:
         """Get current job progress."""
-        return self.progress
+        return replace(self.progress)
 
 
 # Global job instance (for API access)

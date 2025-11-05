@@ -10,7 +10,7 @@ duplicates.
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
 import numpy as np
 from pymilvus import MilvusClient
@@ -298,15 +298,18 @@ class MultiModelSimilaritySearcher:
         "latent": "latent_embedding",
     }
 
-    def __init__(self, milvus_uri: str, logger: Optional[logging.Logger] = None):
+    def __init__(self, milvus_uri: Union[str, MilvusClient], logger: Optional[logging.Logger] = None):
         """
         Initialize multi-model searcher.
 
         Args:
-            milvus_uri: URI for Milvus connection
+            milvus_uri: URI for Milvus connection or MilvusClient instance
             logger: Optional logger instance
         """
-        self.client = MilvusClient(uri=milvus_uri)
+        if isinstance(milvus_uri, str):
+            self.client = MilvusClient(uri=milvus_uri)
+        else:
+            self.client = milvus_uri
         self.logger = logger or logging.getLogger("navidrome.multi_model_search")
 
         # Create searchers for each model
@@ -379,7 +382,7 @@ class MultiModelSimilaritySearcher:
             return self._merge_priority(all_results, top_k, model_priorities or {})
         else:
             self.logger.error(f"Unknown merge strategy: {merge_strategy}")
-            return []
+            raise ValueError(f"Unknown merge strategy: {merge_strategy}")
 
     def _merge_union(
         self,
@@ -398,7 +401,7 @@ class MultiModelSimilaritySearcher:
         Returns:
             Merged and ranked results
         """
-        track_scores = {}  # track_name -> {max_score, models, data}
+        track_scores = {}  # track_name -> {scores, models, data}
 
         for model, results in all_results.items():
             for track_name, data in results.items():
@@ -406,16 +409,18 @@ class MultiModelSimilaritySearcher:
 
                 if track_name not in track_scores:
                     track_scores[track_name] = {
-                        "max_score": distance,
+                        "scores": [distance],
                         "models": [model],
                         "data": data,
                     }
                 else:
-                    # Update max score
-                    track_scores[track_name]["max_score"] = max(
-                        track_scores[track_name]["max_score"], distance
-                    )
+                    # Add score for averaging
+                    track_scores[track_name]["scores"].append(distance)
                     track_scores[track_name]["models"].append(model)
+
+        # Calculate average scores
+        for track_name, info in track_scores.items():
+            info["avg_score"] = np.mean(info["scores"])
 
         # Filter by minimum model agreement
         if min_model_agreement > 1:
@@ -425,15 +430,15 @@ class MultiModelSimilaritySearcher:
                 if len(info["models"]) >= min_model_agreement
             }
 
-        # Sort by max score and return top-k
+        # Sort by average score and return top-k
         sorted_tracks = sorted(
-            track_scores.items(), key=lambda x: x[1]["max_score"], reverse=True
+            track_scores.items(), key=lambda x: x[1]["avg_score"], reverse=True
         )
 
         return [
             {
-                "name": name,
-                "distance": info["max_score"],
+                "track_name": name,
+                "score": info["avg_score"],
                 "models": info["models"],
                 "entity": info["data"].get("entity", {}),
             }
@@ -486,8 +491,8 @@ class MultiModelSimilaritySearcher:
 
         return [
             {
-                "name": name,
-                "distance": score,
+                "track_name": name,
+                "score": score,
                 "models": models,
                 "entity": data.get("entity", {}),
             }
@@ -551,8 +556,8 @@ class MultiModelSimilaritySearcher:
 
         return [
             {
-                "name": name,
-                "distance": data.get("distance", 0.0),
+                "track_name": name,
+                "score": data.get("distance", 0.0),
                 "models": [primary_model],
                 "entity": data.get("entity", {}),
             }

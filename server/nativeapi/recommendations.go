@@ -550,7 +550,7 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	// Convert result items to recommendationTrack with new fields
 	enrichedTracks := n.enrichTracksWithMetadata(tracks, result.Tracks)
 
-	filteredTracks, filteredIDs, filteredWarnings := filterDislikedTracks(tracks, trackIDs, dislikes, blocked, settings.LowRatingPenalty)
+	_, filteredIDs, filteredWarnings := filterDislikedTracks(tracks, trackIDs, dislikes, blocked, settings.LowRatingPenalty)
 	if len(result.Warnings) > 0 {
 		combinedWarnings = append(combinedWarnings, result.Warnings...)
 	}
@@ -1424,7 +1424,7 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 
 	// Collect playlist exclusions
 	if len(payload.ExcludePlaylistIDs) > 0 {
-		excludeIDs, err := n.collectPlaylistTrackIDs(ctx, payload.ExcludePlaylistIDs)
+		excludeIDs, _, err := n.collectPlaylistTrackIDs(ctx, payload.ExcludePlaylistIDs)
 		if err != nil {
 			log.Error(ctx, "Failed to collect playlist exclusions", "error", err)
 		} else {
