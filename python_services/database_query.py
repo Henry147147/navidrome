@@ -12,6 +12,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
+import numpy as np
 from pymilvus import MilvusClient
 
 from models import SongEmbedding
@@ -239,7 +240,8 @@ class MilvusSimilaritySearcher:
         embedding = embedding_payload.embedding
         if not name or embedding is None:
             self.logger.debug(
-                "Skipping similarity search due to incomplete payload: name=%s has_embedding=%s",
+                "Skipping similarity search due to incomplete payload: "
+                "name=%s has_embedding=%s",
                 bool(name),
                 embedding is not None,
             )
@@ -279,7 +281,306 @@ class MilvusSimilaritySearcher:
         return duplicates
 
 
+class MultiModelSimilaritySearcher:
+    """
+    Searches across multiple embedding models and merges results.
+
+    Supports three merge strategies:
+    - union: Combine all results, rank by maximum similarity across models
+    - intersection: Only tracks appearing in ALL model results
+    - priority: Try intersection first, fall back to highest priority model
+    """
+
+    # Map model names to their Milvus collections
+    COLLECTION_MAP = {
+        "muq": "embedding",
+        "mert": "mert_embedding",
+        "latent": "latent_embedding",
+    }
+
+    def __init__(self, milvus_uri: str, logger: Optional[logging.Logger] = None):
+        """
+        Initialize multi-model searcher.
+
+        Args:
+            milvus_uri: URI for Milvus connection
+            logger: Optional logger instance
+        """
+        self.client = MilvusClient(uri=milvus_uri)
+        self.logger = logger or logging.getLogger("navidrome.multi_model_search")
+
+        # Create searchers for each model
+        self.searchers = {}
+        for model, collection in self.COLLECTION_MAP.items():
+            try:
+                self.searchers[model] = MilvusSimilaritySearcher(
+                    client=self.client, collection_name=collection, logger=self.logger
+                )
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize searcher for {model}: {e}")
+
+    def search_multi_model(
+        self,
+        embeddings: Dict[str, Sequence[float]],
+        top_k: int = 25,
+        exclude_names: Optional[List[str]] = None,
+        merge_strategy: str = "union",
+        model_priorities: Optional[Dict[str, int]] = None,
+        min_model_agreement: int = 1,
+    ) -> List[Dict[str, Any]]:
+        """
+        Search across multiple models and merge results.
+
+        Args:
+            embeddings: Dict mapping model name to embedding vector
+            top_k: Number of results to return
+            exclude_names: Track names to exclude
+            merge_strategy: How to combine results (union/intersection/priority)
+            model_priorities: Priority order for models (lower = higher priority)
+            min_model_agreement: Minimum number of models that must agree
+
+        Returns:
+            List of dicts with keys: name, distance, models
+        """
+        if not embeddings:
+            self.logger.warning("No embeddings provided for multi-model search")
+            return []
+
+        # Run searches in parallel (sequentially for now, could be parallelized)
+        all_results = {}
+        for model, embedding in embeddings.items():
+            if model not in self.searchers:
+                self.logger.warning(f"No searcher available for model: {model}")
+                continue
+
+            try:
+                results = self.searchers[model].search_similar_embeddings(
+                    embedding=embedding,
+                    top_k=top_k * 2,  # Get more to ensure enough after merging
+                    exclude_names=exclude_names,
+                )
+                # Convert to dict keyed by name for easier merging
+                all_results[model] = {r["name"]: r for r in results if "name" in r}
+                self.logger.debug(f"Model {model} returned {len(results)} results")
+            except Exception as e:
+                self.logger.error(f"Search failed for model {model}: {e}")
+                all_results[model] = {}
+
+        if not all_results:
+            self.logger.warning("All model searches failed")
+            return []
+
+        # Merge based on strategy
+        if merge_strategy == "union":
+            return self._merge_union(all_results, top_k, min_model_agreement)
+        elif merge_strategy == "intersection":
+            return self._merge_intersection(all_results, top_k)
+        elif merge_strategy == "priority":
+            return self._merge_priority(all_results, top_k, model_priorities or {})
+        else:
+            self.logger.error(f"Unknown merge strategy: {merge_strategy}")
+            return []
+
+    def _merge_union(
+        self,
+        all_results: Dict[str, Dict[str, Dict]],
+        top_k: int,
+        min_model_agreement: int = 1,
+    ) -> List[Dict[str, Any]]:
+        """
+        Union: Combine all results, rank by maximum similarity across models.
+
+        Args:
+            all_results: Dict mapping model -> track_name -> result
+            top_k: Number of results to return
+            min_model_agreement: Minimum number of models that must agree
+
+        Returns:
+            Merged and ranked results
+        """
+        track_scores = {}  # track_name -> {max_score, models, data}
+
+        for model, results in all_results.items():
+            for track_name, data in results.items():
+                distance = data.get("distance", 0.0)
+
+                if track_name not in track_scores:
+                    track_scores[track_name] = {
+                        "max_score": distance,
+                        "models": [model],
+                        "data": data,
+                    }
+                else:
+                    # Update max score
+                    track_scores[track_name]["max_score"] = max(
+                        track_scores[track_name]["max_score"], distance
+                    )
+                    track_scores[track_name]["models"].append(model)
+
+        # Filter by minimum model agreement
+        if min_model_agreement > 1:
+            track_scores = {
+                name: info
+                for name, info in track_scores.items()
+                if len(info["models"]) >= min_model_agreement
+            }
+
+        # Sort by max score and return top-k
+        sorted_tracks = sorted(
+            track_scores.items(), key=lambda x: x[1]["max_score"], reverse=True
+        )
+
+        return [
+            {
+                "name": name,
+                "distance": info["max_score"],
+                "models": info["models"],
+                "entity": info["data"].get("entity", {}),
+            }
+            for name, info in sorted_tracks[:top_k]
+        ]
+
+    def _merge_intersection(
+        self, all_results: Dict[str, Dict[str, Dict]], top_k: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Intersection: Only tracks appearing in ALL model results.
+
+        Args:
+            all_results: Dict mapping model -> track_name -> result
+            top_k: Number of results to return
+
+        Returns:
+            Merged and ranked results (only common tracks)
+        """
+        if not all_results:
+            return []
+
+        # Find tracks present in all models
+        all_tracks = [set(results.keys()) for results in all_results.values()]
+        common_tracks = set.intersection(*all_tracks) if all_tracks else set()
+
+        if not common_tracks:
+            self.logger.debug("No tracks found in all models (empty intersection)")
+            return []
+
+        # Score by average similarity across models
+        track_scores = []
+        for track_name in common_tracks:
+            distances = [
+                all_results[model][track_name].get("distance", 0.0)
+                for model in all_results.keys()
+            ]
+            avg_score = np.mean(distances)
+            track_scores.append(
+                (
+                    track_name,
+                    avg_score,
+                    list(all_results.keys()),
+                    all_results[next(iter(all_results))][track_name],
+                )
+            )
+
+        # Sort by average score
+        track_scores.sort(key=lambda x: x[1], reverse=True)
+
+        return [
+            {
+                "name": name,
+                "distance": score,
+                "models": models,
+                "entity": data.get("entity", {}),
+            }
+            for name, score, models, data in track_scores[:top_k]
+        ]
+
+    def _merge_priority(
+        self,
+        all_results: Dict[str, Dict[str, Dict]],
+        top_k: int,
+        priorities: Dict[str, int],
+    ) -> List[Dict[str, Any]]:
+        """
+        Priority: Try intersection first, fall back to highest priority model.
+
+        Args:
+            all_results: Dict mapping model -> track_name -> result
+            top_k: Number of results to return
+            priorities: Dict mapping model -> priority (lower = higher priority)
+
+        Returns:
+            Merged and ranked results
+        """
+        # Try intersection first
+        intersection_results = self._merge_intersection(all_results, top_k)
+
+        if len(intersection_results) >= top_k:
+            self.logger.debug(
+                f"Using intersection results ({len(intersection_results)} tracks)"
+            )
+            return intersection_results
+
+        # Fall back to highest priority model
+        if not priorities:
+            priorities = {"muq": 1, "mert": 2, "latent": 3}
+
+        sorted_models = sorted(
+            [
+                (model, priority)
+                for model, priority in priorities.items()
+                if model in all_results
+            ],
+            key=lambda x: x[1],
+        )
+
+        if not sorted_models:
+            self.logger.warning("No priority models available")
+            return []
+
+        primary_model = sorted_models[0][0]
+        self.logger.debug(f"Falling back to priority model: {primary_model}")
+
+        primary_results = all_results[primary_model]
+
+        # Sort by distance
+        sorted_results = sorted(
+            primary_results.items(),
+            key=lambda x: x[1].get("distance", 0.0),
+            reverse=True,
+        )
+
+        return [
+            {
+                "name": name,
+                "distance": data.get("distance", 0.0),
+                "models": [primary_model],
+                "entity": data.get("entity", {}),
+            }
+            for name, data in sorted_results[:top_k]
+        ]
+
+    def get_embeddings_by_name(
+        self, names: Sequence[str], model: str = "muq"
+    ) -> Dict[str, Sequence[float]]:
+        """
+        Fetch stored embeddings for specified track names from a specific model.
+
+        Args:
+            names: Track names to fetch
+            model: Model to fetch from (muq, mert, or latent)
+
+        Returns:
+            Dict mapping track name to embedding vector
+        """
+        if model not in self.searchers:
+            self.logger.warning(f"No searcher available for model: {model}")
+            return {}
+
+        return self.searchers[model].get_embeddings_by_name(names)
+
+
 __all__ = [
     "MilvusSimilaritySearcher",
+    "MultiModelSimilaritySearcher",
     "SimilarityQuery",
 ]
