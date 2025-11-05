@@ -300,7 +300,7 @@ func (n *Router) handleRecentRecommendations(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	excludeIDs := combineExcludeTrackIDs(payload)
-	resp, err := n.executeRecommendation(ctx, user, modeRecentRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeRecentRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings, payload)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -342,7 +342,7 @@ func (n *Router) handleFavoritesRecommendations(w http.ResponseWriter, r *http.R
 		return
 	}
 	excludeIDs := combineExcludeTrackIDs(payload)
-	resp, err := n.executeRecommendation(ctx, user, modeFavoritesRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeFavoritesRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings, payload)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -387,7 +387,7 @@ func (n *Router) handleAllRecommendations(w http.ResponseWriter, r *http.Request
 		seeds = seeds[:limit]
 	}
 	excludeIDs := combineExcludeTrackIDs(payload)
-	resp, err := n.executeRecommendation(ctx, user, modeAllRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeAllRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings, payload)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -433,7 +433,7 @@ func (n *Router) handleDiscoveryRecommendations(w http.ResponseWriter, r *http.R
 		seeds = seeds[:maxSeeds]
 	}
 	excludeIDs := combineExcludeTrackIDs(payload)
-	resp, err := n.executeRecommendation(ctx, user, modeDiscoveryRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.DiscoveryExploration, discoveryMinDiversity, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeDiscoveryRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.DiscoveryExploration, discoveryMinDiversity, settings, payload)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -480,7 +480,7 @@ func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Requ
 	}
 	seeds = n.addPositiveSeeds(ctx, user, seeds, payload.PositiveTrackIDs)
 	excludeIDs := combineExcludeTrackIDs(payload)
-	resp, err := n.executeRecommendation(ctx, user, modeCustomRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeCustomRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings, payload)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -488,7 +488,7 @@ func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (n *Router) executeRecommendation(ctx context.Context, user model.User, mode string, name string, seeds []subsonic.RecommendationSeed, limit int, excludeTrackIDs []string, excludePlaylistIDs []string, diversityOverride *float64, fallback float64, min float64, settings recommendationSettings) (recommendationResponsePayload, error) {
+func (n *Router) executeRecommendation(ctx context.Context, user model.User, mode string, name string, seeds []subsonic.RecommendationSeed, limit int, excludeTrackIDs []string, excludePlaylistIDs []string, diversityOverride *float64, fallback float64, min float64, settings recommendationSettings, payload recommendationRequestPayload) (recommendationResponsePayload, error) {
 	dislikes, err := n.buildDislikeSignals(ctx, user, settings)
 	if err != nil {
 		log.Warn(ctx, "Failed to load low-rating signals", "error", err)
@@ -511,17 +511,24 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 		blocked[id] = struct{}{}
 	}
 	req := subsonic.RecommendationRequest{
-		UserID:             user.ID,
-		UserName:           user.UserName,
-		Limit:              limit,
-		Mode:               mode,
-		Seeds:              seeds,
-		Diversity:          normalizeDiversity(diversityOverride, fallback, min),
-		ExcludeTrackIDs:    combinedExclude,
-		DislikedTrackIDs:   dislikedTrackIDs,
-		DislikedArtistIDs:  dislikes.artistIDs(),
-		DislikeStrength:    settings.LowRatingPenalty,
-		ExcludePlaylistIDs: playlistIDs,
+		UserID:                user.ID,
+		UserName:              user.UserName,
+		Limit:                 limit,
+		Mode:                  mode,
+		Seeds:                 seeds,
+		Diversity:             normalizeDiversity(diversityOverride, fallback, min),
+		ExcludeTrackIDs:       combinedExclude,
+		DislikedTrackIDs:      dislikedTrackIDs,
+		DislikedArtistIDs:     dislikes.artistIDs(),
+		DislikeStrength:       settings.LowRatingPenalty,
+		ExcludePlaylistIDs:    playlistIDs,
+		Models:                payload.Models,
+		MergeStrategy:         payload.MergeStrategy,
+		ModelPriorities:       payload.ModelPriorities,
+		MinModelAgreement:     payload.MinModelAgreement,
+		NegativePrompts:       payload.NegativePrompts,
+		NegativePromptPenalty: payload.NegativePromptPenalty,
+		NegativeEmbeddings:    payload.NegativeEmbeddings,
 	}
 	result, err := n.recommender.Recommend(ctx, mode, req)
 	if err != nil {
@@ -539,6 +546,10 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	if strings.TrimSpace(playlistName) == "" {
 		playlistName = defaultPlaylistName(mode)
 	}
+
+	// Convert result items to recommendationTrack with new fields
+	enrichedTracks := n.enrichTracksWithMetadata(tracks, result.Tracks)
+
 	filteredTracks, filteredIDs, filteredWarnings := filterDislikedTracks(tracks, trackIDs, dislikes, blocked, settings.LowRatingPenalty)
 	if len(result.Warnings) > 0 {
 		combinedWarnings = append(combinedWarnings, result.Warnings...)
@@ -547,7 +558,7 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 		combinedWarnings = append(combinedWarnings, filteredWarnings)
 	}
 	finalTrackIDs := filteredIDs
-	finalTracks := filteredTracks
+	finalTracks := enrichedTracks
 	if len(finalTrackIDs) < limit {
 		additional := fallbackTrackIDs(seeds, limit, blocked)
 		additional = difference(finalTrackIDs, additional)
@@ -588,7 +599,7 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 							continue
 						}
 						finalTrackIDs = append(finalTrackIDs, id)
-						finalTracks = append(finalTracks, mf)
+						finalTracks = append(finalTracks, recommendationTrack{MediaFile: mf})
 						if len(finalTrackIDs) >= limit {
 							break
 						}
@@ -604,6 +615,29 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 		Warnings: combinedWarnings,
 		Tracks:   finalTracks,
 	}, nil
+}
+
+func (n *Router) enrichTracksWithMetadata(tracks []model.MediaFile, items []subsonic.RecommendationItem) []recommendationTrack {
+	trackMap := make(map[string]model.MediaFile, len(tracks))
+	for _, mf := range tracks {
+		trackMap[mf.ID] = mf
+	}
+
+	itemMap := make(map[string]subsonic.RecommendationItem, len(items))
+	for _, item := range items {
+		itemMap[item.TrackID] = item
+	}
+
+	enriched := make([]recommendationTrack, 0, len(tracks))
+	for _, mf := range tracks {
+		rt := recommendationTrack{MediaFile: mf}
+		if item, ok := itemMap[mf.ID]; ok {
+			rt.Models = item.Models
+			rt.NegativeSimilarity = item.NegativeSimilarity
+		}
+		enriched = append(enriched, rt)
+	}
+	return enriched
 }
 
 func (n *Router) buildRecentSeeds(ctx context.Context, user model.User, limit int, settings recommendationSettings) ([]subsonic.RecommendationSeed, error) {
@@ -1407,19 +1441,29 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Load track details
-	tracks, warnings, err := n.loadRecommendedTracks(ctx, user.ID, result)
+	trackIDs := result.TrackIDs()
+	tracks, err := n.loadTracks(ctx, trackIDs)
 	if err != nil {
 		log.Error(ctx, "Failed to load recommended tracks", "error", err)
 		http.Error(w, "failed to load tracks", http.StatusInternalServerError)
 		return
 	}
 
+	// Enrich tracks with multi-model metadata
+	enrichedTracks := n.enrichTracksWithMetadata(tracks, result.Tracks)
+
+	// Extract final track IDs
+	finalTrackIDs := make([]string, 0, len(enrichedTracks))
+	for _, track := range enrichedTracks {
+		finalTrackIDs = append(finalTrackIDs, track.ID)
+	}
+
 	response := recommendationResponsePayload{
 		Name:     payload.Text,
 		Mode:     modeTextRecommendations,
-		TrackIDs: extractTrackIDs(tracks),
-		Tracks:   tracks,
-		Warnings: append(result.Warnings, warnings...),
+		TrackIDs: finalTrackIDs,
+		Tracks:   enrichedTracks,
+		Warnings: result.Warnings,
 	}
 
 	writeJSON(w, http.StatusOK, response)
