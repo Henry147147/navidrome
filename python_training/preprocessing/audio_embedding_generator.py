@@ -11,7 +11,9 @@ import torch
 from tqdm import tqdm
 
 # Add python_services to path to import existing embedding models
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python_services"))
+_python_services_dir = str(Path(__file__).parent.parent.parent / "python_services")
+if _python_services_dir not in sys.path:
+    sys.path.insert(0, _python_services_dir)
 
 from embedding_models import MuQEmbeddingModel, MertModel, MusicLatentSpaceModel
 

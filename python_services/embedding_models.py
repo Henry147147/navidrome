@@ -20,7 +20,18 @@ import torch
 import torchaudio
 from pymilvus import MilvusClient, DataType
 
-from models import TrackSegment
+# Use try-except to handle import from different contexts
+try:
+    from models import TrackSegment
+except ImportError:
+    # If 'models' is shadowed by another package, try importing from local file
+    from pathlib import Path
+    import importlib.util
+    _models_path = Path(__file__).parent / "models.py"
+    _spec = importlib.util.spec_from_file_location("_ps_models", _models_path)
+    _ps_models = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_ps_models)
+    TrackSegment = _ps_models.TrackSegment
 
 from muq import MuQMuLan
 from music2latent import EncoderDecoder
