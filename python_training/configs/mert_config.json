@@ -10,10 +10,10 @@
     }
   },
   "data": {
-    "train_embeddings": "data/embeddings/mert/train_embeddings.h5",
-    "train_metadata": "data/datasets/combined/train_metadata.json",
-    "val_embeddings": "data/embeddings/mert/val_embeddings.h5",
-    "val_metadata": "data/datasets/combined/val_metadata.json",
+    "train_embeddings": "../data/embeddings/mert/train_embeddings.h5",
+    "train_metadata": "../data/datasets/combined/train_metadata.json",
+    "val_embeddings": "../data/embeddings/mert/val_embeddings.h5",
+    "val_metadata": "../data/datasets/combined/val_metadata.json",
     "loader_params": {
       "batch_size": 64,
       "shuffle": true,

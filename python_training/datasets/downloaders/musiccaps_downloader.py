@@ -8,12 +8,50 @@ import logging
 import json
 import subprocess
 import time
+import sys
+import os
 
-from datasets import load_dataset
 from tqdm import tqdm
 import yt_dlp
 
 from ..base_downloader import BaseDownloader, DatasetMetadata
+
+
+def _get_hf_load_dataset():
+    """
+    Import and return HuggingFace's load_dataset function.
+
+    This needs to be done carefully to avoid conflicts with the local 'datasets' package.
+    We keep the HuggingFace datasets module in sys.modules during usage to avoid
+    pickle/multiprocessing errors.
+    """
+    _training_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+    # Temporarily filter out python_training from sys.path
+    _filtered_path = [p for p in sys.path if os.path.abspath(p) != _training_dir and 'python_training' not in p and not p.startswith('.')]
+
+    # Save the current state
+    _original_path = sys.path[:]
+    _original_datasets = sys.modules.get('datasets', None)
+
+    # Temporarily update sys.path and remove local datasets from sys.modules
+    sys.path[:] = _filtered_path
+    if 'datasets' in sys.modules:
+        del sys.modules['datasets']
+
+    try:
+        # Import HuggingFace datasets
+        import datasets as hf_datasets
+        # Keep the HuggingFace datasets module in sys.modules
+        # Don't restore the original yet - we'll use it
+        sys.path[:] = _original_path
+        return hf_datasets.load_dataset
+    except Exception as e:
+        # Restore original state on error
+        sys.path[:] = _original_path
+        if _original_datasets:
+            sys.modules['datasets'] = _original_datasets
+        raise
 
 
 class MusicCapsDownloader(BaseDownloader):
@@ -56,6 +94,9 @@ class MusicCapsDownloader(BaseDownloader):
     def download(self) -> DatasetMetadata:
         """Download MusicCaps dataset from HuggingFace and audio from YouTube."""
         self.logger.info("Loading MusicCaps dataset from HuggingFace...")
+
+        # Get HuggingFace load_dataset function
+        load_dataset = _get_hf_load_dataset()
 
         # Load the dataset metadata
         dataset = load_dataset("google/MusicCaps", split="train")
