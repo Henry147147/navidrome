@@ -22,22 +22,43 @@ import (
 )
 
 type recommendationRequestPayload struct {
-	Limit              int      `json:"limit"`
-	SongIDs            []string `json:"songIds"`
-	Name               string   `json:"name"`
-	Diversity          *float64 `json:"diversity"`
-	ExcludeTrackIDs    []string `json:"excludeTrackIds"`
-	ExcludePlaylistIDs []string `json:"excludePlaylistIds"`
-	PositiveTrackIDs   []string `json:"positiveTrackIds"`
-	NegativeTrackIDs   []string `json:"negativeTrackIds"`
+	Limit              int                  `json:"limit"`
+	SongIDs            []string             `json:"songIds"`
+	Name               string               `json:"name"`
+	Diversity          *float64             `json:"diversity"`
+	ExcludeTrackIDs    []string             `json:"excludeTrackIds"`
+	ExcludePlaylistIDs []string             `json:"excludePlaylistIds"`
+	PositiveTrackIDs   []string             `json:"positiveTrackIds"`
+	NegativeTrackIDs   []string             `json:"negativeTrackIds"`
+
+	// Multi-model support (Idea 2)
+	Models            []string            `json:"models,omitempty"`
+	MergeStrategy     string              `json:"mergeStrategy,omitempty"`
+	ModelPriorities   map[string]int      `json:"modelPriorities,omitempty"`
+	MinModelAgreement int                 `json:"minModelAgreement,omitempty"`
+
+	// Negative prompting (Idea 4)
+	NegativePrompts        []string                       `json:"negativePrompts,omitempty"`
+	NegativePromptPenalty  float64                        `json:"negativePromptPenalty,omitempty"`
+	NegativeEmbeddings     map[string][][]float64         `json:"negativeEmbeddings,omitempty"`
+
+	// Text embedding support (Idea 1)
+	Text  string `json:"text,omitempty"`
+	Model string `json:"model,omitempty"`
+}
+
+type recommendationTrack struct {
+	model.MediaFile
+	Models             []string `json:"models,omitempty"`
+	NegativeSimilarity *float64 `json:"negativeSimilarity,omitempty"`
 }
 
 type recommendationResponsePayload struct {
-	Name     string            `json:"name"`
-	Mode     string            `json:"mode"`
-	TrackIDs []string          `json:"trackIds"`
-	Warnings []string          `json:"warnings,omitempty"`
-	Tracks   []model.MediaFile `json:"tracks"`
+	Name     string                `json:"name"`
+	Mode     string                `json:"mode"`
+	TrackIDs []string              `json:"trackIds"`
+	Warnings []string              `json:"warnings,omitempty"`
+	Tracks   []recommendationTrack `json:"tracks"`
 }
 
 const (
@@ -46,6 +67,7 @@ const (
 	modeFavoritesRecommendations = "favorites"
 	modeAllRecommendations       = "all"
 	modeDiscoveryRecommendations = "discovery"
+	modeTextRecommendations      = "text"
 
 	positiveSeedBoost = 1.12
 
@@ -146,6 +168,14 @@ func (n *Router) addRecommendationRoutes(r chi.Router) {
 		r.Post("/all", n.handleAllRecommendations)
 		r.Post("/discovery", n.handleDiscoveryRecommendations)
 		r.Post("/custom", n.handleCustomRecommendations)
+		r.Post("/text", n.handleTextRecommendations)
+
+		// Batch re-embedding endpoints (proxy to Python)
+		r.Route("/batch", func(r chi.Router) {
+			r.Post("/start", n.handleBatchStart)
+			r.Get("/progress", n.handleBatchProgress)
+			r.Post("/cancel", n.handleBatchCancel)
+		})
 	})
 }
 
@@ -270,7 +300,7 @@ func (n *Router) handleRecentRecommendations(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	excludeIDs := combineExcludeTrackIDs(payload)
-	resp, err := n.executeRecommendation(ctx, user, modeRecentRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeRecentRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings, payload)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -312,7 +342,7 @@ func (n *Router) handleFavoritesRecommendations(w http.ResponseWriter, r *http.R
 		return
 	}
 	excludeIDs := combineExcludeTrackIDs(payload)
-	resp, err := n.executeRecommendation(ctx, user, modeFavoritesRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeFavoritesRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings, payload)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -357,7 +387,7 @@ func (n *Router) handleAllRecommendations(w http.ResponseWriter, r *http.Request
 		seeds = seeds[:limit]
 	}
 	excludeIDs := combineExcludeTrackIDs(payload)
-	resp, err := n.executeRecommendation(ctx, user, modeAllRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeAllRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings, payload)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -403,7 +433,7 @@ func (n *Router) handleDiscoveryRecommendations(w http.ResponseWriter, r *http.R
 		seeds = seeds[:maxSeeds]
 	}
 	excludeIDs := combineExcludeTrackIDs(payload)
-	resp, err := n.executeRecommendation(ctx, user, modeDiscoveryRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.DiscoveryExploration, discoveryMinDiversity, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeDiscoveryRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.DiscoveryExploration, discoveryMinDiversity, settings, payload)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -450,7 +480,7 @@ func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Requ
 	}
 	seeds = n.addPositiveSeeds(ctx, user, seeds, payload.PositiveTrackIDs)
 	excludeIDs := combineExcludeTrackIDs(payload)
-	resp, err := n.executeRecommendation(ctx, user, modeCustomRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings)
+	resp, err := n.executeRecommendation(ctx, user, modeCustomRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings, payload)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -458,7 +488,7 @@ func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (n *Router) executeRecommendation(ctx context.Context, user model.User, mode string, name string, seeds []subsonic.RecommendationSeed, limit int, excludeTrackIDs []string, excludePlaylistIDs []string, diversityOverride *float64, fallback float64, min float64, settings recommendationSettings) (recommendationResponsePayload, error) {
+func (n *Router) executeRecommendation(ctx context.Context, user model.User, mode string, name string, seeds []subsonic.RecommendationSeed, limit int, excludeTrackIDs []string, excludePlaylistIDs []string, diversityOverride *float64, fallback float64, min float64, settings recommendationSettings, payload recommendationRequestPayload) (recommendationResponsePayload, error) {
 	dislikes, err := n.buildDislikeSignals(ctx, user, settings)
 	if err != nil {
 		log.Warn(ctx, "Failed to load low-rating signals", "error", err)
@@ -481,17 +511,24 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 		blocked[id] = struct{}{}
 	}
 	req := subsonic.RecommendationRequest{
-		UserID:             user.ID,
-		UserName:           user.UserName,
-		Limit:              limit,
-		Mode:               mode,
-		Seeds:              seeds,
-		Diversity:          normalizeDiversity(diversityOverride, fallback, min),
-		ExcludeTrackIDs:    combinedExclude,
-		DislikedTrackIDs:   dislikedTrackIDs,
-		DislikedArtistIDs:  dislikes.artistIDs(),
-		DislikeStrength:    settings.LowRatingPenalty,
-		ExcludePlaylistIDs: playlistIDs,
+		UserID:                user.ID,
+		UserName:              user.UserName,
+		Limit:                 limit,
+		Mode:                  mode,
+		Seeds:                 seeds,
+		Diversity:             normalizeDiversity(diversityOverride, fallback, min),
+		ExcludeTrackIDs:       combinedExclude,
+		DislikedTrackIDs:      dislikedTrackIDs,
+		DislikedArtistIDs:     dislikes.artistIDs(),
+		DislikeStrength:       settings.LowRatingPenalty,
+		ExcludePlaylistIDs:    playlistIDs,
+		Models:                payload.Models,
+		MergeStrategy:         payload.MergeStrategy,
+		ModelPriorities:       payload.ModelPriorities,
+		MinModelAgreement:     payload.MinModelAgreement,
+		NegativePrompts:       payload.NegativePrompts,
+		NegativePromptPenalty: payload.NegativePromptPenalty,
+		NegativeEmbeddings:    payload.NegativeEmbeddings,
 	}
 	result, err := n.recommender.Recommend(ctx, mode, req)
 	if err != nil {
@@ -509,6 +546,10 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	if strings.TrimSpace(playlistName) == "" {
 		playlistName = defaultPlaylistName(mode)
 	}
+
+	// Convert result items to recommendationTrack with new fields
+	enrichedTracks := n.enrichTracksWithMetadata(tracks, result.Tracks)
+
 	filteredTracks, filteredIDs, filteredWarnings := filterDislikedTracks(tracks, trackIDs, dislikes, blocked, settings.LowRatingPenalty)
 	if len(result.Warnings) > 0 {
 		combinedWarnings = append(combinedWarnings, result.Warnings...)
@@ -517,7 +558,7 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 		combinedWarnings = append(combinedWarnings, filteredWarnings)
 	}
 	finalTrackIDs := filteredIDs
-	finalTracks := filteredTracks
+	finalTracks := enrichedTracks
 	if len(finalTrackIDs) < limit {
 		additional := fallbackTrackIDs(seeds, limit, blocked)
 		additional = difference(finalTrackIDs, additional)
@@ -558,7 +599,7 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 							continue
 						}
 						finalTrackIDs = append(finalTrackIDs, id)
-						finalTracks = append(finalTracks, mf)
+						finalTracks = append(finalTracks, recommendationTrack{MediaFile: mf})
 						if len(finalTrackIDs) >= limit {
 							break
 						}
@@ -574,6 +615,29 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 		Warnings: combinedWarnings,
 		Tracks:   finalTracks,
 	}, nil
+}
+
+func (n *Router) enrichTracksWithMetadata(tracks []model.MediaFile, items []subsonic.RecommendationItem) []recommendationTrack {
+	trackMap := make(map[string]model.MediaFile, len(tracks))
+	for _, mf := range tracks {
+		trackMap[mf.ID] = mf
+	}
+
+	itemMap := make(map[string]subsonic.RecommendationItem, len(items))
+	for _, item := range items {
+		itemMap[item.TrackID] = item
+	}
+
+	enriched := make([]recommendationTrack, 0, len(tracks))
+	for _, mf := range tracks {
+		rt := recommendationTrack{MediaFile: mf}
+		if item, ok := itemMap[mf.ID]; ok {
+			rt.Models = item.Models
+			rt.NegativeSimilarity = item.NegativeSimilarity
+		}
+		enriched = append(enriched, rt)
+	}
+	return enriched
 }
 
 func (n *Router) buildRecentSeeds(ctx context.Context, user model.User, limit int, settings recommendationSettings) ([]subsonic.RecommendationSeed, error) {
@@ -1277,6 +1341,301 @@ func difference(existing []string, candidates []string) []string {
 		filtered = append(filtered, id)
 	}
 	return filtered
+}
+
+func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Request) {
+	if n.recommender == nil {
+		http.Error(w, "recommendation service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ctx := r.Context()
+	user, ok := request.UserFrom(ctx)
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusUnauthorized)
+		return
+	}
+	settings, err := n.getRecommendationSettings(ctx, user)
+	if err != nil {
+		log.Error(ctx, "Failed to load recommendation settings", "error", err)
+		http.Error(w, "failed to load recommendation settings", http.StatusInternalServerError)
+		return
+	}
+	var payload recommendationRequestPayload
+	if err := decodeJSON(r, &payload); err != nil {
+		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	// Validate text query
+	if strings.TrimSpace(payload.Text) == "" {
+		writeError(w, http.StatusBadRequest, "text query is required")
+		return
+	}
+
+	// Set default model if not specified
+	if payload.Model == "" {
+		payload.Model = "muq"
+	}
+
+	// Get text embedding from Python service
+	textEmbedURL := conf.Server.Recommendations.BaseURL + "/embed_text"
+	embedding, err := n.getTextEmbedding(ctx, payload.Text, payload.Model, textEmbedURL)
+	if err != nil {
+		log.Error(ctx, "Failed to get text embedding", "error", err, "text", payload.Text)
+		http.Error(w, fmt.Sprintf("failed to get text embedding: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Build seeds with text embedding
+	seeds := []subsonic.RecommendationSeed{
+		{
+			TrackID:   "_text_query_",
+			Weight:    1.0,
+			Source:    "text",
+			Embedding: embedding,
+		},
+	}
+
+	// Build recommendation request
+	limit := normalizeLimit(payload.Limit, settings.MixLength)
+	diversity := normalizeDiversity(payload.Diversity, settings.BaseDiversity, 0)
+
+	// Set default models if not specified
+	if len(payload.Models) == 0 {
+		payload.Models = []string{payload.Model}
+	}
+
+	recReq := subsonic.RecommendationRequest{
+		UserID:                user.ID,
+		UserName:              user.UserName,
+		Limit:                 limit,
+		Mode:                  modeTextRecommendations,
+		Seeds:                 seeds,
+		Diversity:             diversity,
+		ExcludeTrackIDs:       payload.ExcludeTrackIDs,
+		Models:                payload.Models,
+		MergeStrategy:         payload.MergeStrategy,
+		ModelPriorities:       payload.ModelPriorities,
+		MinModelAgreement:     payload.MinModelAgreement,
+		NegativePrompts:       payload.NegativePrompts,
+		NegativePromptPenalty: payload.NegativePromptPenalty,
+		NegativeEmbeddings:    payload.NegativeEmbeddings,
+	}
+
+	// Collect playlist exclusions
+	if len(payload.ExcludePlaylistIDs) > 0 {
+		excludeIDs, err := n.collectPlaylistTrackIDs(ctx, payload.ExcludePlaylistIDs)
+		if err != nil {
+			log.Error(ctx, "Failed to collect playlist exclusions", "error", err)
+		} else {
+			recReq.ExcludeTrackIDs = append(recReq.ExcludeTrackIDs, excludeIDs...)
+		}
+	}
+
+	// Get recommendations
+	result, err := n.recommender.Recommend(ctx, modeTextRecommendations, recReq)
+	if err != nil {
+		log.Error(ctx, "Text recommendation failed", "error", err, "text", payload.Text)
+		http.Error(w, fmt.Sprintf("recommendation failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Load track details
+	trackIDs := result.TrackIDs()
+	tracks, err := n.loadTracks(ctx, trackIDs)
+	if err != nil {
+		log.Error(ctx, "Failed to load recommended tracks", "error", err)
+		http.Error(w, "failed to load tracks", http.StatusInternalServerError)
+		return
+	}
+
+	// Enrich tracks with multi-model metadata
+	enrichedTracks := n.enrichTracksWithMetadata(tracks, result.Tracks)
+
+	// Extract final track IDs
+	finalTrackIDs := make([]string, 0, len(enrichedTracks))
+	for _, track := range enrichedTracks {
+		finalTrackIDs = append(finalTrackIDs, track.ID)
+	}
+
+	response := recommendationResponsePayload{
+		Name:     payload.Text,
+		Mode:     modeTextRecommendations,
+		TrackIDs: finalTrackIDs,
+		Tracks:   enrichedTracks,
+		Warnings: result.Warnings,
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (n *Router) handleBatchStart(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user, ok := request.UserFrom(ctx)
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	// Only admins can start batch jobs
+	if !user.IsAdmin {
+		http.Error(w, "admin access required", http.StatusForbidden)
+		return
+	}
+
+	var payload struct {
+		Models        []string `json:"models"`
+		ClearExisting bool     `json:"clearExisting"`
+	}
+	if err := decodeJSON(r, &payload); err != nil {
+		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	// Proxy to Python service
+	batchURL := conf.Server.Recommendations.BaseURL + "/batch/start"
+	resp, err := n.proxyToPython(ctx, "POST", batchURL, payload)
+	if err != nil {
+		log.Error(ctx, "Failed to start batch job", "error", err)
+		http.Error(w, fmt.Sprintf("failed to start batch job: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (n *Router) handleBatchProgress(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user, ok := request.UserFrom(ctx)
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	// Only admins can check batch progress
+	if !user.IsAdmin {
+		http.Error(w, "admin access required", http.StatusForbidden)
+		return
+	}
+
+	// Proxy to Python service
+	batchURL := conf.Server.Recommendations.BaseURL + "/batch/progress"
+	resp, err := n.proxyToPython(ctx, "GET", batchURL, nil)
+	if err != nil {
+		log.Error(ctx, "Failed to get batch progress", "error", err)
+		http.Error(w, fmt.Sprintf("failed to get batch progress: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (n *Router) handleBatchCancel(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user, ok := request.UserFrom(ctx)
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	// Only admins can cancel batch jobs
+	if !user.IsAdmin {
+		http.Error(w, "admin access required", http.StatusForbidden)
+		return
+	}
+
+	// Proxy to Python service
+	batchURL := conf.Server.Recommendations.BaseURL + "/batch/cancel"
+	resp, err := n.proxyToPython(ctx, "POST", batchURL, nil)
+	if err != nil {
+		log.Error(ctx, "Failed to cancel batch job", "error", err)
+		http.Error(w, fmt.Sprintf("failed to cancel batch job: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (n *Router) getTextEmbedding(ctx context.Context, text string, model string, embedURL string) ([]float64, error) {
+	reqBody := map[string]string{
+		"text":  text,
+		"model": model,
+	}
+
+	reqData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", embedURL, strings.NewReader(string(reqData)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("text embedding service returned status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Embedding []float64 `json:"embedding"`
+		Model     string    `json:"model"`
+		Dimension int       `json:"dimension"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	return result.Embedding, nil
+}
+
+func (n *Router) proxyToPython(ctx context.Context, method string, url string, payload interface{}) (map[string]interface{}, error) {
+	var reqBody []byte
+	var err error
+
+	if payload != nil {
+		reqBody, err = json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var req *http.Request
+	if reqBody != nil {
+		req, err = http.NewRequestWithContext(ctx, method, url, strings.NewReader(string(reqBody)))
+	} else {
+		req, err = http.NewRequestWithContext(ctx, method, url, nil)
+	}
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("python service returned status %d", resp.StatusCode)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func normalizeLimit(requested int, fallback int) int {

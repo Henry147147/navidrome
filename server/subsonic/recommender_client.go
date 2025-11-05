@@ -17,10 +17,11 @@ type RecommendationClient interface {
 }
 
 type RecommendationSeed struct {
-	TrackID  string     `json:"track_id"`
-	Weight   float64    `json:"weight,omitempty"`
-	Source   string     `json:"source"`
-	PlayedAt *time.Time `json:"played_at,omitempty"`
+	TrackID   string      `json:"track_id"`
+	Weight    float64     `json:"weight,omitempty"`
+	Source    string      `json:"source"`
+	PlayedAt  *time.Time  `json:"played_at,omitempty"`
+	Embedding []float64   `json:"embedding,omitempty"` // Direct embedding for text queries
 }
 
 type RecommendationRequest struct {
@@ -36,12 +37,25 @@ type RecommendationRequest struct {
 	DislikedArtistIDs  []string             `json:"disliked_artist_ids,omitempty"`
 	DislikeStrength    float64              `json:"dislike_strength,omitempty"`
 	ExcludePlaylistIDs []string             `json:"exclude_playlist_ids,omitempty"`
+
+	// Multi-model support (Idea 2)
+	Models            []string       `json:"models,omitempty"`
+	MergeStrategy     string         `json:"merge_strategy,omitempty"`
+	ModelPriorities   map[string]int `json:"model_priorities,omitempty"`
+	MinModelAgreement int            `json:"min_model_agreement,omitempty"`
+
+	// Negative prompting (Idea 4)
+	NegativePrompts       []string                   `json:"negative_prompts,omitempty"`
+	NegativePromptPenalty float64                    `json:"negative_prompt_penalty,omitempty"`
+	NegativeEmbeddings    map[string][][]float64     `json:"negative_embeddings,omitempty"`
 }
 
 type RecommendationItem struct {
-	TrackID string  `json:"track_id"`
-	Score   float64 `json:"score"`
-	Reason  string  `json:"reason,omitempty"`
+	TrackID            string   `json:"track_id"`
+	Score              float64  `json:"score"`
+	Reason             string   `json:"reason,omitempty"`
+	Models             []string `json:"models,omitempty"`              // Models that contributed
+	NegativeSimilarity *float64 `json:"negative_similarity,omitempty"` // Similarity to negative prompts
 }
 
 type RecommendationResponse struct {
