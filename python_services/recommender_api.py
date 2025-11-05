@@ -10,13 +10,14 @@ from fastapi import FastAPI, HTTPException
 import uvicorn
 from pymilvus import MilvusClient
 
-from database_query import MilvusSimilaritySearcher
+from database_query import MilvusSimilaritySearcher, MultiModelSimilaritySearcher
 from schemas import (
     RecommendationItem,
     RecommendationRequest,
     RecommendationResponse,
 )
 from track_name_resolver import TrackNameResolver
+import numpy as np
 
 
 LOGGER = logging.getLogger("navidrome.recommender")
@@ -37,9 +38,11 @@ class RecommendationEngine:
         searcher: MilvusSimilaritySearcher,
         name_resolver: TrackNameResolver,
         *,
+        multi_model_searcher: MultiModelSimilaritySearcher = None,
         debug_logging: bool = False,
     ) -> None:
         self.searcher = searcher
+        self.multi_model_searcher = multi_model_searcher
         self.logger = LOGGER
         self.name_resolver = name_resolver
         self.debug_logging = debug_logging
@@ -47,27 +50,55 @@ class RecommendationEngine:
     def recommend(self, request: RecommendationRequest) -> RecommendationResponse:
         if self.debug_logging:
             self.logger.debug(
-                "Processing recommendation request user=%s mode=%s seeds=%d limit=%d exclude=%d",
+                "Processing recommendation request user=%s mode=%s seeds=%d limit=%d exclude=%d models=%s",
                 request.user_id,
                 request.mode,
                 len(request.seeds),
                 request.limit,
                 len(request.exclude_track_ids),
+                request.models,
             )
         if not request.seeds:
             return RecommendationResponse(
                 warnings=["No seeds provided; unable to compute recommendations."],
             )
 
-        seed_ids = [seed.track_id for seed in request.seeds]
-        id_to_name = self.name_resolver.ids_to_names(seed_ids)
-        unique_names = list({name for name in id_to_name.values()})
-        name_embeddings = self.searcher.get_embeddings_by_name(unique_names)
+        # Separate seeds with direct embeddings from those needing lookup
+        direct_embedding_seeds = [s for s in request.seeds if s.embedding is not None]
+        track_id_seeds = [s for s in request.seeds if s.embedding is None]
+
         seed_embeddings: Dict[str, Sequence[float]] = {}
-        for track_id, name in id_to_name.items():
-            vector = name_embeddings.get(name)
-            if vector is not None:
-                seed_embeddings[track_id] = vector
+
+        # Handle direct embeddings (e.g., from text queries)
+        for seed in direct_embedding_seeds:
+            seed_embeddings[seed.track_id] = seed.embedding
+            if self.debug_logging:
+                self.logger.debug(
+                    "Using direct embedding for seed %s (dim=%d)",
+                    seed.track_id,
+                    len(seed.embedding)
+                )
+
+        # Handle track ID seeds (traditional path)
+        if track_id_seeds:
+            seed_ids = [seed.track_id for seed in track_id_seeds]
+            id_to_name = self.name_resolver.ids_to_names(seed_ids)
+            unique_names = list({name for name in id_to_name.values()})
+
+            # If using single model (backwards compatible)
+            if len(request.models) == 1:
+                name_embeddings = self.searcher.get_embeddings_by_name(unique_names)
+            else:
+                # Use first model for embedding lookup (primary model)
+                name_embeddings = self.multi_model_searcher.get_embeddings_by_name(
+                    unique_names,
+                    model=request.models[0]
+                ) if self.multi_model_searcher else {}
+
+            for track_id, name in id_to_name.items():
+                vector = name_embeddings.get(name)
+                if vector is not None:
+                    seed_embeddings[track_id] = vector
 
         if self.debug_logging:
             missing_name = [
