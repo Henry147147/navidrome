@@ -9,6 +9,7 @@ from typing import Dict, List, Sequence
 from fastapi import FastAPI, HTTPException
 import uvicorn
 from pymilvus import MilvusClient
+from pydantic import BaseModel
 
 from database_query import MilvusSimilaritySearcher, MultiModelSimilaritySearcher
 from schemas import (
@@ -18,6 +19,12 @@ from schemas import (
 )
 from track_name_resolver import TrackNameResolver
 import numpy as np
+
+
+class BatchEmbeddingRequest(BaseModel):
+    """Request model for batch embedding job."""
+    models: List[str] = ["muq", "mert", "latent"]
+    clearExisting: bool = True
 
 
 LOGGER = logging.getLogger("navidrome.recommender")
@@ -476,10 +483,7 @@ def create_app() -> FastAPI:
     import threading
 
     @app.post("/batch/start")
-    def start_batch_embedding(
-        models: List[str] = ["muq", "mert", "latent"],
-        clear_existing: bool = True,
-    ) -> Dict:
+    def start_batch_embedding(request: BatchEmbeddingRequest) -> Dict:
         """Start batch re-embedding job."""
         current_job = get_current_job()
         if current_job and current_job.progress.status == "running":
@@ -493,7 +497,7 @@ def create_app() -> FastAPI:
 
         # Run in background thread
         thread = threading.Thread(
-            target=job.run, args=(models, clear_existing), daemon=True
+            target=job.run, args=(request.models, request.clearExisting), daemon=True
         )
         thread.start()
 
