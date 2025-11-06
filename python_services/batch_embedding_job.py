@@ -305,9 +305,6 @@ class BatchEmbeddingJob:
                         client.insert(collection_name=collection, data=batch_data)
                         batch_data = []
 
-                    # Update processed tracks count (only after completing all models for all tracks)
-                    self.progress.processed_tracks += tracks_processed_this_model
-
                     # CRITICAL: Explicitly unload model after processing all tracks
                     self.logger.info(f"Unloading {model_name} model to free GPU memory")
                     model.unload_model()
@@ -345,8 +342,12 @@ class BatchEmbeddingJob:
             self.progress.status = "cancelled"
         elif self.progress.status != "failed" and self.progress.failed_tracks > 0:
             self.progress.status = "completed_with_errors"
+            # Set processed_tracks to total since we attempted all tracks
+            self.progress.processed_tracks = len(tracks)
         elif self.progress.status != "failed":
             self.progress.status = "completed"
+            # Set processed_tracks to total since all tracks were processed
+            self.progress.processed_tracks = len(tracks)
 
         elapsed = time.time() - self.progress.started_at
         self.logger.info(

@@ -287,7 +287,7 @@ const BatchEmbeddingPanel = () => {
                 {' '}({Math.round(progress.progress_percent || 0)}%)
               </Typography>
 
-              {progress.total_tracks && progress.processed_tracks !== undefined && (
+              {progress.total_tracks && progress.processed_tracks > 0 && (
                 <Typography variant="caption" color="textSecondary">
                   {translate('pages.settings.batchEmbedding.tracksProcessed', {
                     _: 'Tracks processed',
