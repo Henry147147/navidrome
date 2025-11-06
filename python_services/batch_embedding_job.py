@@ -82,6 +82,13 @@ class BatchEmbeddingJob:
         self.models = {}
         self._cancelled = False
 
+        # Collection mapping for each model
+        self.collection_map = {
+            "muq": "embedding",
+            "mert": "mert_embedding",
+            "latent": "latent_embedding",
+        }
+
     def _initialize_models(self, model_names: List[str]) -> None:
         """Initialize embedding models."""
         for model_name in model_names:
@@ -173,7 +180,10 @@ class BatchEmbeddingJob:
         clear_existing: bool = True,
     ) -> Dict:
         """
-        Run batch embedding job.
+        Run batch embedding job with SEQUENTIAL model processing.
+
+        This processes all tracks with one model at a time to avoid GPU overflow.
+        Pattern: Load Model 1 -> Process all tracks -> Unload Model 1 -> Load Model 2 -> etc.
 
         Args:
             models_to_use: List of model names (default: all)
@@ -192,7 +202,10 @@ class BatchEmbeddingJob:
 
         # Get all tracks
         tracks = self.get_all_tracks()
-        self.progress.total_tracks = len(tracks)
+
+        # Calculate total operations (tracks × models)
+        total_operations = len(tracks) * len(models_to_use)
+        self.progress.total_tracks = total_operations
         self.progress.status = "running"
         self.progress.started_at = time.time()
 
@@ -200,31 +213,65 @@ class BatchEmbeddingJob:
         if clear_existing:
             self.clear_embeddings(models_to_use)
 
-        # Process tracks
+        # Process tracks sequentially by model
         failed_tracks = []
+        operations_completed = 0
 
-        for idx, track in enumerate(tqdm(tracks, desc="Embedding tracks")):
+        from pymilvus import MilvusClient
+        client = MilvusClient(uri=self.milvus_uri)
+
+        # SEQUENTIAL MODEL PROCESSING - one model at a time to avoid GPU overflow
+        for model_idx, model_name in enumerate(models_to_use):
             if self._cancelled:
                 self.progress.status = "cancelled"
                 self.logger.info("Job cancelled by user")
                 break
 
-            self.progress.current_track = f"{track['artist']} - {track['title']}"
+            self.logger.info(f"Processing all tracks with model: {model_name} ({model_idx + 1}/{len(models_to_use)})")
+            model = self.models[model_name]
+            collection = self.collection_map[model_name]
+
+            # Ensure model is loaded
+            model.ensure_model_loaded()
 
             try:
-                self._process_track(track, models_to_use)
-                self.progress.processed_tracks += 1
-            except Exception as e:
-                self.logger.error(f"Failed to process track {track['id']}: {e}")
-                failed_tracks.append((track["id"], str(e)))
-                self.progress.failed_tracks += 1
+                # Process all tracks with this model
+                for track_idx, track in enumerate(tqdm(tracks, desc=f"Embedding with {model_name}")):
+                    if self._cancelled:
+                        self.progress.status = "cancelled"
+                        self.logger.info("Job cancelled by user")
+                        break
 
-            # Update estimated completion
-            if idx > 0 and idx % 10 == 0:
-                elapsed = time.time() - self.progress.started_at
-                rate = elapsed / (idx + 1)
-                remaining = self.progress.total_tracks - (idx + 1)
-                self.progress.estimated_completion = time.time() + (rate * remaining)
+                    self.progress.current_track = f"[{model_name}] {track['artist']} - {track['title']}"
+
+                    try:
+                        self._process_track_with_model(track, model_name, model, collection, client)
+                        operations_completed += 1
+                        self.progress.processed_tracks = operations_completed
+                    except Exception as e:
+                        self.logger.error(f"Failed to process track {track['id']} with {model_name}: {e}")
+                        failed_tracks.append((track["id"], model_name, str(e)))
+                        self.progress.failed_tracks += 1
+
+                    # Update estimated completion every 10 operations
+                    if operations_completed > 0 and operations_completed % 10 == 0:
+                        elapsed = time.time() - self.progress.started_at
+                        rate = elapsed / operations_completed
+                        remaining = total_operations - operations_completed
+                        self.progress.estimated_completion = time.time() + (rate * remaining)
+
+                # CRITICAL: Explicitly unload model after processing all tracks
+                self.logger.info(f"Unloading {model_name} model to free GPU memory")
+                model.unload_model()
+
+            except Exception as e:
+                self.logger.error(f"Failed during {model_name} processing: {e}")
+                # Ensure model is unloaded even on error
+                try:
+                    model.unload_model()
+                except Exception as unload_error:
+                    self.logger.error(f"Failed to unload {model_name}: {unload_error}")
+                raise
 
         # Finalize
         if self._cancelled:
@@ -237,14 +284,15 @@ class BatchEmbeddingJob:
         elapsed = time.time() - self.progress.started_at
         self.logger.info(
             f"Job completed in {elapsed:.1f}s: "
-            f"{self.progress.processed_tracks}/{self.progress.total_tracks} tracks"
+            f"{operations_completed}/{total_operations} operations "
+            f"({len(tracks)} tracks × {len(models_to_use)} models)"
         )
-        self.logger.info(f"Failed tracks: {self.progress.failed_tracks}")
+        self.logger.info(f"Failed operations: {self.progress.failed_tracks}")
 
         return {"progress": self.progress, "failed_tracks": failed_tracks}
 
     def _process_track(self, track: Dict, models: List[str]) -> None:
-        """Process a single track with specified models."""
+        """Process a single track with specified models (DEPRECATED - use _process_track_with_model instead)."""
         from pymilvus import MilvusClient
 
         # Resolve audio file path
@@ -263,12 +311,6 @@ class BatchEmbeddingJob:
 
         client = MilvusClient(uri=self.milvus_uri)
 
-        collection_map = {
-            "muq": "embedding",
-            "mert": "mert_embedding",
-            "latent": "latent_embedding",
-        }
-
         # Generate embeddings with each model
         for model_name in models:
             model = self.models.get(model_name)
@@ -280,7 +322,7 @@ class BatchEmbeddingJob:
                 result = model.embed_music(str(audio_path), canonical_name)
 
                 # Store in Milvus
-                collection = collection_map[model_name]
+                collection = self.collection_map[model_name]
 
                 for segment in result["segments"]:
                     client.insert(
@@ -306,6 +348,45 @@ class BatchEmbeddingJob:
                     f"Failed to embed {canonical_name} with {model_name}: {e}"
                 )
                 raise
+
+    def _process_track_with_model(self, track: Dict, model_name: str, model, collection: str, client) -> None:
+        """Process a single track with a specific model."""
+        # Resolve audio file path
+        audio_path = self.music_root / track["path"]
+        if not audio_path.exists():
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+        # Normalize track name (artist - title format)
+        artist = (
+            str(track["artist"]).replace("•", "&").replace("/", "_").replace("\\", "_")
+        )
+        title = (
+            str(track["title"]).replace("•", "&").replace("/", "_").replace("\\", "_")
+        )
+        canonical_name = f"{artist} - {title}".strip()
+
+        # Generate embedding
+        result = model.embed_music(str(audio_path), canonical_name)
+
+        # Store in Milvus
+        for segment in result["segments"]:
+            client.insert(
+                collection_name=collection,
+                data=[
+                    {
+                        "name": segment["title"],
+                        "embedding": segment["embedding"],
+                        "offset": segment["offset_seconds"],
+                        "model_id": result["model_id"],
+                    }
+                ],
+            )
+
+        if self.logger.level <= logging.DEBUG:
+            self.logger.debug(
+                f"Embedded {canonical_name} with {model_name} "
+                f"({len(result['segments'])} segments)"
+            )
 
     def cancel(self) -> None:
         """Cancel the running job."""

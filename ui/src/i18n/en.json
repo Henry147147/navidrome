@@ -54,6 +54,9 @@
   "languageName": "English",
   "menu": {
     "about": "About",
+    "admin": {
+      "name": "Admin"
+    },
     "albumList": "Albums",
     "autoplay": {
       "name": "Auto Play"
