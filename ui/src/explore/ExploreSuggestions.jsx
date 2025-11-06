@@ -46,6 +46,7 @@ import config from '../config'
 import { BRAND_NAME } from '../consts'
 import { formatDuration } from '../utils'
 import ExploreSettingsPanel from './ExploreSettingsPanel'
+import TextPlaylistGenerator from './TextPlaylistGenerator'
 
 const useStyles = makeStyles((theme) => ({
   page: {
@@ -357,6 +358,12 @@ const ExploreSuggestions = () => {
   const [settingsSaving, setSettingsSaving] = useState(false)
   const [settingsMessage, setSettingsMessage] = useState(null)
 
+  // Multi-model recommendation options
+  const [selectedModels, setSelectedModels] = useState(['muq'])
+  const [mergeStrategy, setMergeStrategy] = useState('union')
+  const [minModelAgreement, setMinModelAgreement] = useState(1)
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false)
+
   const {
     data: playlistMap,
     loading: playlistsLoading,
@@ -570,6 +577,10 @@ const ExploreSuggestions = () => {
     const payload = {
       limit: settings.mixLength,
       diversity: settings.baseDiversity,
+      // Multi-model options
+      models: selectedModels.length > 0 ? selectedModels : ['muq'],
+      mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
+      minModelAgreement: selectedModels.length > 1 ? minModelAgreement : undefined,
       ...requestOptions,
     }
     setGenerators((prev) => ({
@@ -1297,6 +1308,9 @@ const [excludePlaylistIds, setExcludePlaylistIds] = useState([])
           label={translate('pages.explore.tabs.overview', { _: 'Overview' })}
         />
         <Tab
+          label={translate('pages.explore.tabs.textGenerator', { _: 'Text Generator' })}
+        />
+        <Tab
           label={translate('pages.explore.tabs.settings', { _: 'Settings' })}
         />
       </Tabs>
@@ -1317,6 +1331,140 @@ const [excludePlaylistIds, setExcludePlaylistIds] = useState([])
                 })}
               </Typography>
             </Box>
+          </Card>
+
+          <Card className={classes.recommendationCard} variant="outlined">
+            <Box className={classes.buttonRow}>
+              <Typography variant="h6">
+                {translate('pages.explore.advancedOptions', {
+                  _: 'Advanced Options',
+                })}
+              </Typography>
+              <Button
+                size="small"
+                onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+              >
+                {showAdvancedOptions
+                  ? translate('ra.action.hide', { _: 'Hide' })
+                  : translate('ra.action.show', { _: 'Show' })}
+              </Button>
+            </Box>
+
+            {showAdvancedOptions && (
+              <Box className={classes.section}>
+                <Typography variant="subtitle2" gutterBottom>
+                  {translate('pages.explore.embeddingModels', {
+                    _: 'Embedding Models',
+                  })}
+                </Typography>
+                <Box className={classes.selectChips}>
+                  <FormControl component="fieldset">
+                    <Box style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {['muq', 'mert', 'latent'].map((model) => (
+                        <FormControlLabel
+                          key={model}
+                          control={
+                            <Checkbox
+                              checked={selectedModels.includes(model)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedModels([...selectedModels, model])
+                                } else {
+                                  setSelectedModels(
+                                    selectedModels.filter((m) => m !== model)
+                                  )
+                                }
+                              }}
+                            />
+                          }
+                          label={model.toUpperCase()}
+                        />
+                      ))}
+                    </Box>
+                    <FormHelperText>
+                      {translate('pages.explore.embeddingModelsHelp', {
+                        _: 'Select one or more models. Multiple models provide better results.',
+                      })}
+                    </FormHelperText>
+                  </FormControl>
+                </Box>
+
+                {selectedModels.length > 1 && (
+                  <>
+                    <FormControl variant="outlined" style={{ minWidth: 200 }}>
+                      <InputLabel>
+                        {translate('pages.explore.mergeStrategy', {
+                          _: 'Merge Strategy',
+                        })}
+                      </InputLabel>
+                      <Select
+                        value={mergeStrategy}
+                        onChange={(e) => setMergeStrategy(e.target.value)}
+                        label={translate('pages.explore.mergeStrategy', {
+                          _: 'Merge Strategy',
+                        })}
+                      >
+                        <MenuItem value="union">
+                          {translate('pages.explore.mergeUnion', {
+                            _: 'Union (Combine All)',
+                          })}
+                        </MenuItem>
+                        <MenuItem value="intersection">
+                          {translate('pages.explore.mergeIntersection', {
+                            _: 'Intersection (Common Only)',
+                          })}
+                        </MenuItem>
+                        <MenuItem value="priority">
+                          {translate('pages.explore.mergePriority', {
+                            _: 'Priority (Fallback)',
+                          })}
+                        </MenuItem>
+                      </Select>
+                      <FormHelperText>
+                        {mergeStrategy === 'union' &&
+                          translate('pages.explore.mergeUnionHelp', {
+                            _: 'Combines results from all models',
+                          })}
+                        {mergeStrategy === 'intersection' &&
+                          translate('pages.explore.mergeIntersectionHelp', {
+                            _: 'Only tracks found by all models',
+                          })}
+                        {mergeStrategy === 'priority' &&
+                          translate('pages.explore.mergePriorityHelp', {
+                            _: 'Uses intersection, falls back to primary model',
+                          })}
+                      </FormHelperText>
+                    </FormControl>
+
+                    <Box style={{ paddingLeft: 16, paddingRight: 16 }}>
+                      <Typography variant="caption" gutterBottom>
+                        {translate('pages.explore.minModelAgreement', {
+                          _: 'Minimum Model Agreement',
+                        })}
+                        : {minModelAgreement}
+                      </Typography>
+                      <Box style={{ width: 200 }}>
+                        <input
+                          type="range"
+                          min="1"
+                          max={selectedModels.length}
+                          value={minModelAgreement}
+                          onChange={(e) =>
+                            setMinModelAgreement(parseInt(e.target.value))
+                          }
+                          style={{ width: '100%' }}
+                        />
+                      </Box>
+                      <FormHelperText>
+                        {translate('pages.explore.minModelAgreementHelp', {
+                          _: 'Require tracks to appear in at least N models',
+                        })}
+                      </FormHelperText>
+                    </Box>
+                  </>
+                )}
+              </Box>
+            )}
           </Card>
 
           <Box className={classes.section}>
@@ -1572,6 +1720,12 @@ const [excludePlaylistIds, setExcludePlaylistIds] = useState([])
       )}
 
       {activeTab === 1 && (
+        <Box className={classes.tabPanel}>
+          <TextPlaylistGenerator />
+        </Box>
+      )}
+
+      {activeTab === 2 && (
         <Box className={classes.tabPanel}>
           <ExploreSettingsPanel
             translate={translate}
