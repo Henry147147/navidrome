@@ -4,6 +4,7 @@ import Personal from './personal/Personal'
 import ExploreSuggestions from './explore/ExploreSuggestions'
 import UploadPage from './upload/UploadPage'
 import AutoPlayPage from './autoplay/AutoPlayPage'
+import AdminSettings from './admin/AdminSettings'
 
 const routes = [
   <Route
@@ -20,6 +21,7 @@ const routes = [
     key={'explore'}
   />,
   <Route exact path="/personal" render={() => <Personal />} key={'personal'} />,
+  <Route exact path="/admin" render={() => <AdminSettings />} key={'admin'} />,
 ]
 
 export default routes
