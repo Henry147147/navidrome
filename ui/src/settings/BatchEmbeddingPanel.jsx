@@ -283,14 +283,32 @@ const BatchEmbeddingPanel = () => {
                 {translate('pages.settings.batchEmbedding.progress', {
                   _: 'Progress',
                 })}
-                : {progress.processed_tracks || 0} / {progress.total_tracks || 0}
+                : {progress.processed_operations || 0} / {progress.total_operations || 0}
                 {' '}({Math.round(progress.progress_percent || 0)}%)
               </Typography>
 
+              {progress.total_tracks && progress.processed_tracks > 0 && (
+                <Typography variant="caption" color="textSecondary">
+                  {translate('pages.settings.batchEmbedding.tracksProcessed', {
+                    _: 'Tracks processed',
+                  })}
+                  : {progress.processed_tracks} / {progress.total_tracks}
+                </Typography>
+              )}
+
+              {progress.current_model && (
+                <Typography variant="caption" color="textSecondary">
+                  {translate('pages.settings.batchEmbedding.currentModel', {
+                    _: 'Current model',
+                  })}
+                  : {progress.current_model}
+                </Typography>
+              )}
+
               {progress.current_track && (
                 <Typography variant="caption" color="textSecondary">
-                  {translate('pages.settings.batchEmbedding.current', {
-                    _: 'Current',
+                  {translate('pages.settings.batchEmbedding.currentTrack', {
+                    _: 'Current track',
                   })}
                   : {progress.current_track}
                 </Typography>

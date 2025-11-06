@@ -24,9 +24,12 @@ class BatchJobProgress:
     """Tracks progress of batch embedding job"""
 
     total_tracks: int
+    total_operations: int  # tracks × models
     processed_tracks: int
+    processed_operations: int
     failed_tracks: int
     current_track: Optional[str]
+    current_model: Optional[str]
     status: str  # running, completed, failed, cancelled
     started_at: float
     estimated_completion: Optional[float]
@@ -70,9 +73,12 @@ class BatchEmbeddingJob:
 
         self.progress = BatchJobProgress(
             total_tracks=0,
+            total_operations=0,
             processed_tracks=0,
+            processed_operations=0,
             failed_tracks=0,
             current_track=None,
+            current_model=None,
             status="initialized",
             started_at=0,
             estimated_completion=None,
@@ -195,17 +201,34 @@ class BatchEmbeddingJob:
         if models_to_use is None:
             models_to_use = ["muq", "mert", "latent"]
 
+        # Validate model names
+        valid_models = {"muq", "mert", "latent"}
+        invalid_models = [m for m in models_to_use if m not in valid_models]
+        if invalid_models:
+            error_msg = f"Invalid model names: {invalid_models}. Valid options: {valid_models}"
+            self.logger.error(error_msg)
+            self.progress.status = "failed"
+            raise ValueError(error_msg)
+
         self.logger.info(f"Starting batch embedding job with models: {models_to_use}")
 
         # Initialize models
         self._initialize_models(models_to_use)
 
-        # Get all tracks
-        tracks = self.get_all_tracks()
+        # Get all tracks with proper error handling
+        try:
+            tracks = self.get_all_tracks()
+        except Exception as e:
+            self.logger.error(f"Failed to query tracks from database: {e}")
+            self.progress.status = "failed"
+            raise
 
         # Calculate total operations (tracks × models)
         total_operations = len(tracks) * len(models_to_use)
-        self.progress.total_tracks = total_operations
+        self.progress.total_tracks = len(tracks)
+        self.progress.total_operations = total_operations
+        self.progress.processed_tracks = 0
+        self.progress.processed_operations = 0
         self.progress.status = "running"
         self.progress.started_at = time.time()
 
@@ -216,76 +239,121 @@ class BatchEmbeddingJob:
         # Process tracks sequentially by model
         failed_tracks = []
         operations_completed = 0
+        batch_data = []  # For batched Milvus insertions
+        BATCH_SIZE = 100  # Insert every 100 embeddings
 
         from pymilvus import MilvusClient
-        client = MilvusClient(uri=self.milvus_uri)
+        client = None
+        try:
+            client = MilvusClient(uri=self.milvus_uri)
 
-        # SEQUENTIAL MODEL PROCESSING - one model at a time to avoid GPU overflow
-        for model_idx, model_name in enumerate(models_to_use):
-            if self._cancelled:
-                self.progress.status = "cancelled"
-                self.logger.info("Job cancelled by user")
-                break
+            # SEQUENTIAL MODEL PROCESSING - one model at a time to avoid GPU overflow
+            for model_idx, model_name in enumerate(models_to_use):
+                if self._cancelled:
+                    self.progress.status = "cancelled"
+                    self.logger.info("Job cancelled by user")
+                    break
 
-            self.logger.info(f"Processing all tracks with model: {model_name} ({model_idx + 1}/{len(models_to_use)})")
-            model = self.models[model_name]
-            collection = self.collection_map[model_name]
+                self.logger.info(f"Processing all tracks with model: {model_name} ({model_idx + 1}/{len(models_to_use)})")
+                self.progress.current_model = model_name
+                model = self.models[model_name]
+                collection = self.collection_map[model_name]
+                tracks_processed_this_model = 0
 
-            # Ensure model is loaded
-            model.ensure_model_loaded()
+                # Ensure model is loaded
+                model.ensure_model_loaded()
 
-            try:
-                # Process all tracks with this model
-                for track_idx, track in enumerate(tqdm(tracks, desc=f"Embedding with {model_name}")):
-                    if self._cancelled:
-                        self.progress.status = "cancelled"
-                        self.logger.info("Job cancelled by user")
-                        break
-
-                    self.progress.current_track = f"[{model_name}] {track['artist']} - {track['title']}"
-
-                    try:
-                        self._process_track_with_model(track, model_name, model, collection, client)
-                        operations_completed += 1
-                        self.progress.processed_tracks = operations_completed
-                    except Exception as e:
-                        self.logger.error(f"Failed to process track {track['id']} with {model_name}: {e}")
-                        failed_tracks.append((track["id"], model_name, str(e)))
-                        self.progress.failed_tracks += 1
-
-                    # Update estimated completion every 10 operations
-                    if operations_completed > 0 and operations_completed % 10 == 0:
-                        elapsed = time.time() - self.progress.started_at
-                        rate = elapsed / operations_completed
-                        remaining = total_operations - operations_completed
-                        self.progress.estimated_completion = time.time() + (rate * remaining)
-
-                # CRITICAL: Explicitly unload model after processing all tracks
-                self.logger.info(f"Unloading {model_name} model to free GPU memory")
-                model.unload_model()
-
-            except Exception as e:
-                self.logger.error(f"Failed during {model_name} processing: {e}")
-                # Ensure model is unloaded even on error
                 try:
+                    # Process all tracks with this model
+                    for track_idx, track in enumerate(tqdm(tracks, desc=f"Embedding with {model_name}")):
+                        if self._cancelled:
+                            self.progress.status = "cancelled"
+                            self.logger.info("Job cancelled by user")
+                            break
+
+                        self.progress.current_track = f"{track['artist']} - {track['title']}"
+
+                        try:
+                            # Process track and add to batch
+                            embedding_data = self._process_track_with_model_batched(
+                                track, model_name, model, collection
+                            )
+                            batch_data.extend(embedding_data)
+
+                            # Insert batch if it's large enough
+                            if len(batch_data) >= BATCH_SIZE:
+                                client.insert(collection_name=collection, data=batch_data)
+                                batch_data = []
+
+                            operations_completed += 1
+                            tracks_processed_this_model += 1
+                            self.progress.processed_operations = operations_completed
+                        except Exception as e:
+                            self.logger.error(f"Failed to process track {track['id']} with {model_name}: {e}")
+                            failed_tracks.append((track["id"], model_name, str(e)))
+                            self.progress.failed_tracks += 1
+
+                        # Update estimated completion every 10 operations
+                        if operations_completed > 0 and operations_completed % 10 == 0:
+                            elapsed = time.time() - self.progress.started_at
+                            rate = elapsed / operations_completed
+                            remaining = total_operations - operations_completed
+                            self.progress.estimated_completion = time.time() + (rate * remaining)
+
+                    # Insert remaining batch for this model
+                    if batch_data:
+                        client.insert(collection_name=collection, data=batch_data)
+                        batch_data = []
+
+                    # CRITICAL: Explicitly unload model after processing all tracks
+                    self.logger.info(f"Unloading {model_name} model to free GPU memory")
                     model.unload_model()
-                except Exception as unload_error:
-                    self.logger.error(f"Failed to unload {model_name}: {unload_error}")
-                raise
+
+                except Exception as e:
+                    self.logger.error(f"Failed during {model_name} processing: {e}")
+                    # Insert any remaining batch data before failing
+                    if batch_data:
+                        try:
+                            client.insert(collection_name=collection, data=batch_data)
+                            batch_data = []
+                        except Exception as insert_error:
+                            self.logger.error(f"Failed to insert final batch: {insert_error}")
+
+                    # Ensure model is unloaded even on error
+                    try:
+                        model.unload_model()
+                    except Exception as unload_error:
+                        self.logger.error(f"Failed to unload {model_name}: {unload_error}")
+
+                    # Don't re-raise - continue with next model
+                    self.progress.status = "failed"
+                    self.logger.error(f"Continuing to next model after failure in {model_name}")
+
+        finally:
+            # Always close Milvus client
+            if client is not None:
+                try:
+                    del client
+                except Exception as e:
+                    self.logger.error(f"Error closing Milvus client: {e}")
 
         # Finalize
         if self._cancelled:
             self.progress.status = "cancelled"
-        elif self.progress.failed_tracks > 0:
+        elif self.progress.status != "failed" and self.progress.failed_tracks > 0:
             self.progress.status = "completed_with_errors"
-        else:
+            # Set processed_tracks to total since we attempted all tracks
+            self.progress.processed_tracks = len(tracks)
+        elif self.progress.status != "failed":
             self.progress.status = "completed"
+            # Set processed_tracks to total since all tracks were processed
+            self.progress.processed_tracks = len(tracks)
 
         elapsed = time.time() - self.progress.started_at
         self.logger.info(
             f"Job completed in {elapsed:.1f}s: "
             f"{operations_completed}/{total_operations} operations "
-            f"({len(tracks)} tracks × {len(models_to_use)} models)"
+            f"({self.progress.processed_tracks}/{len(tracks)} tracks × {len(models_to_use)} models)"
         )
         self.logger.info(f"Failed operations: {self.progress.failed_tracks}")
 
@@ -350,7 +418,7 @@ class BatchEmbeddingJob:
                 raise
 
     def _process_track_with_model(self, track: Dict, model_name: str, model, collection: str, client) -> None:
-        """Process a single track with a specific model."""
+        """Process a single track with a specific model (DEPRECATED - use _process_track_with_model_batched for better performance)."""
         # Resolve audio file path
         audio_path = self.music_root / track["path"]
         if not audio_path.exists():
@@ -387,6 +455,43 @@ class BatchEmbeddingJob:
                 f"Embedded {canonical_name} with {model_name} "
                 f"({len(result['segments'])} segments)"
             )
+
+    def _process_track_with_model_batched(self, track: Dict, model_name: str, model, collection: str) -> List[Dict]:
+        """Process a single track with a specific model and return data for batched insertion."""
+        # Resolve audio file path
+        audio_path = self.music_root / track["path"]
+        if not audio_path.exists():
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+        # Normalize track name (artist - title format)
+        artist = (
+            str(track["artist"]).replace("•", "&").replace("/", "_").replace("\\", "_")
+        )
+        title = (
+            str(track["title"]).replace("•", "&").replace("/", "_").replace("\\", "_")
+        )
+        canonical_name = f"{artist} - {title}".strip()
+
+        # Generate embedding
+        result = model.embed_music(str(audio_path), canonical_name)
+
+        # Prepare data for batched insertion
+        batch_data = []
+        for segment in result["segments"]:
+            batch_data.append({
+                "name": segment["title"],
+                "embedding": segment["embedding"],
+                "offset": segment["offset_seconds"],
+                "model_id": result["model_id"],
+            })
+
+        if self.logger.level <= logging.DEBUG:
+            self.logger.debug(
+                f"Embedded {canonical_name} with {model_name} "
+                f"({len(result['segments'])} segments)"
+            )
+
+        return batch_data
 
     def cancel(self) -> None:
         """Cancel the running job."""

@@ -8,7 +8,6 @@ import AlbumIcon from '@material-ui/icons/Album'
 import ExploreIcon from '@material-ui/icons/Explore'
 import PlayArrowOutlinedIcon from '@material-ui/icons/PlayArrowOutlined'
 import CloudUploadIcon from '@material-ui/icons/CloudUpload'
-import SettingsIcon from '@material-ui/icons/Settings'
 import SubMenu from './SubMenu'
 import { humanize, pluralize } from 'inflection'
 import albumLists from '../album/albumLists'
@@ -142,20 +141,6 @@ const Menu = ({ dense = false }) => {
         sidebarIsOpen={open}
         dense={dense}
       />
-      {(() => {
-        const role = localStorage.getItem('role')
-        const isAdmin = role === 'admin'
-        return isAdmin ? (
-          <MenuItemLink
-            to="/admin"
-            activeClassName={classes.active}
-            primaryText={translate('menu.admin.name', { _: 'Admin' })}
-            leftIcon={<SettingsIcon />}
-            sidebarIsOpen={open}
-            dense={dense}
-          />
-        ) : null
-      })()}
       <SubMenu
         handleToggle={() => handleToggle('menuAlbumList')}
         isOpen={state.menuAlbumList}
