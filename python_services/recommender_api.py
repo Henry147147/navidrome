@@ -513,13 +513,16 @@ def create_app() -> FastAPI:
         progress = job.get_progress()
         return {
             "total_tracks": progress.total_tracks,
+            "total_operations": progress.total_operations,
             "processed_tracks": progress.processed_tracks,
+            "processed_operations": progress.processed_operations,
             "failed_tracks": progress.failed_tracks,
             "current_track": progress.current_track,
+            "current_model": progress.current_model,
             "status": progress.status,
             "progress_percent": (
-                progress.processed_tracks / progress.total_tracks * 100
-                if progress.total_tracks > 0
+                progress.processed_operations / progress.total_operations * 100
+                if progress.total_operations > 0
                 else 0
             ),
             "estimated_completion": progress.estimated_completion,
