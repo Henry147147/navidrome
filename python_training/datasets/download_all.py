@@ -43,17 +43,18 @@ class DatasetManager:
                 'description': 'MusicCaps: ~5.5k clips with detailed captions (~50GB)',
                 'phase': 1,  # Phase 1: Large-scale short clips
             },
-            'musicbench': {
-                'class': MusicBenchDownloader,
-                'output_dir': self.base_output_dir / 'musicbench',
-                'kwargs': {
-                    'max_samples': None,
-                    'audio_format': 'wav',
-                    'sample_rate': 44100,
-                },
-                'description': 'MusicBench: ~50k music samples with prompts (~50GB)',
-                'phase': 1,
-            },
+            # NOTE: MusicBench disabled - HuggingFace dataset doesn't include audio files
+            # 'musicbench': {
+            #     'class': MusicBenchDownloader,
+            #     'output_dir': self.base_output_dir / 'musicbench',
+            #     'kwargs': {
+            #         'max_samples': None,
+            #         'audio_format': 'wav',
+            #         'sample_rate': 44100,
+            #     },
+            #     'description': 'MusicBench: ~50k music samples with prompts (~50GB)',
+            #     'phase': 1,
+            # },
             'fma_large': {
                 'class': FMADownloader,
                 'output_dir': self.base_output_dir / 'fma_large',

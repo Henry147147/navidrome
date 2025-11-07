@@ -186,6 +186,7 @@ class MusicCapsDownloader(BaseDownloader):
                 '-ar', str(self.sample_rate),  # Sample rate
                 '-ac', '1',  # Mono
             ],
+            'nocheckcertificate': True,  # Disable SSL verification for sandboxed environments
         }
 
         for meta in tqdm(metadata_list, desc="Downloading audio"):
