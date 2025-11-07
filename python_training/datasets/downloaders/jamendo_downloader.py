@@ -135,7 +135,8 @@ class JamendoDownloader(BaseDownloader):
         """
         # Load track IDs from metadata
         track_ids = set()
-        metadata_files = list(self.metadata_dir.glob("autotagging_*-train.tsv"))
+        # Updated glob pattern to match the saved filenames
+        metadata_files = list(self.metadata_dir.glob("*autotagging_*-train.tsv"))
 
         for meta_file in metadata_files:
             with open(meta_file, 'r') as f:
@@ -226,6 +227,7 @@ class JamendoDownloader(BaseDownloader):
 
         # Load genre tags
         genre_files = list(self.metadata_dir.glob("*genre*.tsv"))
+        self.logger.debug(f"Found genre files: {genre_files}")
         for genre_file in genre_files:
             try:
                 with open(genre_file, 'r') as f:
@@ -240,6 +242,7 @@ class JamendoDownloader(BaseDownloader):
 
         # Load instrument tags
         instrument_files = list(self.metadata_dir.glob("*instrument*.tsv"))
+        self.logger.debug(f"Found instrument files: {instrument_files}")
         for instrument_file in instrument_files:
             try:
                 with open(instrument_file, 'r') as f:
@@ -254,6 +257,7 @@ class JamendoDownloader(BaseDownloader):
 
         # Load mood tags
         mood_files = list(self.metadata_dir.glob("*moodtheme*.tsv"))
+        self.logger.debug(f"Found mood files: {mood_files}")
         for mood_file in mood_files:
             try:
                 with open(mood_file, 'r') as f:
