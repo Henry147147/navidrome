@@ -25,14 +25,15 @@ class JamendoDownloader(BaseDownloader):
     - High quality metadata
     """
 
-    BASE_URL = "https://essentia.upf.edu/documentation/datasets/mtg-jamendo/"
-    AUDIO_URL = "http://mtg.upf.edu/download/datasets/mtg-jamendo/raw_30s.zip"
+    BASE_URL = "https://cdn.freesound.org/mtg-jamendo/"
+    AUDIO_URL_BASE = "https://cdn.freesound.org/mtg-jamendo/raw_30s/audio/"
     METADATA_URL_BASE = "https://github.com/MTG/mtg-jamendo-dataset/raw/master/data"
 
     def __init__(
         self,
         output_dir: Path,
         max_samples: Optional[int] = None,
+        num_tar_files: int = 10,  # Download first N tar files (each ~5-6GB, ~550 tracks)
         clip_duration: int = 30,
         sample_rate: int = 44100,
         logger: Optional[logging.Logger] = None,
@@ -42,17 +43,19 @@ class JamendoDownloader(BaseDownloader):
 
         Args:
             output_dir: Directory where dataset will be saved
-            max_samples: Maximum number of samples to download (None for all)
+            max_samples: Maximum number of samples to download (None for all from selected tars)
+            num_tar_files: Number of tar files to download (1-100, each ~5-6GB)
             clip_duration: Duration of clips in seconds (30s pre-segmented)
             sample_rate: Target sample rate
             logger: Logger instance
         """
         super().__init__(output_dir, logger)
         self.max_samples = max_samples
+        self.num_tar_files = min(num_tar_files, 100)  # Max 100 tar files available
         self.clip_duration = clip_duration
         self.sample_rate = sample_rate
-        self.zip_dir = self.output_dir / "zip_files"
-        self.zip_dir.mkdir(exist_ok=True)
+        self.tar_dir = self.output_dir / "tar_files"
+        self.tar_dir.mkdir(exist_ok=True)
 
     def download(self) -> DatasetMetadata:
         """Download MTG-Jamendo dataset."""
@@ -100,15 +103,18 @@ class JamendoDownloader(BaseDownloader):
         return metadata
 
     def _download_metadata(self) -> None:
-        """Download metadata CSV files from GitHub."""
+        """Download metadata TSV files from GitHub."""
+        # Note: tags.tsv doesn't exist - tags are in the autotagging files
         metadata_files = [
-            'tags.tsv',
             'splits/split-0/autotagging_genre-train.tsv',
             'splits/split-0/autotagging_genre-validation.tsv',
             'splits/split-0/autotagging_genre-test.tsv',
             'splits/split-0/autotagging_instrument-train.tsv',
             'splits/split-0/autotagging_instrument-validation.tsv',
+            'splits/split-0/autotagging_instrument-test.tsv',
             'splits/split-0/autotagging_moodtheme-train.tsv',
+            'splits/split-0/autotagging_moodtheme-validation.tsv',
+            'splits/split-0/autotagging_moodtheme-test.tsv',
         ]
 
         for file_path in metadata_files:
@@ -118,7 +124,7 @@ class JamendoDownloader(BaseDownloader):
 
             if not output_path.exists():
                 try:
-                    response = requests.get(url)
+                    response = requests.get(url, timeout=30)
                     response.raise_for_status()
                     with open(output_path, 'wb') as f:
                         f.write(response.content)
@@ -128,69 +134,86 @@ class JamendoDownloader(BaseDownloader):
 
     def _download_audio_selective(self) -> list:
         """
-        Download audio files selectively from Jamendo API.
+        Download audio files from tar archives.
 
-        Since the full dataset is very large (~200GB), we download tracks
-        directly from Jamendo based on the track IDs in the metadata.
+        The MTG-Jamendo dataset provides audio in 100 tar archives (~5-6GB each).
+        We download the first num_tar_files archives to limit disk usage.
         """
-        # Load track IDs from metadata
-        track_ids = set()
-        # Updated glob pattern to match the saved filenames
-        metadata_files = list(self.metadata_dir.glob("*autotagging_*-train.tsv"))
-
-        for meta_file in metadata_files:
-            with open(meta_file, 'r') as f:
-                reader = csv.DictReader(f, delimiter='\t')
-                for row in reader:
-                    if 'TRACK_ID' in row:
-                        track_ids.add(row['TRACK_ID'])
-                    elif 'track_id' in row:
-                        track_ids.add(row['track_id'])
-
-        # Limit if max_samples is set
-        if self.max_samples:
-            track_ids = list(track_ids)[:self.max_samples]
-
-        self.logger.info(f"Found {len(track_ids)} tracks to download")
-
-        # Download from Jamendo
-        # Note: This requires Jamendo API access or using the direct download link
-        # For simplicity, we'll create placeholder logic
         downloaded_tracks = []
 
-        for track_id in tqdm(list(track_ids), desc="Downloading tracks"):
-            output_file = self.audio_dir / f"{track_id}.mp3"
+        # Download and extract tar files
+        for tar_num in range(self.num_tar_files):
+            tar_filename = f"raw_30s_audio-{tar_num:02d}.tar"
+            tar_url = f"{self.AUDIO_URL_BASE}{tar_filename}"
+            tar_path = self.tar_dir / tar_filename
 
-            if output_file.exists():
-                downloaded_tracks.append({'track_id': track_id})
-                continue
+            # Download tar file if not already exists
+            if not tar_path.exists():
+                self.logger.info(f"Downloading {tar_filename} ({tar_num + 1}/{self.num_tar_files})...")
+                try:
+                    self._download_file_with_progress(tar_url, tar_path)
+                except Exception as e:
+                    self.logger.error(f"Failed to download {tar_filename}: {e}")
+                    continue
 
+            # Extract tar file
+            self.logger.info(f"Extracting {tar_filename}...")
             try:
-                # Jamendo audio URL format: https://mp3d.jamendo.com/?trackid={id}&format=mp32
-                # Note: This is an example - actual API access may differ
-                url = f"https://mp3d.jamendo.com/?trackid={track_id}&format=mp32"
-
-                response = requests.get(url, stream=True)
-                if response.status_code == 200:
-                    with open(output_file, 'wb') as f:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            if chunk:
-                                f.write(chunk)
-
-                    # Convert to target sample rate if needed
-                    if self.sample_rate != 44100:
-                        self._resample_audio(output_file)
-
-                    downloaded_tracks.append({'track_id': track_id})
-                else:
-                    self.logger.warning(f"Failed to download track {track_id}: HTTP {response.status_code}")
-
+                self._extract_tar(tar_path)
             except Exception as e:
-                self.logger.warning(f"Error downloading track {track_id}: {e}")
+                self.logger.error(f"Failed to extract {tar_filename}: {e}")
                 continue
 
-        self.logger.info(f"Successfully downloaded {len(downloaded_tracks)}/{len(track_ids)} tracks")
+        # Count downloaded tracks
+        audio_files = list(self.audio_dir.rglob('*.mp3'))
+        for audio_file in audio_files:
+            track_id = audio_file.stem
+            downloaded_tracks.append({'track_id': track_id})
+
+        self.logger.info(f"Successfully extracted {len(downloaded_tracks)} tracks")
         return downloaded_tracks
+
+    def _download_file_with_progress(self, url: str, output_path: Path) -> None:
+        """Download a file with progress bar."""
+        try:
+            response = requests.get(url, stream=True, timeout=60)
+            response.raise_for_status()
+
+            total_size = int(response.headers.get('content-length', 0))
+
+            # Use a temporary file to avoid corruption
+            temp_path = output_path.with_suffix('.tmp')
+
+            with open(temp_path, 'wb') as f:
+                with tqdm(total=total_size, unit='B', unit_scale=True, desc=output_path.name) as pbar:
+                    for chunk in response.iter_content(chunk_size=1024*1024):  # 1MB chunks
+                        if chunk:
+                            f.write(chunk)
+                            pbar.update(len(chunk))
+
+            # Verify downloaded size matches expected size
+            downloaded_size = temp_path.stat().st_size
+            if total_size > 0 and downloaded_size < total_size * 0.99:  # Allow 1% tolerance
+                raise ValueError(f"Incomplete download: {downloaded_size}/{total_size} bytes")
+
+            # Move temp file to final location
+            temp_path.replace(output_path)
+
+        except Exception as e:
+            # Clean up partial download
+            if temp_path.exists():
+                temp_path.unlink()
+            raise Exception(f"Failed to download {url}: {e}") from e
+
+    def _extract_tar(self, tar_path: Path) -> None:
+        """Extract a tar file to the audio directory."""
+        import tarfile
+
+        with tarfile.open(tar_path, 'r') as tar:
+            # Extract all files to audio directory
+            tar.extractall(path=self.audio_dir)
+
+        self.logger.info(f"Extracted {tar_path.name}")
 
     def _resample_audio(self, audio_file: Path) -> None:
         """Resample audio file to target sample rate."""

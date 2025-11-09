@@ -195,10 +195,18 @@ class AudioEmbeddingGenerator:
 
     def _generate_embedding(self, audio_file: Path) -> np.ndarray:
         """Generate embedding for a single audio file."""
-        import torchaudio
+        import soundfile as sf
 
-        # Load audio
-        waveform, sample_rate = torchaudio.load(str(audio_file))
+        # Load audio using soundfile (more reliable than torchaudio)
+        audio_data, sample_rate = sf.read(str(audio_file), dtype='float32')
+
+        # Convert to torch tensor
+        # If stereo, convert to mono by averaging channels
+        if audio_data.ndim > 1:
+            audio_data = audio_data.mean(axis=1)
+
+        # Convert to torch tensor and add batch dimension
+        waveform = torch.from_numpy(audio_data).unsqueeze(0)
 
         # Generate embedding using the model's embed_audio_tensor method
         with torch.no_grad():
