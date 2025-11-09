@@ -69,7 +69,7 @@ class DatasetManager:
                 'class': FMADownloader,
                 'output_dir': self.base_output_dir / 'fma_full',
                 'kwargs': {
-                    'dataset_size': 'full',
+                    'dataset_size': 'large',
                     'extract_clips': True,
                     'clips_per_track': 3,
                 },
@@ -81,8 +81,9 @@ class DatasetManager:
                 'output_dir': self.base_output_dir / 'jamendo',
                 'kwargs': {
                     'max_samples': None,
+                    'num_tar_files': 10,  # Download 10 tar files (~50-60GB, ~5.5k tracks)
                 },
-                'description': 'MTG-Jamendo: 55k tracks with tags (~200GB)',
+                'description': 'MTG-Jamendo: ~5.5k tracks with tags (~60GB)',
                 'phase': 1,
             },
         }

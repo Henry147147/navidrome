@@ -141,17 +141,35 @@ class FMADownloader(BaseDownloader):
 
     def _download_file(self, url: str, output_path: Path) -> None:
         """Download a file with progress bar."""
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
+        try:
+            response = requests.get(url, stream=True, timeout=30)
+            response.raise_for_status()
 
-        total_size = int(response.headers.get('content-length', 0))
+            total_size = int(response.headers.get('content-length', 0))
 
-        with open(output_path, 'wb') as f:
-            with tqdm(total=total_size, unit='B', unit_scale=True, desc=output_path.name) as pbar:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        pbar.update(len(chunk))
+            # Use a temporary file to avoid corruption
+            temp_path = output_path.with_suffix('.tmp')
+
+            with open(temp_path, 'wb') as f:
+                with tqdm(total=total_size, unit='B', unit_scale=True, desc=output_path.name) as pbar:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            pbar.update(len(chunk))
+
+            # Verify downloaded size matches expected size
+            downloaded_size = temp_path.stat().st_size
+            if total_size > 0 and downloaded_size < total_size:
+                raise ValueError(f"Incomplete download: {downloaded_size}/{total_size} bytes")
+
+            # Move temp file to final location
+            temp_path.replace(output_path)
+
+        except Exception as e:
+            # Clean up partial download
+            if temp_path.exists():
+                temp_path.unlink()
+            raise Exception(f"Failed to download {url}: {e}") from e
 
     def _extract_zip(self, zip_path: Path, extract_to: Path) -> None:
         """Extract a zip file."""
