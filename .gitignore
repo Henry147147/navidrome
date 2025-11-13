@@ -38,3 +38,6 @@ python_services/data
 python_services/data_aug2
 python_services/logs
 python_services/checkpoints
+pyhton_services/__pycache__/
+**/__pycache__/
+*.py[cod]
