@@ -32,6 +32,8 @@ class AudioEmbeddingGenerator:
         device: str = "cuda",
         batch_size: int = 8,
         logger: Optional[logging.Logger] = None,
+        pause_handler=None,
+        state_manager=None,
     ):
         """
         Initialize audio embedding generator.
@@ -41,11 +43,15 @@ class AudioEmbeddingGenerator:
             device: Device to use for inference
             batch_size: Batch size for processing
             logger: Logger instance
+            pause_handler: Handler for pause requests
+            state_manager: Manager for saving/loading state
         """
         self.model_name = model_name.lower()
         self.device = device
         self.batch_size = batch_size
         self.logger = logger or logging.getLogger("AudioEmbeddingGenerator")
+        self.pause_handler = pause_handler
+        self.state_manager = state_manager
 
         # Load the appropriate audio embedding model
         self.model = self._load_model()
@@ -88,6 +94,7 @@ class AudioEmbeddingGenerator:
         self,
         dataset_dir: Path,
         output_file: Path,
+        dataset_name: str,
         max_samples: Optional[int] = None,
     ) -> Dict[str, any]:
         """
@@ -96,6 +103,7 @@ class AudioEmbeddingGenerator:
         Args:
             dataset_dir: Directory containing the dataset
             output_file: HDF5 file to save embeddings
+            dataset_name: Name of the dataset (for state tracking)
             max_samples: Maximum number of samples to process
 
         Returns:
@@ -123,6 +131,16 @@ class AudioEmbeddingGenerator:
 
         self.logger.info(f"Found {len(audio_files)} audio files")
 
+        # Check if we should resume from a previous run
+        start_index = 0
+        file_mode = 'w'
+        if self.state_manager:
+            should_resume, resume_index = self.state_manager.should_resume(dataset_name, self.model_name)
+            if should_resume and output_file.exists():
+                start_index = resume_index
+                file_mode = 'r+'  # Read/write mode for existing file
+                self.logger.info(f"Resuming from track {start_index}")
+
         # Load metadata if available
         metadata = self._load_metadata(metadata_dir)
 
@@ -132,64 +150,74 @@ class AudioEmbeddingGenerator:
             'successful': 0,
             'failed': 0,
             'failed_files': [],
+            'paused': False,
         }
 
         # Create HDF5 file for storing embeddings
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with h5py.File(output_file, 'w') as hf:
-            # Create datasets
-            embeddings_ds = hf.create_dataset(
-                'embeddings',
-                shape=(len(audio_files), self.embedding_dim),
-                dtype='float32',
-                chunks=True,
-                compression='gzip',
-            )
+        with h5py.File(output_file, file_mode) as hf:
+            # Create or access datasets
+            if file_mode == 'w':
+                embeddings_ds = hf.create_dataset(
+                    'embeddings',
+                    shape=(len(audio_files), self.embedding_dim),
+                    dtype='float32',
+                    chunks=True,
+                    compression='gzip',
+                )
 
-            # Create metadata datasets
-            file_paths_ds = hf.create_dataset(
-                'file_paths',
-                shape=(len(audio_files),),
-                dtype=h5py.string_dtype(encoding='utf-8'),
-            )
+                file_paths_ds = hf.create_dataset(
+                    'file_paths',
+                    shape=(len(audio_files),),
+                    dtype=h5py.string_dtype(encoding='utf-8'),
+                )
+            else:
+                # Access existing datasets (when resuming)
+                embeddings_ds = hf['embeddings']
+                file_paths_ds = hf['file_paths']
 
-            # Process files in batches
-            for i in tqdm(range(0, len(audio_files), self.batch_size), desc="Processing batches"):
-                batch_files = audio_files[i:i+self.batch_size]
-                batch_embeddings = []
-                batch_paths = []
+            # Process files one at a time to allow pause after each track
+            for i in tqdm(range(start_index, len(audio_files)), desc="Processing tracks", initial=start_index, total=len(audio_files)):
+                audio_file = audio_files[i]
 
-                for audio_file in batch_files:
-                    try:
-                        # Generate embedding
-                        embedding = self._generate_embedding(audio_file)
-                        batch_embeddings.append(embedding)
-                        batch_paths.append(str(audio_file.relative_to(dataset_dir)))
-                        stats['successful'] += 1
+                try:
+                    # Generate embedding
+                    embedding = self._generate_embedding(audio_file)
+                    embeddings_ds[i] = embedding
+                    file_paths_ds[i] = str(audio_file.relative_to(dataset_dir))
+                    stats['successful'] += 1
 
-                    except Exception as e:
-                        self.logger.warning(f"Failed to process {audio_file}: {e}")
-                        stats['failed'] += 1
-                        stats['failed_files'].append(str(audio_file))
-                        # Add zero embedding as placeholder
-                        batch_embeddings.append(np.zeros(self.embedding_dim, dtype=np.float32))
-                        batch_paths.append(str(audio_file.relative_to(dataset_dir)))
+                except Exception as e:
+                    self.logger.warning(f"Failed to process {audio_file}: {e}")
+                    stats['failed'] += 1
+                    stats['failed_files'].append(str(audio_file))
+                    # Add zero embedding as placeholder
+                    embeddings_ds[i] = np.zeros(self.embedding_dim, dtype=np.float32)
+                    file_paths_ds[i] = str(audio_file.relative_to(dataset_dir))
 
-                # Save batch
-                start_idx = i
-                end_idx = min(i + len(batch_embeddings), len(audio_files))
-                embeddings_ds[start_idx:end_idx] = np.array(batch_embeddings)
-                file_paths_ds[start_idx:end_idx] = batch_paths
+                # Update progress in state manager
+                if self.state_manager:
+                    self.state_manager.update_progress(i)
 
-            # Save metadata
-            hf.attrs['model_name'] = self.model_name
-            hf.attrs['embedding_dim'] = self.embedding_dim
-            hf.attrs['num_samples'] = len(audio_files)
-            hf.attrs['dataset_dir'] = str(dataset_dir)
+                # Check for pause after each track
+                if self.pause_handler and self.pause_handler.is_paused():
+                    self.logger.warning(f"Paused after processing track {i+1}/{len(audio_files)}")
+                    stats['paused'] = True
+                    break
 
-        self.logger.info(f"Embeddings saved to {output_file}")
-        self.logger.info(f"Success rate: {stats['successful']}/{stats['total_files']}")
+            # Save metadata only if this is a new file or we completed all tracks
+            if file_mode == 'w' or (not stats['paused']):
+                hf.attrs['model_name'] = self.model_name
+                hf.attrs['embedding_dim'] = self.embedding_dim
+                hf.attrs['num_samples'] = len(audio_files)
+                hf.attrs['dataset_dir'] = str(dataset_dir)
+
+        if not stats['paused']:
+            self.logger.info(f"Embeddings saved to {output_file}")
+            self.logger.info(f"Success rate: {stats['successful']}/{stats['total_files']}")
+        else:
+            self.logger.warning(f"Paused - Progress saved. Processed {stats['successful']}/{stats['total_files']} tracks")
 
         return stats
 

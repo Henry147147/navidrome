@@ -20,6 +20,8 @@ MAX_SAMPLES=""
 FORCE=""
 DATASET=""
 MODEL=""
+RESUME=""
+CLEAR_STATE=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -50,6 +52,16 @@ while [[ $# -gt 0 ]]; do
             BATCH_SIZE=$2
             shift 2
             ;;
+        --resume)
+            RESUME="--resume"
+            echo -e "${YELLOW}Resuming from previous session${NC}"
+            shift
+            ;;
+        --clear-state)
+            CLEAR_STATE="--clear-state"
+            echo -e "${YELLOW}Clearing saved state${NC}"
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [options]"
             echo ""
@@ -60,7 +72,14 @@ while [[ $# -gt 0 ]]; do
             echo "  --dataset NAME   Process specific dataset only"
             echo "  --model NAME     Use specific model only"
             echo "  --batch-size N   Set batch size (default: 8)"
+            echo "  --resume         Resume from previous paused session"
+            echo "  --clear-state    Clear saved state and start fresh"
             echo "  --help, -h       Show this help message"
+            echo ""
+            echo "Pause/Resume:"
+            echo "  During processing, press 'p' + Enter to pause"
+            echo "  Or press Ctrl+C to pause gracefully"
+            echo "  Use --resume to continue from where you left off"
             echo ""
             echo "Examples:"
             echo "  $0                              # Process all datasets with all models"
@@ -69,6 +88,8 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 --model muq                  # Use only muq model"
             echo "  $0 --force                      # Re-process everything"
             echo "  $0 --cpu --batch-size 4         # Use CPU with smaller batches"
+            echo "  $0 --resume                     # Resume from paused session"
+            echo "  $0 --clear-state                # Clear state and start fresh"
             exit 0
             ;;
         *)
@@ -122,7 +143,9 @@ python preprocess_all.py \
     $DATASET \
     $MODEL \
     $MAX_SAMPLES \
-    $FORCE
+    $FORCE \
+    $RESUME \
+    $CLEAR_STATE
 
 PREPROCESS_EXIT_CODE=$?
 
