@@ -25,7 +25,7 @@ func (api *Router) MakePlaylistFromFavoriteAndStaredSongs(r *http.Request) (*res
 	ctx := r.Context()
 	user := getUser(ctx)
 	payload, err := json.Marshal(user)
-	if err == nil {
+	if err != nil {
 		log.Error(ctx, "Failed to marshal user for POST", "error", err)
 		return newResponse(), err
 	}
