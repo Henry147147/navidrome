@@ -294,11 +294,14 @@ class MultiModelSimilaritySearcher:
     # Map model names to their Milvus collections
     COLLECTION_MAP = {
         "muq": "embedding",
-        "mert": "mert_embedding",
-        "latent": "latent_embedding",
+        "qwen3": "description_embedding",
     }
 
-    def __init__(self, milvus_uri: Union[str, MilvusClient], logger: Optional[logging.Logger] = None):
+    def __init__(
+        self,
+        milvus_uri: Union[str, MilvusClient],
+        logger: Optional[logging.Logger] = None,
+    ):
         """
         Initialize multi-model searcher.
 
@@ -527,7 +530,7 @@ class MultiModelSimilaritySearcher:
 
         # Fall back to highest priority model
         if not priorities:
-            priorities = {"muq": 1, "mert": 2, "latent": 3}
+            priorities = {"muq": 1, "qwen3": 2}
 
         sorted_models = sorted(
             [
@@ -572,7 +575,7 @@ class MultiModelSimilaritySearcher:
 
         Args:
             names: Track names to fetch
-            model: Model to fetch from (muq, mert, or latent)
+            model: Model to fetch from (muq or qwen3)
 
         Returns:
             Dict mapping track name to embedding vector

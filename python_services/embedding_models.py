@@ -27,6 +27,7 @@ except ImportError:
     # If 'models' is shadowed by another package, try importing from local file
     from pathlib import Path
     import importlib.util
+
     _models_path = Path(__file__).parent / "models.py"
     _spec = importlib.util.spec_from_file_location("_ps_models", _models_path)
     _ps_models = importlib.util.module_from_spec(_spec)
@@ -360,7 +361,9 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         all_chunks = []
         chunk_to_track = []  # Maps chunk index to track index
 
-        for track_idx, (waveform, sample_rate) in enumerate(zip(waveforms, sample_rates)):
+        for track_idx, (waveform, sample_rate) in enumerate(
+            zip(waveforms, sample_rates)
+        ):
             # Ensure mono audio
             if waveform.dim() > 1 and waveform.shape[0] > 1:
                 waveform = waveform.mean(dim=0)
@@ -419,7 +422,9 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         for track_chunks in track_embeddings:
             if not track_chunks:
                 # Empty track - shouldn't happen but handle gracefully
-                results.append(torch.zeros(1536 if apply_enrichment else 512, device=self.device))
+                results.append(
+                    torch.zeros(1536 if apply_enrichment else 512, device=self.device)
+                )
                 continue
 
             # Stack chunks for this track: [num_chunks, D]
@@ -911,7 +916,9 @@ class MertModel(BaseEmbeddingModel):
 
             # Extract all 25 hidden state layers
             # outputs.hidden_states is tuple of 25 tensors, each [batch_size, time_steps, 1024]
-            all_layer_hidden_states = torch.stack(outputs.hidden_states)  # [25, batch_size, time_steps, 1024]
+            all_layer_hidden_states = torch.stack(
+                outputs.hidden_states
+            )  # [25, batch_size, time_steps, 1024]
 
             # Rearrange to [batch_size, 25, time_steps, 1024]
             all_layer_hidden_states = all_layer_hidden_states.permute(1, 0, 2, 3)
@@ -920,7 +927,9 @@ class MertModel(BaseEmbeddingModel):
             time_reduced = all_layer_hidden_states.mean(dim=2)  # [batch_size, 25, 1024]
 
             # Concatenate layers for each sample
-            chunk_embeddings = time_reduced.reshape(time_reduced.shape[0], -1)  # [batch_size, 25600]
+            chunk_embeddings = time_reduced.reshape(
+                time_reduced.shape[0], -1
+            )  # [batch_size, 25600]
 
             # Stack all chunk embeddings
             chunk_matrix = chunk_embeddings  # [num_chunks, 25600]
@@ -954,7 +963,9 @@ class MertModel(BaseEmbeddingModel):
         all_chunk_arrays = []
         chunk_to_track = []  # Maps chunk index to track index
 
-        for track_idx, (waveform, sample_rate) in enumerate(zip(waveforms, sample_rates)):
+        for track_idx, (waveform, sample_rate) in enumerate(
+            zip(waveforms, sample_rates)
+        ):
             # Ensure mono audio
             if waveform.dim() > 1 and waveform.shape[0] > 1:
                 waveform = waveform.mean(dim=0)
@@ -1015,14 +1026,22 @@ class MertModel(BaseEmbeddingModel):
                 outputs = model(**inputs, output_hidden_states=True)
 
             # Extract all 25 hidden state layers
-            all_layer_hidden_states = torch.stack(outputs.hidden_states)  # [25, total_chunks, time_steps, 1024]
-            all_layer_hidden_states = all_layer_hidden_states.permute(1, 0, 2, 3)  # [total_chunks, 25, time_steps, 1024]
+            all_layer_hidden_states = torch.stack(
+                outputs.hidden_states
+            )  # [25, total_chunks, time_steps, 1024]
+            all_layer_hidden_states = all_layer_hidden_states.permute(
+                1, 0, 2, 3
+            )  # [total_chunks, 25, time_steps, 1024]
 
             # Time-reduce
-            time_reduced = all_layer_hidden_states.mean(dim=2)  # [total_chunks, 25, 1024]
+            time_reduced = all_layer_hidden_states.mean(
+                dim=2
+            )  # [total_chunks, 25, 1024]
 
             # Concatenate layers for each chunk
-            chunk_embeddings = time_reduced.reshape(time_reduced.shape[0], -1)  # [total_chunks, 25600]
+            chunk_embeddings = time_reduced.reshape(
+                time_reduced.shape[0], -1
+            )  # [total_chunks, 25600]
 
         # Group by track
         num_tracks = len(waveforms)
@@ -1034,7 +1053,11 @@ class MertModel(BaseEmbeddingModel):
         results = []
         for track_chunks in track_embeddings:
             if not track_chunks:
-                results.append(torch.zeros(76800 if apply_enrichment else 25600, device=self.device))
+                results.append(
+                    torch.zeros(
+                        76800 if apply_enrichment else 25600, device=self.device
+                    )
+                )
                 continue
 
             # Stack chunks for this track: [num_chunks, 25600]
@@ -1191,14 +1214,16 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
         # Music2Latent's encode() expects a file path, so save to temp file
         audio_np = waveform.contiguous().cpu().numpy()
 
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
             tmp_path = tmp_file.name
             sf.write(tmp_path, audio_np, self.sample_rate)
 
         try:
             with self.model_session() as model:
                 # Encode the audio
-                latent = model.encode(tmp_path, max_waveform_length=self.max_waveform_length)
+                latent = model.encode(
+                    tmp_path, max_waveform_length=self.max_waveform_length
+                )
                 # latent may have shape [batch, channels, T] or [channels, T]
                 # Ensure it's [2, 64, T] by removing batch dim if present
                 if latent.dim() == 3 and latent.shape[0] == 1:
@@ -1223,6 +1248,7 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
         finally:
             # Clean up temp file
             import os
+
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
@@ -1268,7 +1294,7 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
 
                 # Save to temp file
                 audio_np = waveform.contiguous().cpu().numpy()
-                tmp_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+                tmp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
                 tmp_path = tmp_file.name
                 tmp_file.close()
                 sf.write(tmp_path, audio_np, self.sample_rate)
@@ -1278,7 +1304,9 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
             with self.model_session() as model:
                 for tmp_path in tmp_files:
                     # Encode the audio
-                    latent = model.encode(tmp_path, max_waveform_length=self.max_waveform_length)
+                    latent = model.encode(
+                        tmp_path, max_waveform_length=self.max_waveform_length
+                    )
 
                     # Handle dimension issues
                     if latent.dim() == 3 and latent.shape[0] == 1:
@@ -1301,6 +1329,7 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
         finally:
             # Clean up all temp files
             import os
+
             for tmp_path in tmp_files:
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
@@ -1465,6 +1494,7 @@ __all__ = [
 if __name__ == "__main__":
     from glob import glob
     from tqdm import tqdm
+
     songs = list(glob("/mnt/data/share/hosted/music/*Beach Bunny*"))
     # 1536D
     muq = MuQEmbeddingModel()
@@ -1481,4 +1511,3 @@ if __name__ == "__main__":
     print(embeddings)
     breakpoint()
     print("done")
-    

@@ -1,12 +1,10 @@
 """
 Text Embedding Service
 
-Provides REST API for embedding text queries into audio embedding spaces.
-Supports multiple models (MuQ, MERT, Latent) and can use either:
-1. Trained text-to-audio projection models (from inference.py)
-2. Stub embedders for development/testing
-
-The service automatically falls back to stubs when trained models are not available.
+Provides REST API for embedding text queries into embedding spaces.
+Supported models:
+- muq   : MuQ text projection (stub-backed unless checkpoint provided)
+- qwen3 : Qwen3-Embedding-8B text embeddings (real model)
 """
 
 import logging
@@ -19,21 +17,13 @@ import torch
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger(__name__)
-
-# Try importing real models, fall back to stubs
-try:
-    from inference import TextToAudioEmbedder
-
-    REAL_MODELS_AVAILABLE = True
-except ImportError:
-    logger.warning("inference.py not available, will use stub embedders only")
-    REAL_MODELS_AVAILABLE = False
-
+from description_pipeline import DescriptionEmbeddingPipeline
 from stub_text_embedders import (  # noqa: E402
     get_stub_embedder,
     StubTextEmbedder,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class TextEmbeddingRequest(BaseModel):
@@ -41,9 +31,9 @@ class TextEmbeddingRequest(BaseModel):
 
     text: str = Field(..., description="Text query to embed", min_length=1)
     model: str = Field(
-        default="muq",
+        default="qwen3",
         description="Embedding model to use",
-        pattern="^(muq|mert|latent)$",
+        pattern="^(muq|qwen3)$",
     )
 
 
@@ -66,12 +56,7 @@ class ModelInfo(BaseModel):
 
 
 class TextEmbeddingService:
-    """
-    Manages text-to-audio embedding models.
-
-    Supports both trained projection models and stub embedders.
-    Automatically falls back to stubs when trained models are unavailable.
-    """
+    """Manages text embedding models for recommendation endpoints."""
 
     def __init__(
         self,
@@ -96,6 +81,9 @@ class TextEmbeddingService:
             self.device = device
 
         self.embedders: Dict[str, object] = {}
+        self.description_pipeline = DescriptionEmbeddingPipeline(
+            device=self.device, logger=logger
+        )
 
         logger.info("Initialized TextEmbeddingService")
         logger.info(f"  Checkpoint dir: {self.checkpoint_dir}")
@@ -106,39 +94,18 @@ class TextEmbeddingService:
         """
         Get or create embedder for specified model.
 
-        Tries to load real model from checkpoint, falls back to stub if unavailable.
-
         Args:
-            model_name: Model name ("muq", "mert", or "latent")
+            model_name: Model name ("muq" or "qwen3")
 
         Returns:
-            Embedder instance (TextToAudioEmbedder or StubTextEmbedder)
+            Embedder instance
         """
         if model_name not in self.embedders:
-            # Try loading real model first (unless forced to use stubs)
-            if not self.use_stubs and REAL_MODELS_AVAILABLE:
-                checkpoint_path = self.checkpoint_dir / f"{model_name}_best_r1.pt"
-
-                if checkpoint_path.exists():
-                    try:
-                        logger.info(
-                            f"Loading real model for {model_name} from "
-                            f"{checkpoint_path}"
-                        )
-                        self.embedders[model_name] = TextToAudioEmbedder(
-                            str(checkpoint_path), device=self.device
-                        )
-                        logger.info(f"Successfully loaded real {model_name} model")
-                        return self.embedders[model_name]
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to load real model for {model_name}: {e}. "
-                            f"Falling back to stub."
-                        )
-
-            # Fall back to stub
-            logger.info(f"Using stub embedder for {model_name}")
-            self.embedders[model_name] = get_stub_embedder(model_name)
+            if model_name == "qwen3":
+                self.embedders[model_name] = self.description_pipeline
+            else:
+                logger.info(f"Using stub embedder for {model_name}")
+                self.embedders[model_name] = get_stub_embedder(model_name)
 
         return self.embedders[model_name]
 
@@ -149,11 +116,11 @@ class TextEmbeddingService:
 
     def embed_text(self, text: str, model: str = "muq") -> np.ndarray:
         """
-        Embed text query into audio space.
+        Embed text query into an embedding space.
 
         Args:
             text: Text query
-            model: Model name ("muq", "mert", or "latent")
+            model: Model name ("muq" or "qwen3")
 
         Returns:
             Embedding vector as numpy array
@@ -162,11 +129,13 @@ class TextEmbeddingService:
             ValueError: If model name is invalid
             RuntimeError: If embedding fails
         """
-        if model not in ["muq", "mert", "latent"]:
+        if model not in ["muq", "qwen3"]:
             raise ValueError(f"Invalid model: {model}")
 
         try:
             embedder = self.get_embedder(model)
+            if isinstance(embedder, DescriptionEmbeddingPipeline):
+                return np.array(embedder.embed_text(text))
             embedding = embedder.embed_text(text)
             return embedding
         except Exception as e:
@@ -177,39 +146,24 @@ class TextEmbeddingService:
         """Get information about all available models"""
         models = []
 
-        for model_name in ["muq", "mert", "latent"]:
-            # Check if real model checkpoint exists
-            checkpoint_path = self.checkpoint_dir / f"{model_name}_best_r1.pt"
-            has_checkpoint = checkpoint_path.exists()
-
-            # Get dimension based on model
-            dimensions = {"muq": 1536, "mert": 76_800, "latent": 576}
-            dimension = dimensions[model_name]
-
-            # Determine status
-            if self.use_stubs:
-                status = "stub"
-            elif not REAL_MODELS_AVAILABLE:
-                status = "stub"
-            elif has_checkpoint:
-                status = "available"
-            else:
-                status = "stub"
-
-            descriptions = {
-                "muq": "MuQ-MuLan model (default, balanced performance)",
-                "mert": "MERT model (high dimensionality, detailed features)",
-                "latent": "Music2Latent model (compact representation)",
-            }
-
-            models.append(
-                ModelInfo(
-                    name=model_name,
-                    dimension=dimension,
-                    status=status,
-                    description=descriptions[model_name],
-                )
+        models.append(
+            ModelInfo(
+                name="qwen3",
+                dimension=4096,
+                status="available",
+                description="Qwen3-Embedding-8B text embeddings for caption search",
             )
+        )
+
+        muq_status = "stub" if self.use_stubs else "available"
+        models.append(
+            ModelInfo(
+                name="muq",
+                dimension=1536,
+                status=muq_status,
+                description="MuQ-MuLan model (default, balanced performance)",
+            )
+        )
 
         return models
 
@@ -217,7 +171,7 @@ class TextEmbeddingService:
 # FastAPI application
 app = FastAPI(
     title="Text Embedding Service",
-    description="Embed text queries into audio embedding spaces",
+    description="Embed text queries with MuQ or Qwen3 embeddings",
     version="1.0.0",
 )
 

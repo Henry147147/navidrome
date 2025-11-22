@@ -15,6 +15,10 @@ import numpy as np
 from pymilvus import MilvusClient
 
 from embedding_models import BaseEmbeddingModel, MuQEmbeddingModel
+from description_pipeline import (
+    DEFAULT_DESCRIPTION_COLLECTION,
+    DescriptionEmbeddingPipeline,
+)
 from cue_splitter import SplitTrack, split_flac_with_cue
 from models import SongEmbedding
 from upload_features import UploadFeaturePipeline, UploadSettings
@@ -39,6 +43,7 @@ class EmbedSocketServer:
         self.logger = logger
         self.milvus_client = milvus_client or MilvusClient("http://localhost:19530")
         self.model = model or MuQEmbeddingModel(logger=self.logger)
+        self.description_pipeline = DescriptionEmbeddingPipeline(logger=self.logger)
         self._prepare_milvus()
         self.similarity_searcher = MilvusSimilaritySearcher(
             self.milvus_client,
@@ -57,25 +62,33 @@ class EmbedSocketServer:
         try:
             self.model.ensure_milvus_schemas(self.milvus_client)
             self.model.ensure_milvus_index(self.milvus_client)
+            self.description_pipeline.ensure_milvus_schemas(self.milvus_client)
+            self.description_pipeline.ensure_milvus_index(self.milvus_client)
         except Exception:  # pragma: no cover - defensive logging
             self.logger.exception("Failed to ensure Milvus schema or index")
 
     def _combine_payloads(
         self,
         payloads: List[dict],
+        desc_payloads: List[dict],
         *,
         music_file: str,
     ) -> dict:
         combined: dict = {}
         segments: List[dict] = []
+        descriptions: List[dict] = []
         for payload in payloads:
             if not combined:
                 combined = dict(payload)
                 combined["segments"] = []
+                combined.setdefault("descriptions", [])
             segments.extend(payload.get("segments") or [])
+        for payload in desc_payloads:
+            descriptions.extend(payload.get("descriptions") or [])
         if not combined:
-            combined = {"segments": []}
+            combined = {"segments": [], "descriptions": []}
         combined["segments"] = segments
+        combined["descriptions"] = descriptions
         combined["music_file"] = music_file
         combined["cue_file"] = None
         return combined
@@ -103,6 +116,7 @@ class EmbedSocketServer:
 
         if split_tracks:
             payloads: List[dict] = []
+            desc_payloads: List[dict] = []
             for track in split_tracks:
                 try:
                     payload = self.model.embed_music(
@@ -110,14 +124,20 @@ class EmbedSocketServer:
                         track.canonical_name(),
                         cue_file=None,
                     )
+                    desc_payload = self.description_pipeline.prepare_payload(
+                        str(track.file_path), track.canonical_name()
+                    )
                 except Exception:
                     self.logger.exception(
                         "Embedding failed for split track %s", track.file_path
                     )
                     continue
                 payloads.append(payload)
+                desc_payloads.append(desc_payload)
             if payloads:
-                combined = self._combine_payloads(payloads, music_file=music_file)
+                combined = self._combine_payloads(
+                    payloads, desc_payloads, music_file=music_file
+                )
                 return combined, split_tracks
             self.logger.warning(
                 "All split tracks failed to embed; falling back to original file."
@@ -129,6 +149,11 @@ class EmbedSocketServer:
             music_name,
             cue_file=None,
         )
+        desc_payload = self.description_pipeline.prepare_payload(
+            music_file,
+            music_name,
+        )
+        payload["descriptions"] = desc_payload.get("descriptions", [])
         payload["cue_file"] = None
         return payload, []
 
@@ -200,6 +225,7 @@ class EmbedSocketServer:
         )
         self.logger.debug("Received upload settings: %s", asdict(settings))
         songs = self.load_from_json(embedding)
+        description_rows = self._load_descriptions(embedding)
         if not songs:
             raise RuntimeError("Embedding payload did not contain any segments.")
 
@@ -209,7 +235,8 @@ class EmbedSocketServer:
             file_name, settings, music_file=embedding.get("music_file")
         )
 
-        if len(duplicates) != len(songs_payload):
+        should_upsert_audio = len(duplicates) != len(songs_payload)
+        if should_upsert_audio:
             try:
                 self.milvus_client.load_collection("embedding")
             except Exception:  # pragma: no cover - defensive logging
@@ -222,6 +249,24 @@ class EmbedSocketServer:
                 self.logger.exception("Failed to upsert embeddings to Milvus")
         else:
             self.logger.debug("Skipping upsert because all segments are duplicates")
+
+        if description_rows and should_upsert_audio:
+            try:
+                self.milvus_client.load_collection(DEFAULT_DESCRIPTION_COLLECTION)
+            except Exception:
+                self.logger.exception(
+                    "Failed to load Milvus collection %s",
+                    DEFAULT_DESCRIPTION_COLLECTION,
+                )
+            try:
+                self.milvus_client.upsert(
+                    DEFAULT_DESCRIPTION_COLLECTION, description_rows
+                )
+                self.milvus_client.flush(DEFAULT_DESCRIPTION_COLLECTION)
+            except Exception:
+                self.logger.exception(
+                    "Failed to upsert description embeddings to Milvus"
+                )
 
         self.logger.debug(
             "Prepared embedding payload for Milvus. Songs=%d, duplicates=%d",
@@ -239,6 +284,28 @@ class EmbedSocketServer:
         payload = asdict(song)
         payload.pop("track_id", None)
         return payload
+
+    def _load_descriptions(self, embedding: dict) -> List[Dict[str, object]]:
+        rows: List[Dict[str, object]] = []
+        for desc in embedding.get("descriptions") or []:
+            vector = desc.get("embedding")
+            if not vector:
+                continue
+            title = desc.get("title") or desc.get("index") or ""
+            title = str(title).strip()
+            if not title:
+                continue
+            description_text = str(desc.get("description") or "").strip()
+            rows.append(
+                {
+                    "name": title,
+                    "description": description_text,
+                    "embedding": vector,
+                    "offset": float(desc.get("offset_seconds") or 0.0),
+                    "model_id": desc.get("model_id") or embedding.get("model_id") or "",
+                }
+            )
+        return rows
 
     def handle_connection(self, conn: socket.socket) -> None:
         with conn:

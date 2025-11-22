@@ -32,19 +32,13 @@ class TextEncoder(nn.Module):
         super().__init__()
         self.device = device
         self.model = AutoModel.from_pretrained(
-            model_name,
-            trust_remote_code=True,
-            torch_dtype=torch.bfloat16
+            model_name, trust_remote_code=True, torch_dtype=torch.bfloat16
         ).to(device)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     def forward(self, texts: List[str]) -> torch.Tensor:
         inputs = self.tokenizer(
-            texts,
-            padding=True,
-            truncation=True,
-            max_length=512,
-            return_tensors="pt"
+            texts, padding=True, truncation=True, max_length=512, return_tensors="pt"
         ).to(self.device)
 
         with torch.cuda.amp.autocast(dtype=torch.bfloat16):
@@ -68,7 +62,7 @@ class ProjectionHead(nn.Module):
             nn.GELU(),
             nn.Dropout(0.1),
             nn.Linear(hidden_dim, audio_dim),
-            nn.BatchNorm1d(audio_dim)
+            nn.BatchNorm1d(audio_dim),
         )
 
     def forward(self, text_emb: torch.Tensor) -> torch.Tensor:
@@ -84,7 +78,7 @@ class TextToAudioEmbedder:
         self,
         checkpoint_path: str,
         device: str = "cuda",
-        dtype: torch.dtype = torch.bfloat16
+        dtype: torch.dtype = torch.bfloat16,
     ):
         """
         Initialize embedder from checkpoint
@@ -101,33 +95,31 @@ class TextToAudioEmbedder:
 
         # Load checkpoint
         checkpoint = torch.load(checkpoint_path, map_location=device)
-        config = checkpoint['config']
+        config = checkpoint["config"]
 
-        self.audio_encoder_name = config['audio_encoder']
-        self.audio_dim = config['audio_dim']
+        self.audio_encoder_name = config["audio_encoder"]
+        self.audio_dim = config["audio_dim"]
 
         logger.info(f"Audio encoder: {self.audio_encoder_name}")
         logger.info(f"Audio dimension: {self.audio_dim}")
 
         # Initialize models
         logger.info("Loading text encoder...")
-        self.text_encoder = TextEncoder(config['text_model_name'], device=device)
-        self.text_encoder.model.load_state_dict(checkpoint['text_encoder_state_dict'])
+        self.text_encoder = TextEncoder(config["text_model_name"], device=device)
+        self.text_encoder.model.load_state_dict(checkpoint["text_encoder_state_dict"])
 
         logger.info("Loading projection head...")
         self.projection = ProjectionHead(
-            config['text_dim'],
-            config['hidden_dim'],
-            config['audio_dim']
+            config["text_dim"], config["hidden_dim"], config["audio_dim"]
         ).to(device)
-        self.projection.load_state_dict(checkpoint['projection_state_dict'])
+        self.projection.load_state_dict(checkpoint["projection_state_dict"])
 
         # Set to eval mode
         self.text_encoder.eval()
         self.projection.eval()
 
         # Store metrics
-        self.metrics = checkpoint.get('metrics', {})
+        self.metrics = checkpoint.get("metrics", {})
         logger.info(f"Model metrics: R@1={self.metrics.get('t2a_R@1', 0):.2f}%")
 
     @torch.no_grad()
@@ -164,10 +156,7 @@ class TextToAudioEmbedder:
 
     @torch.no_grad()
     def embed_texts_batch(
-        self,
-        texts: List[str],
-        batch_size: int = 32,
-        show_progress: bool = True
+        self, texts: List[str], batch_size: int = 32, show_progress: bool = True
     ) -> np.ndarray:
         """
         Embed large number of texts in batches
@@ -185,20 +174,17 @@ class TextToAudioEmbedder:
         iterator = range(0, len(texts), batch_size)
         if show_progress:
             from tqdm import tqdm
+
             iterator = tqdm(iterator, desc="Embedding texts")
 
         for i in iterator:
-            batch_texts = texts[i:i+batch_size]
+            batch_texts = texts[i : i + batch_size]
             embeddings = self.embed_texts(batch_texts)
             all_embeddings.append(embeddings)
 
         return np.concatenate(all_embeddings, axis=0)
 
-    def compute_similarity(
-        self,
-        text: str,
-        audio_embeddings: np.ndarray
-    ) -> np.ndarray:
+    def compute_similarity(self, text: str, audio_embeddings: np.ndarray) -> np.ndarray:
         """
         Compute similarity between text and audio embeddings
 
@@ -225,7 +211,7 @@ class TextToAudioEmbedder:
         text: str,
         audio_embeddings: np.ndarray,
         audio_ids: Optional[List[str]] = None,
-        k: int = 10
+        k: int = 10,
     ) -> List[Tuple[int, float]]:
         """
         Retrieve top-k most similar audio samples
@@ -262,7 +248,7 @@ class MultiModelEmbedder:
         self,
         checkpoint_dir: str = "checkpoints",
         device: str = "cuda",
-        use_best_r1: bool = True
+        use_best_r1: bool = True,
     ):
         """
         Load all 3 models
@@ -276,16 +262,14 @@ class MultiModelEmbedder:
 
         self.embedders = {}
 
-        for encoder in ['muq', 'mert', 'latent']:
+        for encoder in ["muq", "mert", "latent"]:
             checkpoint_path = f"{checkpoint_dir}/{encoder}_{suffix}.pt"
             logger.info(f"Loading {encoder} model...")
-            self.embedders[encoder] = TextToAudioEmbedder(checkpoint_path, device=device)
+            self.embedders[encoder] = TextToAudioEmbedder(
+                checkpoint_path, device=device
+            )
 
-    def embed_text(
-        self,
-        text: str,
-        model: str = 'muq'
-    ) -> np.ndarray:
+    def embed_text(self, text: str, model: str = "muq") -> np.ndarray:
         """
         Embed text using specific model
 
@@ -309,23 +293,23 @@ class MultiModelEmbedder:
             Dictionary mapping model name to embedding
         """
         return {
-            name: embedder.embed_text(text)
-            for name, embedder in self.embedders.items()
+            name: embedder.embed_text(text) for name, embedder in self.embedders.items()
         }
 
 
 def main():
     parser = argparse.ArgumentParser(description="Text-to-audio embedding inference")
-    parser.add_argument('--checkpoint', type=str, required=True,
-                       help='Path to checkpoint file')
-    parser.add_argument('--query', type=str, nargs='+',
-                       help='Text query/queries to embed')
-    parser.add_argument('--query-file', type=str,
-                       help='File containing queries (one per line)')
-    parser.add_argument('--output', type=str,
-                       help='Output file for embeddings (.npy)')
-    parser.add_argument('--device', type=str, default='cuda',
-                       help='Device to use')
+    parser.add_argument(
+        "--checkpoint", type=str, required=True, help="Path to checkpoint file"
+    )
+    parser.add_argument(
+        "--query", type=str, nargs="+", help="Text query/queries to embed"
+    )
+    parser.add_argument(
+        "--query-file", type=str, help="File containing queries (one per line)"
+    )
+    parser.add_argument("--output", type=str, help="Output file for embeddings (.npy)")
+    parser.add_argument("--device", type=str, default="cuda", help="Device to use")
 
     args = parser.parse_args()
 
@@ -334,9 +318,9 @@ def main():
 
     # Get queries
     if args.query:
-        queries = [' '.join(args.query)]  # Join multiple words
+        queries = [" ".join(args.query)]  # Join multiple words
     elif args.query_file:
-        with open(args.query_file, 'r') as f:
+        with open(args.query_file, "r") as f:
             queries = [line.strip() for line in f if line.strip()]
     else:
         # Interactive mode
@@ -371,5 +355,5 @@ def main():
             print(f"First 10 dims: {emb[:10]}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

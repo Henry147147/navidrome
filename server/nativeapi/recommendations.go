@@ -1374,7 +1374,7 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 
 	// Set default model if not specified
 	if payload.Model == "" {
-		payload.Model = "muq"
+		payload.Model = "qwen3"
 	}
 
 	// Get text embedding from Python service

@@ -14,7 +14,8 @@ from typing import Dict, List, Optional
 
 from tqdm import tqdm
 
-from embedding_models import MertModel, MuQEmbeddingModel, MusicLatentSpaceModel
+from embedding_models import MuQEmbeddingModel
+from description_pipeline import DescriptionEmbeddingPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +92,7 @@ class BatchEmbeddingJob:
         # Collection mapping for each model
         self.collection_map = {
             "muq": "embedding",
-            "mert": "mert_embedding",
-            "latent": "latent_embedding",
+            "qwen3": "description_embedding",
         }
 
     def _initialize_models(self, model_names: List[str]) -> None:
@@ -101,12 +101,9 @@ class BatchEmbeddingJob:
             if model_name == "muq":
                 self.logger.info("Initializing MuQ model...")
                 self.models["muq"] = MuQEmbeddingModel(logger=self.logger)
-            elif model_name == "mert":
-                self.logger.info("Initializing MERT model...")
-                self.models["mert"] = MertModel(logger=self.logger)
-            elif model_name == "latent":
-                self.logger.info("Initializing Latent Space model...")
-                self.models["latent"] = MusicLatentSpaceModel(logger=self.logger)
+            elif model_name == "qwen3":
+                self.logger.info("Initializing description embedding pipeline...")
+                self.models["qwen3"] = DescriptionEmbeddingPipeline(logger=self.logger)
             else:
                 self.logger.warning(f"Unknown model: {model_name}")
 
@@ -148,8 +145,7 @@ class BatchEmbeddingJob:
 
         collection_map = {
             "muq": "embedding",
-            "mert": "mert_embedding",
-            "latent": "latent_embedding",
+            "qwen3": "description_embedding",
         }
 
         for model_name in models_to_use:
@@ -199,13 +195,15 @@ class BatchEmbeddingJob:
             Dict with progress and failed tracks
         """
         if models_to_use is None:
-            models_to_use = ["muq", "mert", "latent"]
+            models_to_use = ["muq", "qwen3"]
 
         # Validate model names
-        valid_models = {"muq", "mert", "latent"}
+        valid_models = {"muq", "qwen3"}
         invalid_models = [m for m in models_to_use if m not in valid_models]
         if invalid_models:
-            error_msg = f"Invalid model names: {invalid_models}. Valid options: {valid_models}"
+            error_msg = (
+                f"Invalid model names: {invalid_models}. Valid options: {valid_models}"
+            )
             self.logger.error(error_msg)
             self.progress.status = "failed"
             raise ValueError(error_msg)
@@ -243,6 +241,7 @@ class BatchEmbeddingJob:
         BATCH_SIZE = 100  # Insert every 100 embeddings
 
         from pymilvus import MilvusClient
+
         client = None
         try:
             client = MilvusClient(uri=self.milvus_uri)
@@ -254,7 +253,9 @@ class BatchEmbeddingJob:
                     self.logger.info("Job cancelled by user")
                     break
 
-                self.logger.info(f"Processing all tracks with model: {model_name} ({model_idx + 1}/{len(models_to_use)})")
+                self.logger.info(
+                    f"Processing all tracks with model: {model_name} ({model_idx + 1}/{len(models_to_use)})"
+                )
                 self.progress.current_model = model_name
                 model = self.models[model_name]
                 collection = self.collection_map[model_name]
@@ -265,13 +266,17 @@ class BatchEmbeddingJob:
 
                 try:
                     # Process all tracks with this model
-                    for track_idx, track in enumerate(tqdm(tracks, desc=f"Embedding with {model_name}")):
+                    for track_idx, track in enumerate(
+                        tqdm(tracks, desc=f"Embedding with {model_name}")
+                    ):
                         if self._cancelled:
                             self.progress.status = "cancelled"
                             self.logger.info("Job cancelled by user")
                             break
 
-                        self.progress.current_track = f"{track['artist']} - {track['title']}"
+                        self.progress.current_track = (
+                            f"{track['artist']} - {track['title']}"
+                        )
 
                         try:
                             # Process track and add to batch
@@ -282,14 +287,18 @@ class BatchEmbeddingJob:
 
                             # Insert batch if it's large enough
                             if len(batch_data) >= BATCH_SIZE:
-                                client.insert(collection_name=collection, data=batch_data)
+                                client.insert(
+                                    collection_name=collection, data=batch_data
+                                )
                                 batch_data = []
 
                             operations_completed += 1
                             tracks_processed_this_model += 1
                             self.progress.processed_operations = operations_completed
                         except Exception as e:
-                            self.logger.error(f"Failed to process track {track['id']} with {model_name}: {e}")
+                            self.logger.error(
+                                f"Failed to process track {track['id']} with {model_name}: {e}"
+                            )
                             failed_tracks.append((track["id"], model_name, str(e)))
                             self.progress.failed_tracks += 1
 
@@ -298,7 +307,9 @@ class BatchEmbeddingJob:
                             elapsed = time.time() - self.progress.started_at
                             rate = elapsed / operations_completed
                             remaining = total_operations - operations_completed
-                            self.progress.estimated_completion = time.time() + (rate * remaining)
+                            self.progress.estimated_completion = time.time() + (
+                                rate * remaining
+                            )
 
                     # Insert remaining batch for this model
                     if batch_data:
@@ -317,17 +328,23 @@ class BatchEmbeddingJob:
                             client.insert(collection_name=collection, data=batch_data)
                             batch_data = []
                         except Exception as insert_error:
-                            self.logger.error(f"Failed to insert final batch: {insert_error}")
+                            self.logger.error(
+                                f"Failed to insert final batch: {insert_error}"
+                            )
 
                     # Ensure model is unloaded even on error
                     try:
                         model.unload_model()
                     except Exception as unload_error:
-                        self.logger.error(f"Failed to unload {model_name}: {unload_error}")
+                        self.logger.error(
+                            f"Failed to unload {model_name}: {unload_error}"
+                        )
 
                     # Don't re-raise - continue with next model
                     self.progress.status = "failed"
-                    self.logger.error(f"Continuing to next model after failure in {model_name}")
+                    self.logger.error(
+                        f"Continuing to next model after failure in {model_name}"
+                    )
 
         finally:
             # Always close Milvus client
@@ -417,7 +434,9 @@ class BatchEmbeddingJob:
                 )
                 raise
 
-    def _process_track_with_model(self, track: Dict, model_name: str, model, collection: str, client) -> None:
+    def _process_track_with_model(
+        self, track: Dict, model_name: str, model, collection: str, client
+    ) -> None:
         """Process a single track with a specific model (DEPRECATED - use _process_track_with_model_batched for better performance)."""
         # Resolve audio file path
         audio_path = self.music_root / track["path"]
@@ -438,17 +457,15 @@ class BatchEmbeddingJob:
 
         # Store in Milvus
         for segment in result["segments"]:
-            client.insert(
-                collection_name=collection,
-                data=[
-                    {
-                        "name": segment["title"],
-                        "embedding": segment["embedding"],
-                        "offset": segment["offset_seconds"],
-                        "model_id": result["model_id"],
-                    }
-                ],
-            )
+            row = {
+                "name": segment["title"],
+                "embedding": segment["embedding"],
+                "offset": segment.get("offset_seconds", 0.0),
+                "model_id": result["model_id"],
+            }
+            if "description" in segment:
+                row["description"] = segment.get("description", "")
+            client.insert(collection_name=collection, data=[row])
 
         if self.logger.level <= logging.DEBUG:
             self.logger.debug(
@@ -456,7 +473,9 @@ class BatchEmbeddingJob:
                 f"({len(result['segments'])} segments)"
             )
 
-    def _process_track_with_model_batched(self, track: Dict, model_name: str, model, collection: str) -> List[Dict]:
+    def _process_track_with_model_batched(
+        self, track: Dict, model_name: str, model, collection: str
+    ) -> List[Dict]:
         """Process a single track with a specific model and return data for batched insertion."""
         # Resolve audio file path
         audio_path = self.music_root / track["path"]
@@ -478,12 +497,15 @@ class BatchEmbeddingJob:
         # Prepare data for batched insertion
         batch_data = []
         for segment in result["segments"]:
-            batch_data.append({
+            row = {
                 "name": segment["title"],
                 "embedding": segment["embedding"],
-                "offset": segment["offset_seconds"],
+                "offset": segment.get("offset_seconds", 0.0),
                 "model_id": result["model_id"],
-            })
+            }
+            if "description" in segment:
+                row["description"] = segment.get("description", "")
+            batch_data.append(row)
 
         if self.logger.level <= logging.DEBUG:
             self.logger.debug(

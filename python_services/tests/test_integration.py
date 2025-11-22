@@ -28,11 +28,13 @@ class TestRecommendationEngineIntegration:
         """Test recommendation with single model"""
         # Setup mock Milvus client
         mock_client = Mock()
-        mock_client.search.return_value = [[
-            {'name': 'Track A', 'distance': 0.9, 'entity': {'id': 'track_a'}},
-            {'name': 'Track B', 'distance': 0.8, 'entity': {'id': 'track_b'}},
-            {'name': 'Track C', 'distance': 0.7, 'entity': {'id': 'track_c'}},
-        ]]
+        mock_client.search.return_value = [
+            [
+                {"name": "Track A", "distance": 0.9, "entity": {"id": "track_a"}},
+                {"name": "Track B", "distance": 0.8, "entity": {"id": "track_b"}},
+                {"name": "Track C", "distance": 0.7, "entity": {"id": "track_c"}},
+            ]
+        ]
 
         searcher = MultiModelSimilaritySearcher(mock_client)
 
@@ -42,29 +44,21 @@ class TestRecommendationEngineIntegration:
             user_name="testuser",
             limit=3,
             mode="recent",
-            seeds=[
-                RecommendationSeed(
-                    track_id="seed1",
-                    weight=1.0,
-                    source="recent"
-                )
-            ],
-            models=["muq"]
+            seeds=[RecommendationSeed(track_id="seed1", weight=1.0, source="recent")],
+            models=["muq"],
         )
 
         # Execute search (would normally go through full engine)
         embeddings = {"muq": np.random.randn(1536).tolist()}
         results = searcher.search_multi_model(
-            embeddings=embeddings,
-            top_k=3,
-            merge_strategy="union"
+            embeddings=embeddings, top_k=3, merge_strategy="union"
         )
 
         # Verify results
         assert len(results) > 0
-        assert all('track_name' in r for r in results)
-        assert all('score' in r for r in results)
-        assert all('models' in r for r in results)
+        assert all("track_name" in r for r in results)
+        assert all("score" in r for r in results)
+        assert all("models" in r for r in results)
 
     def test_multi_model_union_flow(self):
         """Test multi-model recommendation with union merge"""
@@ -73,15 +67,35 @@ class TestRecommendationEngineIntegration:
         # Mock different results for different collections
         def mock_search(collection_name, data, **kwargs):
             if collection_name == "embedding":  # muq
-                return [[
-                    {'name': 'Track A', 'distance': 0.9, 'entity': {'id': 'track_a'}},
-                    {'name': 'Track B', 'distance': 0.85, 'entity': {'id': 'track_b'}},
-                ]]
+                return [
+                    [
+                        {
+                            "name": "Track A",
+                            "distance": 0.9,
+                            "entity": {"id": "track_a"},
+                        },
+                        {
+                            "name": "Track B",
+                            "distance": 0.85,
+                            "entity": {"id": "track_b"},
+                        },
+                    ]
+                ]
             elif collection_name == "mert_embedding":  # mert
-                return [[
-                    {'name': 'Track B', 'distance': 0.88, 'entity': {'id': 'track_b'}},
-                    {'name': 'Track C', 'distance': 0.82, 'entity': {'id': 'track_c'}},
-                ]]
+                return [
+                    [
+                        {
+                            "name": "Track B",
+                            "distance": 0.88,
+                            "entity": {"id": "track_b"},
+                        },
+                        {
+                            "name": "Track C",
+                            "distance": 0.82,
+                            "entity": {"id": "track_c"},
+                        },
+                    ]
+                ]
             return [[]]
 
         mock_client.search.side_effect = mock_search
@@ -91,24 +105,22 @@ class TestRecommendationEngineIntegration:
         # Multi-model search
         embeddings = {
             "muq": np.random.randn(1536).tolist(),
-            "mert": np.random.randn(76800).tolist()
+            "mert": np.random.randn(76800).tolist(),
         }
         results = searcher.search_multi_model(
-            embeddings=embeddings,
-            top_k=10,
-            merge_strategy="union"
+            embeddings=embeddings, top_k=10, merge_strategy="union"
         )
 
         # Verify union behavior
         assert len(results) >= 2  # Should have at least Track A, B, C
-        track_names = [r['track_name'] for r in results]
-        assert 'Track A' in track_names
-        assert 'Track B' in track_names
-        assert 'Track C' in track_names
+        track_names = [r["track_name"] for r in results]
+        assert "Track A" in track_names
+        assert "Track B" in track_names
+        assert "Track C" in track_names
 
         # Track B should have both models
-        track_b = next(r for r in results if r['track_name'] == 'Track B')
-        assert len(track_b['models']) == 2
+        track_b = next(r for r in results if r["track_name"] == "Track B")
+        assert len(track_b["models"]) == 2
 
     def test_multi_model_intersection_flow(self):
         """Test multi-model with intersection - only common tracks"""
@@ -116,11 +128,24 @@ class TestRecommendationEngineIntegration:
 
         def mock_search(collection_name, data, **kwargs):
             # Both collections return Track B
-            return [[
-                {'name': 'Track B', 'distance': 0.85, 'entity': {'id': 'track_b'}},
-                {'name': 'Track A' if collection_name == "embedding" else 'Track C',
-                 'distance': 0.80, 'entity': {'id': 'track_a' if collection_name == "embedding" else 'track_c'}},
-            ]]
+            return [
+                [
+                    {"name": "Track B", "distance": 0.85, "entity": {"id": "track_b"}},
+                    {
+                        "name": (
+                            "Track A" if collection_name == "embedding" else "Track C"
+                        ),
+                        "distance": 0.80,
+                        "entity": {
+                            "id": (
+                                "track_a"
+                                if collection_name == "embedding"
+                                else "track_c"
+                            )
+                        },
+                    },
+                ]
+            ]
 
         mock_client.search.side_effect = mock_search
 
@@ -128,17 +153,17 @@ class TestRecommendationEngineIntegration:
 
         embeddings = {
             "muq": np.random.randn(1536).tolist(),
-            "mert": np.random.randn(76800).tolist()
+            "mert": np.random.randn(76800).tolist(),
         }
         results = searcher.search_multi_model(
-            embeddings=embeddings,
-            top_k=10,
-            merge_strategy="intersection"
+            embeddings=embeddings, top_k=10, merge_strategy="intersection"
         )
 
         # Should only have Track B (common to both)
         assert len(results) >= 1
-        assert all(r['track_name'] == 'Track B' or len(r['models']) == 2 for r in results)
+        assert all(
+            r["track_name"] == "Track B" or len(r["models"]) == 2 for r in results
+        )
 
 
 class TestTextEmbeddingIntegration:
@@ -162,10 +187,9 @@ class TestTextEmbeddingIntegration:
         """Test text embedding FastAPI endpoint"""
         client = TestClient(text_app)
 
-        response = client.post("/embed_text", json={
-            "text": "chill jazz for studying",
-            "model": "muq"
-        })
+        response = client.post(
+            "/embed_text", json={"text": "chill jazz for studying", "model": "muq"}
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -184,22 +208,22 @@ class TestTextEmbeddingIntegration:
 
         # Step 2: Use embedding for search
         mock_client = Mock()
-        mock_client.search.return_value = [[
-            {'name': 'Dance Track 1', 'distance': 0.92, 'entity': {'id': 'dt1'}},
-            {'name': 'Dance Track 2', 'distance': 0.88, 'entity': {'id': 'dt2'}},
-        ]]
+        mock_client.search.return_value = [
+            [
+                {"name": "Dance Track 1", "distance": 0.92, "entity": {"id": "dt1"}},
+                {"name": "Dance Track 2", "distance": 0.88, "entity": {"id": "dt2"}},
+            ]
+        ]
 
         searcher = MultiModelSimilaritySearcher(mock_client)
         results = searcher.search_multi_model(
-            embeddings={"muq": embedding.tolist()},
-            top_k=5,
-            merge_strategy="union"
+            embeddings={"muq": embedding.tolist()}, top_k=5, merge_strategy="union"
         )
 
         # Verify results
         assert len(results) == 2
-        assert 'Dance Track 1' in [r['track_name'] for r in results]
-        assert 'Dance Track 2' in [r['track_name'] for r in results]
+        assert "Dance Track 1" in [r["track_name"] for r in results]
+        assert "Dance Track 2" in [r["track_name"] for r in results]
 
 
 class TestNegativePromptIntegration:
@@ -216,16 +240,16 @@ class TestNegativePromptIntegration:
 
         # Create mock candidates
         candidates = {
-            'track1': 1.0,  # High score
-            'track2': 0.9,
-            'track3': 0.8,
+            "track1": 1.0,  # High score
+            "track2": 0.9,
+            "track3": 0.8,
         }
 
         # Mock track embeddings (track2 is similar to negative prompt)
         track_embeddings = {
-            'track1': np.random.randn(1536),
-            'track2': negative_emb * 0.9,  # Very similar to negative
-            'track3': np.random.randn(1536),
+            "track1": np.random.randn(1536),
+            "track2": negative_emb * 0.9,  # Very similar to negative
+            "track3": np.random.randn(1536),
         }
 
         # Normalize
@@ -236,13 +260,15 @@ class TestNegativePromptIntegration:
         penalty = 0.85
         for track_name in candidates:
             track_emb = track_embeddings[track_name]
-            similarity = np.dot(track_emb, negative_emb / (np.linalg.norm(negative_emb) + 1e-8))
+            similarity = np.dot(
+                track_emb, negative_emb / (np.linalg.norm(negative_emb) + 1e-8)
+            )
             penalty_factor = 1.0 - (similarity * (1.0 - penalty))
             candidates[track_name] *= max(0.0, penalty_factor)
 
         # Verify track2 was penalized more than others
-        assert candidates['track2'] < candidates['track1']
-        assert candidates['track2'] < candidates['track3']
+        assert candidates["track2"] < candidates["track1"]
+        assert candidates["track2"] < candidates["track3"]
 
     def test_negative_prompt_request_schema(self):
         """Test that negative prompt fields are properly handled"""
@@ -254,7 +280,7 @@ class TestNegativePromptIntegration:
             seeds=[],
             models=["muq"],
             negative_prompts=["slow music", "sad songs"],
-            negative_prompt_penalty=0.7
+            negative_prompt_penalty=0.7,
         )
 
         # Verify schema
@@ -272,22 +298,28 @@ class TestMultiModelAgreementIntegration:
 
         def mock_search(collection_name, data, **kwargs):
             if collection_name == "embedding":
-                return [[
-                    {'name': 'Track A', 'distance': 0.9, 'entity': {'id': 'ta'}},
-                    {'name': 'Track B', 'distance': 0.85, 'entity': {'id': 'tb'}},
-                    {'name': 'Track C', 'distance': 0.80, 'entity': {'id': 'tc'}},
-                ]]
+                return [
+                    [
+                        {"name": "Track A", "distance": 0.9, "entity": {"id": "ta"}},
+                        {"name": "Track B", "distance": 0.85, "entity": {"id": "tb"}},
+                        {"name": "Track C", "distance": 0.80, "entity": {"id": "tc"}},
+                    ]
+                ]
             elif collection_name == "mert_embedding":
-                return [[
-                    {'name': 'Track A', 'distance': 0.88, 'entity': {'id': 'ta'}},
-                    {'name': 'Track B', 'distance': 0.83, 'entity': {'id': 'tb'}},
-                    {'name': 'Track D', 'distance': 0.78, 'entity': {'id': 'td'}},
-                ]]
+                return [
+                    [
+                        {"name": "Track A", "distance": 0.88, "entity": {"id": "ta"}},
+                        {"name": "Track B", "distance": 0.83, "entity": {"id": "tb"}},
+                        {"name": "Track D", "distance": 0.78, "entity": {"id": "td"}},
+                    ]
+                ]
             elif collection_name == "latent_embedding":
-                return [[
-                    {'name': 'Track A', 'distance': 0.87, 'entity': {'id': 'ta'}},
-                    {'name': 'Track E', 'distance': 0.82, 'entity': {'id': 'te'}},
-                ]]
+                return [
+                    [
+                        {"name": "Track A", "distance": 0.87, "entity": {"id": "ta"}},
+                        {"name": "Track E", "distance": 0.82, "entity": {"id": "te"}},
+                    ]
+                ]
             return [[]]
 
         mock_client.search.side_effect = mock_search
@@ -297,7 +329,7 @@ class TestMultiModelAgreementIntegration:
         embeddings = {
             "muq": np.random.randn(1536).tolist(),
             "mert": np.random.randn(76800).tolist(),
-            "latent": np.random.randn(576).tolist()
+            "latent": np.random.randn(576).tolist(),
         }
 
         # Test with min_model_agreement = 2
@@ -305,25 +337,25 @@ class TestMultiModelAgreementIntegration:
             embeddings=embeddings,
             top_k=10,
             merge_strategy="union",
-            min_model_agreement=2
+            min_model_agreement=2,
         )
 
-        track_names = [r['track_name'] for r in results]
+        track_names = [r["track_name"] for r in results]
 
         # Track A appears in all 3 (should be included)
-        assert 'Track A' in track_names
+        assert "Track A" in track_names
 
         # Track B appears in 2 (should be included)
-        assert 'Track B' in track_names
+        assert "Track B" in track_names
 
         # Track C, D, E only appear in 1 each (should be excluded)
-        assert 'Track C' not in track_names
-        assert 'Track D' not in track_names
-        assert 'Track E' not in track_names
+        assert "Track C" not in track_names
+        assert "Track D" not in track_names
+        assert "Track E" not in track_names
 
         # Verify Track A has all 3 models
-        track_a = next(r for r in results if r['track_name'] == 'Track A')
-        assert len(track_a['models']) == 3
+        track_a = next(r for r in results if r["track_name"] == "Track A")
+        assert len(track_a["models"]) == 3
 
 
 class TestAPIEndpointIntegration:
@@ -378,16 +410,10 @@ class TestEndToEndFlow:
             user_name="Test User",
             limit=10,
             mode="recent",
-            seeds=[
-                RecommendationSeed(
-                    track_id="track1",
-                    weight=1.0,
-                    source="recent"
-                )
-            ],
+            seeds=[RecommendationSeed(track_id="track1", weight=1.0, source="recent")],
             models=["muq", "mert"],
             merge_strategy="union",
-            min_model_agreement=1
+            min_model_agreement=1,
         )
 
         # Verify request is valid

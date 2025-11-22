@@ -23,7 +23,8 @@ import numpy as np
 
 class BatchEmbeddingRequest(BaseModel):
     """Request model for batch embedding job."""
-    models: List[str] = ["muq", "mert", "latent"]
+
+    models: List[str] = ["muq", "qwen3"]
     clearExisting: bool = True
 
 
@@ -194,16 +195,18 @@ class RecommendationEngine:
         direct_embedding_seeds = [s for s in request.seeds if s.embedding is not None]
         track_id_seeds = [s for s in request.seeds if s.embedding is None]
 
-        seed_embeddings: Dict[str, Sequence[float]] = {}
+        seed_embeddings: Dict[str, Dict[str, Sequence[float]]] = {}
 
         # Handle direct embeddings (e.g., from text queries)
         for seed in direct_embedding_seeds:
-            seed_embeddings[seed.track_id] = seed.embedding
+            primary_model = request.models[0] if request.models else "muq"
+            seed_embeddings[seed.track_id] = {primary_model: seed.embedding}
             if self.debug_logging:
                 self.logger.debug(
-                    "Using direct embedding for seed %s (dim=%d)",
+                    "Using direct embedding for seed %s (dim=%d model=%s)",
                     seed.track_id,
                     len(seed.embedding),
+                    primary_model,
                 )
 
         # Handle track ID seeds (traditional path)
@@ -212,23 +215,31 @@ class RecommendationEngine:
             id_to_name = self.name_resolver.ids_to_names(seed_ids)
             unique_names = list({name for name in id_to_name.values()})
 
-            # If using single model (backwards compatible)
             if len(request.models) == 1:
+                primary_model = request.models[0]
                 name_embeddings = self.searcher.get_embeddings_by_name(unique_names)
+                for track_id, name in id_to_name.items():
+                    vector = name_embeddings.get(name)
+                    if vector is not None:
+                        seed_embeddings[track_id] = {primary_model: vector}
             else:
-                # Use first model for embedding lookup (primary model)
-                name_embeddings = (
-                    self.multi_model_searcher.get_embeddings_by_name(
-                        unique_names, model=request.models[0]
-                    )
-                    if self.multi_model_searcher
-                    else {}
-                )
+                model_embeddings: Dict[str, Dict[str, Sequence[float]]] = {}
+                if self.multi_model_searcher:
+                    for model in request.models:
+                        model_embeddings[model] = (
+                            self.multi_model_searcher.get_embeddings_by_name(
+                                unique_names, model=model
+                            )
+                        )
 
-            for track_id, name in id_to_name.items():
-                vector = name_embeddings.get(name)
-                if vector is not None:
-                    seed_embeddings[track_id] = vector
+                for track_id, name in id_to_name.items():
+                    vectors_for_models: Dict[str, Sequence[float]] = {}
+                    for model in request.models:
+                        vector = model_embeddings.get(model, {}).get(name)
+                        if vector is not None:
+                            vectors_for_models[model] = vector
+                    if vectors_for_models:
+                        seed_embeddings[track_id] = vectors_for_models
 
         if self.debug_logging:
             if track_id_seeds:
@@ -272,18 +283,28 @@ class RecommendationEngine:
         if len(request.models) > 1 and self.multi_model_searcher:
             # For each seed, search across all models
             for seed in request.seeds:
-                embedding = seed_embeddings.get(seed.track_id)
-                if embedding is None:
+                embedding_map = seed_embeddings.get(seed.track_id, {})
+                if not embedding_map:
                     if self.debug_logging:
                         self.logger.debug(
                             "Skipping seed without embedding: %s", seed.track_id
                         )
                     continue
 
-                # Build embeddings dict for multi-model search
-                # We assume all models can use the same embedding
-                # (from primary model or text)
-                model_embeddings = {model: embedding for model in request.models}
+                # Build embeddings dict for multi-model search using only
+                # vectors that exist for each model.
+                model_embeddings = {
+                    model: embedding_map.get(model)
+                    for model in request.models
+                    if embedding_map.get(model) is not None
+                }
+                if not model_embeddings:
+                    if self.debug_logging:
+                        self.logger.debug(
+                            "No embeddings available for requested models: %s",
+                            request.models,
+                        )
+                    continue
 
                 try:
                     hits = self.multi_model_searcher.search_multi_model(
@@ -318,8 +339,19 @@ class RecommendationEngine:
 
         else:
             # Single model search (backwards compatible)
+            primary_model = request.models[0] if request.models else "muq"
+            model_searcher = (
+                self.searcher
+                if primary_model == "muq"
+                else (
+                    self.multi_model_searcher.searchers.get(primary_model)
+                    if self.multi_model_searcher
+                    else None
+                )
+            )
+
             for seed in request.seeds:
-                embedding = seed_embeddings.get(seed.track_id)
+                embedding = seed_embeddings.get(seed.track_id, {}).get(primary_model)
                 if embedding is None:
                     if self.debug_logging:
                         self.logger.debug(
@@ -327,7 +359,14 @@ class RecommendationEngine:
                         )
                     continue
 
-                hits = self.searcher.search_similar_embeddings(
+                if model_searcher is None:
+                    if self.debug_logging:
+                        self.logger.debug(
+                            "No searcher configured for model %s", primary_model
+                        )
+                    continue
+
+                hits = model_searcher.search_similar_embeddings(
                     embedding,
                     top_k=max_hits,
                     exclude_names=exclude_names,
