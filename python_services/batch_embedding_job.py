@@ -16,6 +16,7 @@ from tqdm import tqdm
 
 from embedding_models import MuQEmbeddingModel
 from description_pipeline import DescriptionEmbeddingPipeline
+from gpu_settings import GPUSettings, is_oom_error, load_gpu_settings
 
 logger = logging.getLogger(__name__)
 
@@ -24,16 +25,17 @@ logger = logging.getLogger(__name__)
 class BatchJobProgress:
     """Tracks progress of batch embedding job"""
 
-    total_tracks: int
-    total_operations: int  # tracks × models
-    processed_tracks: int
-    processed_operations: int
-    failed_tracks: int
-    current_track: Optional[str]
-    current_model: Optional[str]
-    status: str  # running, completed, failed, cancelled
-    started_at: float
-    estimated_completion: Optional[float]
+    total_tracks: int = 0
+    total_operations: int = 0  # tracks × models
+    processed_tracks: int = 0
+    processed_operations: int = 0
+    failed_tracks: int = 0
+    current_track: Optional[str] = None
+    current_model: Optional[str] = None
+    status: str = "initialized"  # running, completed, failed, cancelled
+    started_at: float = 0.0
+    estimated_completion: Optional[float] = None
+    last_error: Optional[str] = None
 
 
 class BatchEmbeddingJob:
@@ -55,6 +57,7 @@ class BatchEmbeddingJob:
         milvus_uri: str,
         checkpoint_interval: int = 100,
         logger: Optional[logging.Logger] = None,
+        gpu_settings: Optional[GPUSettings] = None,
     ):
         """
         Initialize batch embedding job.
@@ -66,11 +69,21 @@ class BatchEmbeddingJob:
             checkpoint_interval: Save progress every N tracks
             logger: Optional logger instance
         """
-        self.db_path = db_path
-        self.music_root = Path(music_root)
+        # Resolve to absolute paths to avoid accidentally creating a new, empty
+        # SQLite file when the working directory changes (e.g. running from
+        # python_services/ would previously create python_services/navidrome.db).
+        self.db_path = str(Path(db_path).expanduser().resolve())
+        self.music_root = Path(music_root).expanduser().resolve()
         self.milvus_uri = milvus_uri
         self.checkpoint_interval = checkpoint_interval
         self.logger = logger or logging.getLogger(__name__)
+        self.gpu_settings = gpu_settings or load_gpu_settings()
+
+        if not Path(self.db_path).exists():
+            raise FileNotFoundError(
+                f"Navidrome database not found at {self.db_path}. "
+                "Set NAVIDROME_DB_PATH or pass an explicit path."
+            )
 
         self.progress = BatchJobProgress(
             total_tracks=0,
@@ -103,7 +116,9 @@ class BatchEmbeddingJob:
                 self.models["muq"] = MuQEmbeddingModel(logger=self.logger)
             elif model_name == "qwen3":
                 self.logger.info("Initializing description embedding pipeline...")
-                self.models["qwen3"] = DescriptionEmbeddingPipeline(logger=self.logger)
+                self.models["qwen3"] = DescriptionEmbeddingPipeline(
+                    logger=self.logger, gpu_settings=self.gpu_settings
+                )
             else:
                 self.logger.warning(f"Unknown model: {model_name}")
 
@@ -239,6 +254,7 @@ class BatchEmbeddingJob:
         operations_completed = 0
         batch_data = []  # For batched Milvus insertions
         BATCH_SIZE = 100  # Insert every 100 embeddings
+        stop_due_to_error = False
 
         from pymilvus import MilvusClient
 
@@ -251,6 +267,8 @@ class BatchEmbeddingJob:
                 if self._cancelled:
                     self.progress.status = "cancelled"
                     self.logger.info("Job cancelled by user")
+                    break
+                if stop_due_to_error:
                     break
 
                 self.logger.info(
@@ -272,6 +290,8 @@ class BatchEmbeddingJob:
                         if self._cancelled:
                             self.progress.status = "cancelled"
                             self.logger.info("Job cancelled by user")
+                            break
+                        if stop_due_to_error:
                             break
 
                         self.progress.current_track = (
@@ -296,11 +316,34 @@ class BatchEmbeddingJob:
                             tracks_processed_this_model += 1
                             self.progress.processed_operations = operations_completed
                         except Exception as e:
+                            if is_oom_error(e):
+                                message = (
+                                    f"CUDA out of memory while processing "
+                                    f"{track.get('title') or track.get('id')} "
+                                    f"with {model_name}. Lower the GPU memory cap "
+                                    "or enable CPU offload in batch settings."
+                                )
+                                self.logger.error(message)
+                                self.progress.status = "failed"
+                                self.progress.last_error = message
+                                stop_due_to_error = True
+                                try:
+                                    model.unload_model()
+                                except Exception:
+                                    pass
+                                try:
+                                    import torch
+
+                                    torch.cuda.empty_cache()
+                                except Exception:
+                                    pass
+                                break
                             self.logger.error(
                                 f"Failed to process track {track['id']} with {model_name}: {e}"
                             )
                             failed_tracks.append((track["id"], model_name, str(e)))
                             self.progress.failed_tracks += 1
+                            self.progress.last_error = str(e)
 
                         # Update estimated completion every 10 operations
                         if operations_completed > 0 and operations_completed % 10 == 0:
@@ -321,7 +364,17 @@ class BatchEmbeddingJob:
                     model.unload_model()
 
                 except Exception as e:
-                    self.logger.error(f"Failed during {model_name} processing: {e}")
+                    if is_oom_error(e):
+                        message = (
+                            f"CUDA out of memory while running model {model_name}. "
+                            "Reduce GPU memory target or enable CPU offload."
+                        )
+                        self.logger.error(message)
+                        self.progress.status = "failed"
+                        self.progress.last_error = message
+                        stop_due_to_error = True
+                    else:
+                        self.logger.error(f"Failed during {model_name} processing: {e}")
                     # Insert any remaining batch data before failing
                     if batch_data:
                         try:
@@ -534,6 +587,7 @@ def start_batch_job(
     music_root: str,
     milvus_uri: str,
     checkpoint_interval: int = 100,
+    gpu_settings: Optional[GPUSettings] = None,
 ) -> BatchEmbeddingJob:
     """
     Start a new batch embedding job.
@@ -549,7 +603,7 @@ def start_batch_job(
     """
     global _current_job
     _current_job = BatchEmbeddingJob(
-        db_path, music_root, milvus_uri, checkpoint_interval
+        db_path, music_root, milvus_uri, checkpoint_interval, gpu_settings=gpu_settings
     )
     return _current_job
 

@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -22,25 +25,25 @@ import (
 )
 
 type recommendationRequestPayload struct {
-	Limit              int                  `json:"limit"`
-	SongIDs            []string             `json:"songIds"`
-	Name               string               `json:"name"`
-	Diversity          *float64             `json:"diversity"`
-	ExcludeTrackIDs    []string             `json:"excludeTrackIds"`
-	ExcludePlaylistIDs []string             `json:"excludePlaylistIds"`
-	PositiveTrackIDs   []string             `json:"positiveTrackIds"`
-	NegativeTrackIDs   []string             `json:"negativeTrackIds"`
+	Limit              int      `json:"limit"`
+	SongIDs            []string `json:"songIds"`
+	Name               string   `json:"name"`
+	Diversity          *float64 `json:"diversity"`
+	ExcludeTrackIDs    []string `json:"excludeTrackIds"`
+	ExcludePlaylistIDs []string `json:"excludePlaylistIds"`
+	PositiveTrackIDs   []string `json:"positiveTrackIds"`
+	NegativeTrackIDs   []string `json:"negativeTrackIds"`
 
 	// Multi-model support (Idea 2)
-	Models            []string            `json:"models,omitempty"`
-	MergeStrategy     string              `json:"mergeStrategy,omitempty"`
-	ModelPriorities   map[string]int      `json:"modelPriorities,omitempty"`
-	MinModelAgreement int                 `json:"minModelAgreement,omitempty"`
+	Models            []string       `json:"models,omitempty"`
+	MergeStrategy     string         `json:"mergeStrategy,omitempty"`
+	ModelPriorities   map[string]int `json:"modelPriorities,omitempty"`
+	MinModelAgreement int            `json:"minModelAgreement,omitempty"`
 
 	// Negative prompting (Idea 4)
-	NegativePrompts        []string                       `json:"negativePrompts,omitempty"`
-	NegativePromptPenalty  float64                        `json:"negativePromptPenalty,omitempty"`
-	NegativeEmbeddings     map[string][][]float64         `json:"negativeEmbeddings,omitempty"`
+	NegativePrompts       []string               `json:"negativePrompts,omitempty"`
+	NegativePromptPenalty float64                `json:"negativePromptPenalty,omitempty"`
+	NegativeEmbeddings    map[string][][]float64 `json:"negativeEmbeddings,omitempty"`
 
 	// Text embedding support (Idea 1)
 	Text  string `json:"text,omitempty"`
@@ -82,6 +85,112 @@ const (
 	lowRatingDislikeMax    = 2
 	dislikeRejectThreshold = 0.5
 )
+
+type gpuSettings struct {
+	MaxGPUMemoryGB   float64 `json:"maxGpuMemoryGb"`
+	Precision        string  `json:"precision"`
+	EnableCPUOffload bool    `json:"enableCpuOffload"`
+	Device           string  `json:"device"`
+	EstimatedVRAMGB  float64 `json:"estimatedVramGb,omitempty"`
+}
+
+func defaultGPUSettings() gpuSettings {
+	return gpuSettings{
+		MaxGPUMemoryGB:   9.0,
+		Precision:        "fp16",
+		EnableCPUOffload: true,
+		Device:           "auto",
+		EstimatedVRAMGB:  9.0,
+	}
+}
+
+func gpuSettingsFilePath() string {
+	if v := os.Getenv("NAVIDROME_GPU_SETTINGS_PATH"); v != "" {
+		return v
+	}
+	return filepath.Join("python_services", "gpu_settings.json")
+}
+
+func loadGPUSettings() gpuSettings {
+	settings := defaultGPUSettings()
+	data, err := os.ReadFile(gpuSettingsFilePath())
+	if err != nil {
+		return settings
+	}
+	var parsed gpuSettings
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return settings
+	}
+	// Apply defaults for missing fields
+	if parsed.MaxGPUMemoryGB <= 0 {
+		parsed.MaxGPUMemoryGB = settings.MaxGPUMemoryGB
+	}
+	if parsed.Precision == "" {
+		parsed.Precision = settings.Precision
+	}
+	parsed.EstimatedVRAMGB = estimateVRAM(parsed)
+	return parsed
+}
+
+func saveGPUSettings(cfg gpuSettings) error {
+	cfg.EstimatedVRAMGB = estimateVRAM(cfg)
+	payload, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := gpuSettingsFilePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, payload, 0o644)
+}
+
+func estimateVRAM(cfg gpuSettings) float64 {
+	if cfg.MaxGPUMemoryGB <= 0 {
+		return defaultGPUSettings().MaxGPUMemoryGB
+	}
+	// We cap to the requested target; runtime enforcement happens in Python
+	return math.Round(cfg.MaxGPUMemoryGB*100) / 100
+}
+
+func restartPythonServices(ctx context.Context) {
+	servicesDir := os.Getenv("NAVIDROME_PYTHON_SERVICES_DIR")
+	if servicesDir == "" {
+		servicesDir = "python_services"
+	}
+	scriptPath := filepath.Join(servicesDir, "restart_services.sh")
+	if _, err := os.Stat(scriptPath); err != nil {
+		log.Warn(ctx, "Python restart script not found", "path", scriptPath, "error", err)
+		return
+	}
+
+	go func() {
+		cmdCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(cmdCtx, scriptPath) // #nosec G204 -- path is controlled by config/env
+		cmd.Dir = servicesDir
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Warn(ctx, "Failed to restart python services", "error", err, "output", string(output))
+			return
+		}
+		log.Info(ctx, "Restarted python services", "output", string(output))
+	}()
+}
+
+func textEmbedBaseURL() string {
+	if conf.Server.Recommendations.TextBaseURL != "" {
+		return strings.TrimRight(conf.Server.Recommendations.TextBaseURL, "/")
+	}
+	return strings.TrimRight(conf.Server.Recommendations.BaseURL, "/")
+}
+
+func batchBaseURL() string {
+	if conf.Server.Recommendations.BatchBaseURL != "" {
+		return strings.TrimRight(conf.Server.Recommendations.BatchBaseURL, "/")
+	}
+	return strings.TrimRight(conf.Server.Recommendations.BaseURL, "/")
+}
 
 type recommendationSettings struct {
 	MixLength             int     `json:"mixLength"`
@@ -169,6 +278,10 @@ func (n *Router) addRecommendationRoutes(r chi.Router) {
 		r.Post("/discovery", n.handleDiscoveryRecommendations)
 		r.Post("/custom", n.handleCustomRecommendations)
 		r.Post("/text", n.handleTextRecommendations)
+		r.Route("/gpu", func(r chi.Router) {
+			r.Get("/settings", n.handleGetGpuSettings)
+			r.Put("/settings", n.handleUpdateGpuSettings)
+		})
 
 		// Batch re-embedding endpoints (proxy to Python)
 		r.Route("/batch", func(r chi.Router) {
@@ -220,6 +333,82 @@ func (n *Router) handleUpdateRecommendationSettings(w http.ResponseWriter, r *ht
 		return
 	}
 	writeJSON(w, http.StatusOK, settings)
+}
+
+func (n *Router) handleGetGpuSettings(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user, ok := request.UserFrom(ctx)
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusUnauthorized)
+		return
+	}
+	if !user.IsAdmin {
+		http.Error(w, "admin access required", http.StatusForbidden)
+		return
+	}
+	settings := loadGPUSettings()
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (n *Router) handleUpdateGpuSettings(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user, ok := request.UserFrom(ctx)
+	if !ok {
+		http.Error(w, "user not found in context", http.StatusUnauthorized)
+		return
+	}
+	if !user.IsAdmin {
+		http.Error(w, "admin access required", http.StatusForbidden)
+		return
+	}
+
+	var payload gpuSettings
+	if err := decodeJSON(r, &payload); err != nil {
+		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	defaults := defaultGPUSettings()
+	if payload.MaxGPUMemoryGB <= 0 {
+		payload.MaxGPUMemoryGB = defaults.MaxGPUMemoryGB
+	}
+	if payload.Precision == "" {
+		payload.Precision = defaults.Precision
+	}
+	if payload.Device == "" {
+		payload.Device = defaults.Device
+	}
+
+	if payload.MaxGPUMemoryGB < 2 || payload.MaxGPUMemoryGB > 80 {
+		http.Error(w, "maxGpuMemoryGb must be between 2 and 80", http.StatusBadRequest)
+		return
+	}
+	precisionAllowed := map[string]bool{"fp16": true, "bf16": true, "fp32": true}
+	if !precisionAllowed[strings.ToLower(payload.Precision)] {
+		http.Error(w, "precision must be one of fp16, bf16, fp32", http.StatusBadRequest)
+		return
+	}
+	deviceAllowed := map[string]bool{"auto": true, "cuda": true, "cpu": true}
+	if !deviceAllowed[strings.ToLower(payload.Device)] {
+		http.Error(w, "device must be auto, cuda, or cpu", http.StatusBadRequest)
+		return
+	}
+
+	payload.Precision = strings.ToLower(payload.Precision)
+	payload.Device = strings.ToLower(payload.Device)
+	payload.EstimatedVRAMGB = estimateVRAM(payload)
+
+	if err := saveGPUSettings(payload); err != nil {
+		log.Error(ctx, "Failed to persist GPU settings", "error", err)
+		http.Error(w, "failed to save GPU settings", http.StatusInternalServerError)
+		return
+	}
+
+	restartPythonServices(ctx)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":   "restarting",
+		"settings": payload,
+	})
 }
 
 func (n *Router) getRecommendationSettings(ctx context.Context, user model.User) (recommendationSettings, error) {
@@ -1378,7 +1567,7 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Get text embedding from Python service
-	textEmbedURL := conf.Server.Recommendations.BaseURL + "/embed_text"
+	textEmbedURL := textEmbedBaseURL() + "/embed_text"
 	embedding, err := n.getTextEmbedding(ctx, payload.Text, payload.Model, textEmbedURL)
 	if err != nil {
 		log.Error(ctx, "Failed to get text embedding", "error", err, "text", payload.Text)
@@ -1493,7 +1682,7 @@ func (n *Router) handleBatchStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Proxy to Python service
-	batchURL := conf.Server.Recommendations.BaseURL + "/batch/start"
+	batchURL := batchBaseURL() + "/batch/start"
 	resp, err := n.proxyToPython(ctx, "POST", batchURL, payload)
 	if err != nil {
 		log.Error(ctx, "Failed to start batch job", "error", err)
@@ -1519,7 +1708,7 @@ func (n *Router) handleBatchProgress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Proxy to Python service
-	batchURL := conf.Server.Recommendations.BaseURL + "/batch/progress"
+	batchURL := batchBaseURL() + "/batch/progress"
 	resp, err := n.proxyToPython(ctx, "GET", batchURL, nil)
 	if err != nil {
 		log.Error(ctx, "Failed to get batch progress", "error", err)
@@ -1545,7 +1734,7 @@ func (n *Router) handleBatchCancel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Proxy to Python service
-	batchURL := conf.Server.Recommendations.BaseURL + "/batch/cancel"
+	batchURL := batchBaseURL() + "/batch/cancel"
 	resp, err := n.proxyToPython(ctx, "POST", batchURL, nil)
 	if err != nil {
 		log.Error(ctx, "Failed to cancel batch job", "error", err)
@@ -1622,12 +1811,12 @@ func (n *Router) proxyToPython(ctx context.Context, method string, url string, p
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("python service unreachable at %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("python service returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("python service returned status %d for %s", resp.StatusCode, url)
 	}
 
 	var result map[string]interface{}

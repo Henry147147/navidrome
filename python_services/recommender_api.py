@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Dict, List, Sequence
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 import uvicorn
 from pymilvus import MilvusClient
 from pydantic import BaseModel
 
 from database_query import MilvusSimilaritySearcher, MultiModelSimilaritySearcher
+from gpu_settings import load_gpu_settings
 from schemas import (
     RecommendationItem,
     RecommendationRequest,
@@ -29,6 +31,27 @@ class BatchEmbeddingRequest(BaseModel):
 
 
 LOGGER = logging.getLogger("navidrome.recommender")
+
+
+def _repo_root() -> Path:
+    """Return repository root (one level above python_services)."""
+    return Path(__file__).resolve().parents[1]
+
+
+def _resolve_path(env_var: str, default_relative: str) -> Path:
+    """Resolve a path from environment or fallback to repo root.
+
+    Using a relative default previously created a brand new SQLite file when the
+    service was started from `python_services/`, which resulted in the
+    `media_file` table being missing. This helper ensures we always point to the
+    real Navidrome assets shipped with the repo unless explicitly overridden via
+    environment.
+    """
+
+    env_val = os.getenv(env_var)
+    if env_val:
+        return Path(env_val).expanduser()
+    return _repo_root() / default_relative
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -499,11 +522,13 @@ def build_engine() -> RecommendationEngine:
     )
 
 
-def create_app() -> FastAPI:
-    app = FastAPI(title="Navidrome Recommender", version="1.0.0")
-    engine = build_engine()
+def build_recommender_router(
+    engine: RecommendationEngine | None = None,
+) -> APIRouter:
+    router = APIRouter()
+    service = engine or build_engine()
 
-    @app.post("/playlist/{mode}", response_model=RecommendationResponse)
+    @router.post("/playlist/{mode}", response_model=RecommendationResponse)
     def recommend_playlist(
         mode: str, payload: RecommendationRequest
     ) -> RecommendationResponse:
@@ -511,9 +536,9 @@ def create_app() -> FastAPI:
         if not normalized_mode:
             raise HTTPException(status_code=400, detail="Mode must be supplied")
         request = payload.model_copy(update={"mode": normalized_mode})
-        return engine.recommend(request)
+        return service.recommend(request)
 
-    @app.get("/healthz")
+    @router.get("/healthz")
     def healthcheck() -> Dict[str, str]:
         return {"status": "ok"}
 
@@ -521,17 +546,33 @@ def create_app() -> FastAPI:
     from batch_embedding_job import start_batch_job, get_current_job
     import threading
 
-    @app.post("/batch/start")
+    @router.post("/batch/start")
     def start_batch_embedding(request: BatchEmbeddingRequest) -> Dict:
         """Start batch re-embedding job."""
         current_job = get_current_job()
         if current_job and current_job.progress.status == "running":
             raise HTTPException(400, "A job is already running")
 
+        db_path = _resolve_path("NAVIDROME_DB_PATH", "navidrome.db")
+        music_root = _resolve_path("NAVIDROME_MUSIC_ROOT", "music")
+
+        if not db_path.exists():
+            raise HTTPException(
+                status_code=500,
+                detail=f"Navidrome database not found at {db_path}",
+            )
+
+        if not music_root.exists():
+            raise HTTPException(
+                status_code=500,
+                detail=f"Music root not found at {music_root}",
+            )
+
         job = start_batch_job(
-            db_path=os.getenv("NAVIDROME_DB_PATH", "navidrome.db"),
-            music_root=os.getenv("NAVIDROME_MUSIC_ROOT", "/music"),
+            db_path=str(db_path),
+            music_root=str(music_root),
             milvus_uri=os.getenv("NAVIDROME_MILVUS_URI", "http://localhost:19530"),
+            gpu_settings=load_gpu_settings(),
         )
 
         # Run in background thread
@@ -542,7 +583,7 @@ def create_app() -> FastAPI:
 
         return {"status": "started", "job_id": id(job)}
 
-    @app.get("/batch/progress")
+    @router.get("/batch/progress")
     def get_batch_progress() -> Dict:
         """Get current batch job progress."""
         job = get_current_job()
@@ -565,9 +606,10 @@ def create_app() -> FastAPI:
                 else 0
             ),
             "estimated_completion": progress.estimated_completion,
+            "last_error": progress.last_error,
         }
 
-    @app.post("/batch/cancel")
+    @router.post("/batch/cancel")
     def cancel_batch_job() -> Dict:
         """Cancel running batch job."""
         job = get_current_job()
@@ -577,6 +619,12 @@ def create_app() -> FastAPI:
         job.cancel()
         return {"status": "cancelling"}
 
+    return router
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(title="Navidrome Recommender", version="1.0.0")
+    app.include_router(build_recommender_router())
     return app
 
 

@@ -8,6 +8,15 @@ from pathlib import Path
 from batch_embedding_job import BatchEmbeddingJob, BatchJobProgress
 
 
+@pytest.fixture
+def temp_paths(tmp_path):
+    db_path = tmp_path / "test.db"
+    db_path.write_text("")  # Touch file so constructor does not fail
+    music_root = tmp_path / "music"
+    music_root.mkdir()
+    return str(db_path), str(music_root)
+
+
 class MockDB:
     """Mock database for testing"""
 
@@ -74,26 +83,28 @@ class TestBatchJobProgress:
 class TestBatchEmbeddingJob:
     """Test BatchEmbeddingJob class"""
 
-    def test_init(self):
+    def test_init(self, temp_paths):
         """Test job initialization"""
+        db_path, music_root = temp_paths
         job = BatchEmbeddingJob(
-            db_path="/tmp/test.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
             checkpoint_interval=50,
         )
 
-        assert job.db_path == "/tmp/test.db"
-        assert job.music_root == Path("/music")
+        assert job.db_path == str(Path(db_path).resolve())
+        assert job.music_root == Path(music_root)
         assert job.milvus_uri == "http://localhost:19530"
         assert job.checkpoint_interval == 50
         assert job.progress.status == "initialized"
 
-    def test_initialize_models(self):
+    def test_initialize_models(self, temp_paths):
         """Test model initialization"""
+        db_path, music_root = temp_paths
         job = BatchEmbeddingJob(
-            db_path="/tmp/test.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
         )
 
@@ -108,11 +119,12 @@ class TestBatchEmbeddingJob:
         assert "mert" in job.models
         assert "latent" in job.models
 
-    def test_progress_tracking(self):
+    def test_progress_tracking(self, temp_paths):
         """Test that progress is tracked correctly"""
+        db_path, music_root = temp_paths
         job = BatchEmbeddingJob(
-            db_path="/tmp/test.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
         )
 
@@ -128,11 +140,12 @@ class TestBatchEmbeddingJob:
         assert progress.failed_tracks == 2
         assert progress.status == "running"
 
-    def test_cancel_job(self):
+    def test_cancel_job(self, temp_paths):
         """Test job cancellation"""
+        db_path, music_root = temp_paths
         job = BatchEmbeddingJob(
-            db_path="/tmp/test.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
         )
 
@@ -162,11 +175,12 @@ class TestBatchEmbeddingJob:
             result = f"{normalized_artist} - {normalized_title}".strip()
             assert result == expected
 
-    def test_empty_track_list(self):
+    def test_empty_track_list(self, temp_paths):
         """Test handling of empty track list"""
+        db_path, music_root = temp_paths
         job = BatchEmbeddingJob(
-            db_path="/tmp/test.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
         )
 
@@ -176,11 +190,12 @@ class TestBatchEmbeddingJob:
         # Should complete immediately
         assert job.progress.total_tracks == 0
 
-    def test_eta_calculation(self):
+    def test_eta_calculation(self, temp_paths):
         """Test ETA calculation"""
+        db_path, music_root = temp_paths
         job = BatchEmbeddingJob(
-            db_path="/tmp/test.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
         )
 
@@ -203,11 +218,12 @@ class TestBatchEmbeddingJob:
         assert (eta - time.time()) > 200  # At least 200 seconds
         assert (eta - time.time()) < 400  # At most 400 seconds
 
-    def test_completion_status(self):
+    def test_completion_status(self, temp_paths):
         """Test completion status logic"""
+        db_path, music_root = temp_paths
         job = BatchEmbeddingJob(
-            db_path="/tmp/test.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
         )
 
@@ -227,11 +243,12 @@ class TestBatchEmbeddingJob:
         job.progress.status = "completed"
         assert job.progress.status == "completed"
 
-    def test_checkpoint_interval(self):
+    def test_checkpoint_interval(self, temp_paths):
         """Test that checkpoint interval is respected"""
+        db_path, music_root = temp_paths
         job = BatchEmbeddingJob(
-            db_path="/tmp/test.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
             checkpoint_interval=10,
         )
@@ -265,29 +282,31 @@ class TestBatchEmbeddingJob:
 class TestBatchJobAPI:
     """Test batch job API functions"""
 
-    def test_start_batch_job(self):
+    def test_start_batch_job(self, temp_paths):
         """Test starting a new batch job"""
         from batch_embedding_job import start_batch_job
 
+        db_path, music_root = temp_paths
         job = start_batch_job(
-            db_path="/tmp/test.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
             checkpoint_interval=100,
         )
 
         assert job is not None
-        assert job.db_path == "/tmp/test.db"
+        assert job.db_path == str(Path(db_path).resolve())
         assert job.checkpoint_interval == 100
 
-    def test_get_current_job(self):
+    def test_get_current_job(self, temp_paths):
         """Test getting current job"""
         from batch_embedding_job import start_batch_job, get_current_job
 
         # Start a job
+        db_path, music_root = temp_paths
         started_job = start_batch_job(
-            db_path="/tmp/test.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
         )
 
@@ -310,11 +329,12 @@ class TestBatchJobAPI:
 class TestBatchJobErrorHandling:
     """Test error handling in batch jobs"""
 
-    def test_missing_audio_file(self):
+    def test_missing_audio_file(self, temp_paths):
         """Test handling of missing audio file"""
+        db_path, music_root = temp_paths
         job = BatchEmbeddingJob(
-            db_path="/tmp/test.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
         )
 
@@ -333,11 +353,12 @@ class TestBatchJobErrorHandling:
         with pytest.raises(FileNotFoundError):
             job._process_track(track, ["muq"])
 
-    def test_failed_track_counting(self):
+    def test_failed_track_counting(self, temp_paths):
         """Test that failed tracks are counted"""
+        db_path, music_root = temp_paths
         job = BatchEmbeddingJob(
-            db_path="/tmp/test.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
         )
 
@@ -350,7 +371,7 @@ class TestBatchJobErrorHandling:
 
         assert job.progress.failed_tracks == 3
 
-    def test_model_embedding_error(self):
+    def test_model_embedding_error(self, temp_paths):
         """Test handling of model embedding errors"""
 
         class FailingModel:
@@ -363,9 +384,10 @@ class TestBatchJobErrorHandling:
             def ensure_milvus_index(self, client):
                 pass
 
+        db_path, music_root = temp_paths
         job = BatchEmbeddingJob(
-            db_path="/tmp/test.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
         )
 
@@ -379,19 +401,21 @@ class TestBatchJobErrorHandling:
 class TestBatchJobConcurrency:
     """Test concurrent access and safety"""
 
-    def test_single_job_instance(self):
+    def test_single_job_instance(self, temp_paths):
         """Test that only one job can run at a time"""
         from batch_embedding_job import start_batch_job, get_current_job
 
+        db_path, music_root = temp_paths
         _job1 = start_batch_job(  # noqa: F841
-            db_path="/tmp/test1.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
         )
 
+        db_path2, music_root2 = temp_paths
         job2 = start_batch_job(
-            db_path="/tmp/test2.db",
-            music_root="/music",
+            db_path=db_path2,
+            music_root=music_root2,
             milvus_uri="http://localhost:19530",
         )
 
@@ -399,11 +423,12 @@ class TestBatchJobConcurrency:
         current = get_current_job()
         assert current is job2
 
-    def test_progress_thread_safety(self):
+    def test_progress_thread_safety(self, temp_paths):
         """Test that progress updates are safe"""
+        db_path, music_root = temp_paths
         job = BatchEmbeddingJob(
-            db_path="/tmp/test.db",
-            music_root="/music",
+            db_path=db_path,
+            music_root=music_root,
             milvus_uri="http://localhost:19530",
         )
 

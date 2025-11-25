@@ -1,12 +1,18 @@
 package nativeapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"net"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/navidrome/navidrome/conf"
 )
 
-const embedSocketPath = "/tmp/navidrome_embed.sock"
+const embedEndpoint = "/embed/audio"
 
 type embedRequest struct {
 	MusicName string         `json:"name"`
@@ -19,43 +25,81 @@ type EmbedClient interface {
 	Embed(musicPath, musicName, cuePath string, settings map[string]any) (map[string]any, error)
 }
 
-type embedSocketClient struct {
-	socketPath string
+type embedHTTPClient struct {
+	baseURL    string
+	httpClient *http.Client
 }
 
-func NewEmbedSocketClient(socketPath string) EmbedClient {
-	return &embedSocketClient{socketPath: socketPath}
-}
-
-func (c *embedSocketClient) Embed(musicPath, musicName, cuePath string, settings map[string]any) (map[string]any, error) {
-	conn, err := net.Dial("unix", c.socketPath)
-	if err != nil {
-		return nil, fmt.Errorf("dial embed server: %w", err)
+func NewEmbedHTTPClient(baseURL string, timeout time.Duration) EmbedClient {
+	base := strings.TrimSuffix(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return noopEmbedClient{}
 	}
-	defer func() { _ = conn.Close() }()
-	reqPayload := embedRequest{
+	return &embedHTTPClient{
+		baseURL:    base,
+		httpClient: &http.Client{Timeout: timeout},
+	}
+}
+
+func (c *embedHTTPClient) Embed(musicPath, musicName, cuePath string, settings map[string]any) (map[string]any, error) {
+	if c == nil {
+		return nil, fmt.Errorf("embed client not configured")
+	}
+
+	payload := embedRequest{
 		MusicFile: musicPath,
 		MusicName: musicName,
 		Settings:  settings,
 	}
 	if cuePath != "" {
-		reqPayload.CueFile = cuePath
+		payload.CueFile = cuePath
 	}
 
-	if err := json.NewEncoder(conn).Encode(&reqPayload); err != nil {
-		return nil, fmt.Errorf("send request to embed server: %w", err)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("encode embed request: %w", err)
 	}
 
-	if unixConn, ok := conn.(*net.UnixConn); ok {
-		_ = unixConn.CloseWrite()
+	url := c.baseURL + embedEndpoint
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("create embed request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("call embed service: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("embed service returned %s", resp.Status)
 	}
 
-	var resp map[string]any
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
-		return nil, fmt.Errorf("read response from embed server: %w", err)
+	var decoded map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		return nil, fmt.Errorf("decode embed response: %w", err)
 	}
 
-	return resp, nil
+	return decoded, nil
 }
 
-var embedClient EmbedClient = NewEmbedSocketClient(embedSocketPath)
+type noopEmbedClient struct{}
+
+func (noopEmbedClient) Embed(string, string, string, map[string]any) (map[string]any, error) {
+	return nil, fmt.Errorf("embed service disabled")
+}
+
+var (
+	embedClient     EmbedClient
+	embedClientOnce sync.Once
+)
+
+func getEmbedClient() EmbedClient {
+	embedClientOnce.Do(func() {
+		base := conf.Server.Recommendations.BaseURL
+		embedClient = NewEmbedHTTPClient(base, conf.Server.Recommendations.Timeout)
+	})
+	return embedClient
+}

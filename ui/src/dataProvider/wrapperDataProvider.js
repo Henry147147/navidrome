@@ -236,7 +236,7 @@ const wrapperDataProvider = {
     httpClient(`${REST_URL}/text-embedding`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, model: model || 'muq' }),
+      body: JSON.stringify({ text, model: model || 'qwen3' }),
     }).then(({ json }) => ({ data: json })),
   startBatchEmbedding: (models, clearExisting) =>
     httpClient(`${REST_URL}/recommendations/batch/start`, {
@@ -251,6 +251,16 @@ const wrapperDataProvider = {
   cancelBatchEmbedding: () =>
     httpClient(`${REST_URL}/recommendations/batch/cancel`, {
       method: 'POST',
+    }).then(({ json }) => ({ data: json })),
+  getGpuSettings: () =>
+    httpClient(`${REST_URL}/recommendations/gpu/settings`).then(({ json }) => ({
+      data: json,
+    })),
+  updateGpuSettings: (data) =>
+    httpClient(`${REST_URL}/recommendations/gpu/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     }).then(({ json }) => ({ data: json })),
   getAutoPlaySettings: () =>
     httpClient(`${REST_URL}/autoplay/settings`).then(({ json }) => ({

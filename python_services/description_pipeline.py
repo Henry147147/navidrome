@@ -20,12 +20,16 @@ import numpy as np
 import torch
 import torchaudio
 from pymilvus import MilvusClient, DataType
-from transformers import (
-    AutoModel,
-    AutoProcessor,
-    AutoTokenizer,
-    MusicFlamingoForConditionalGeneration,
-)
+from transformers import AutoModel, AutoProcessor, AutoTokenizer
+
+try:
+    from transformers import MusicFlamingoForConditionalGeneration
+    _HAS_MUSIC_FLAMINGO = True
+except Exception:  # pragma: no cover - optional heavy dependency
+    MusicFlamingoForConditionalGeneration = None
+    _HAS_MUSIC_FLAMINGO = False
+
+from gpu_settings import GPUSettings, load_gpu_settings
 
 
 DEFAULT_DESCRIPTION_COLLECTION = "description_embedding"
@@ -62,9 +66,16 @@ class MusicFlamingoCaptioner:
         device: Optional[str] = None,
         torch_dtype: Optional[torch.dtype] = torch.float16,
         logger: Optional[logging.Logger] = None,
+        gpu_settings: Optional[GPUSettings] = None,
     ) -> None:
+        if not _HAS_MUSIC_FLAMINGO:
+            raise ImportError(
+                "MusicFlamingoForConditionalGeneration not available. "
+                "Install transformers with the music-flamingo extras or pin a version that provides it."
+            )
         self.model_id = model_id
-        self.device = device or _default_device()
+        self.gpu_settings = gpu_settings or load_gpu_settings()
+        self.device = device or self.gpu_settings.device_target()
         if torch_dtype is not None:
             self.dtype = torch_dtype
         else:
@@ -74,16 +85,37 @@ class MusicFlamingoCaptioner:
         self.logger = logger or logging.getLogger("navidrome.description.captioner")
 
         self.processor = AutoProcessor.from_pretrained(self.model_id)
-        self.model = MusicFlamingoForConditionalGeneration.from_pretrained(
-            self.model_id, torch_dtype=self.dtype
-        ).to(self.device)
+        self.model = self._build_model()
         self.model.eval()
+
+    def _build_model(self):
+        max_memory = self.gpu_settings.max_memory_map()
+        model = MusicFlamingoForConditionalGeneration.from_pretrained(
+            self.model_id, torch_dtype=self.dtype, max_memory=max_memory
+        )
+        return model.to(self.device)
+
+    def unload(self):
+        try:
+            if self.model:
+                self.model.to("cpu")
+        except Exception:
+            pass
+        self.model = None
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
 
     def generate(self, audio_path: str, prompt: Optional[str] = None) -> str:
         prompt = prompt or (
             "Provide a vivid, detailed description of this song's mood, style, "
             "instrumentation, vocals, tempo, genre influences, and production details."
         )
+
+        if self.model is None:
+            self.model = self._build_model()
+            self.model.eval()
 
         waveform, sample_rate = torchaudio.load(audio_path)
         if waveform.shape[0] > 1:
@@ -116,9 +148,11 @@ class Qwen3Embedder:
         device: Optional[str] = None,
         torch_dtype: Optional[torch.dtype] = torch.float16,
         logger: Optional[logging.Logger] = None,
+        gpu_settings: Optional[GPUSettings] = None,
     ) -> None:
         self.model_id = model_id
-        self.device = device or _default_device()
+        self.gpu_settings = gpu_settings or load_gpu_settings()
+        self.device = device or self.gpu_settings.device_target()
         if torch_dtype is not None:
             self.dtype = torch_dtype
         else:
@@ -130,19 +164,41 @@ class Qwen3Embedder:
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_id, trust_remote_code=True
         )
-        # Use device_map only for CUDA to avoid CPU placement errors
-        device_map = "auto" if self.device.startswith("cuda") else None
-        self.model = AutoModel.from_pretrained(
+        self.device_map = "auto" if self.device.startswith("cuda") else None
+        self.max_memory = self.gpu_settings.max_memory_map()
+        self.model = self._build_model()
+        self.model.eval()
+        self.gpu_settings.apply_runtime_limits()
+
+    def _build_model(self):
+        model = AutoModel.from_pretrained(
             self.model_id,
             trust_remote_code=True,
             torch_dtype=self.dtype,
-            device_map=device_map,
+            device_map=self.device_map,
+            max_memory=self.max_memory,
+            low_cpu_mem_usage=True,
         )
-        if device_map is None:
-            self.model = self.model.to(self.device)
-        self.model.eval()
+        if self.device_map is None:
+            model = model.to(self.device)
+        return model
+
+    def unload(self):
+        try:
+            if self.model:
+                self.model.to("cpu")
+        except Exception:
+            pass
+        self.model = None
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
 
     def embed_text(self, text: str) -> torch.Tensor:
+        if self.model is None:
+            self.model = self._build_model()
+            self.model.eval()
         # The model provides an encode helper when trust_remote_code=True
         embeddings = self.model.encode(text, tokenizer=self.tokenizer)
         if isinstance(embeddings, (list, tuple)):
@@ -162,15 +218,38 @@ class DescriptionEmbeddingPipeline:
         text_model_id: str = "Qwen/Qwen3-Embedding-8B",
         device: Optional[str] = None,
         logger: Optional[logging.Logger] = None,
+        gpu_settings: Optional[GPUSettings] = None,
     ) -> None:
-        self.device = device or _default_device()
+        self.gpu_settings = gpu_settings or load_gpu_settings()
+        self.device = device or self.gpu_settings.device_target()
         self.logger = logger or logging.getLogger("navidrome.description")
-        self.captioner = MusicFlamingoCaptioner(
-            model_id=caption_model_id, device=self.device, logger=self.logger
-        )
+        self.caption_model_id = caption_model_id
+        self._captioner: Optional[MusicFlamingoCaptioner] = None
         self.embedder = Qwen3Embedder(
-            model_id=text_model_id, device=self.device, logger=self.logger
+            model_id=text_model_id,
+            device=self.device,
+            logger=self.logger,
+            gpu_settings=self.gpu_settings,
         )
+
+    def _captioner(self) -> MusicFlamingoCaptioner:
+        """
+        Lazily construct the Music Flamingo captioner so environments without the
+        heavy dependency (or CI) can still run embed-only paths.
+        """
+        if self._captioner is None:
+            if not _HAS_MUSIC_FLAMINGO:
+                raise ImportError(
+                    "MusicFlamingoForConditionalGeneration not available. "
+                    "Install transformers with Music Flamingo support to generate captions."
+                )
+            self._captioner = MusicFlamingoCaptioner(
+                model_id=self.caption_model_id,
+                device=self.device,
+                logger=self.logger,
+                gpu_settings=self.gpu_settings,
+            )
+        return self._captioner
 
     def ensure_milvus_schemas(self, client: MilvusClient) -> None:
         existing = set(client.list_collections())
@@ -207,7 +286,7 @@ class DescriptionEmbeddingPipeline:
         self, music_file: str, music_name: str, *, offset_seconds: float = 0.0
     ) -> List[DescriptionSegment]:
         try:
-            description = self.captioner.generate(music_file)
+            description = self._captioner().generate(music_file)
         except Exception:
             self.logger.exception(
                 "Failed to generate caption with Music Flamingo; using fallback text"
@@ -251,6 +330,11 @@ class DescriptionEmbeddingPipeline:
 
     def unload_model(self) -> None:
         try:
+            if self._captioner:
+                self._captioner.unload()
+                self._captioner = None
+            if hasattr(self.embedder, "unload"):
+                self.embedder.unload()
             torch.cuda.empty_cache()
         except Exception:
             pass

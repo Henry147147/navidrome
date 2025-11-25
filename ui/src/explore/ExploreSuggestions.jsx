@@ -1360,7 +1360,7 @@ const [excludePlaylistIds, setExcludePlaylistIds] = useState([])
                 <Box className={classes.selectChips}>
                   <FormControl component="fieldset">
                     <Box style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {['muq', 'mert', 'latent'].map((model) => (
+                      {['muq', 'qwen3'].map((model) => (
                         <FormControlLabel
                           key={model}
                           control={

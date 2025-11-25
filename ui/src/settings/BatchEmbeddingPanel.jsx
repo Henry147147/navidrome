@@ -9,12 +9,17 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Divider,
+  FormControl,
   FormControlLabel,
+  FormHelperText,
+  InputLabel,
   LinearProgress,
+  MenuItem,
+  Select,
+  Switch,
+  TextField,
   Typography,
-  List,
-  ListItem,
-  ListItemText,
 } from '@material-ui/core'
 import { makeStyles } from '@material-ui/core/styles'
 import {
@@ -27,6 +32,8 @@ import StopIcon from '@material-ui/icons/Stop'
 import WarningIcon from '@material-ui/icons/Warning'
 import CheckCircleIcon from '@material-ui/icons/CheckCircle'
 import ErrorIcon from '@material-ui/icons/Error'
+import AutorenewIcon from '@material-ui/icons/Autorenew'
+import CircularProgress from '@material-ui/core/CircularProgress'
 
 const useStyles = makeStyles((theme) => ({
   card: {
@@ -70,13 +77,53 @@ const useStyles = makeStyles((theme) => ({
   dialogContent: {
     minWidth: 400,
   },
+  settingsCard: {
+    marginTop: theme.spacing(2),
+    border: `1px solid ${theme.palette.divider}`,
+    borderRadius: theme.shape.borderRadius,
+    padding: theme.spacing(2),
+  },
+  settingsRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: theme.spacing(2),
+    alignItems: 'flex-start',
+  },
+  settingsHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+  },
+  restartRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+  },
+  helper: {
+    color: theme.palette.text.secondary,
+  },
 }))
 
 const MODEL_OPTIONS = [
-  { value: 'muq', label: 'MuQ (1536-dim)', description: 'MuQ-MuLan model' },
-  { value: 'mert', label: 'MERT (76,800-dim)', description: 'MERT-v1-330M model' },
-  { value: 'latent', label: 'Latent Space (576-dim)', description: 'Music2Latent model' },
+  {
+    value: 'muq',
+    label: 'MuQ (1536-dim)',
+    description: 'MuQ-MuLan audio embedding model',
+  },
+  {
+    value: 'qwen3',
+    label: 'Qwen3 (4096-dim)',
+    description: 'Music Flamingo captions + Qwen3 text embeddings',
+  },
 ]
+
+const DEFAULT_GPU_SETTINGS = {
+  maxGpuMemoryGb: 9.0,
+  precision: 'fp16',
+  enableCpuOffload: true,
+  device: 'auto',
+  estimatedVramGb: 9.0,
+}
 
 const BatchEmbeddingPanel = () => {
   const classes = useStyles()
@@ -87,9 +134,42 @@ const BatchEmbeddingPanel = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
   const [progress, setProgress] = useState(null)
-  const [selectedModels, setSelectedModels] = useState(['muq', 'mert', 'latent'])
+  const [selectedModels, setSelectedModels] = useState(['muq', 'qwen3'])
   const [clearExisting, setClearExisting] = useState(true)
   const [error, setError] = useState(null)
+  const [gpuSettings, setGpuSettings] = useState(DEFAULT_GPU_SETTINGS)
+  const [gpuLoading, setGpuLoading] = useState(true)
+  const [isRestarting, setIsRestarting] = useState(false)
+
+  // Load GPU settings once so we can display defaults and allow edits
+  useEffect(() => {
+    let mounted = true
+    const loadSettings = async () => {
+      try {
+        const { data } = await dataProvider.getGpuSettings()
+        if (mounted && data) {
+          setGpuSettings({
+            ...DEFAULT_GPU_SETTINGS,
+            ...data,
+            estimatedVramGb: data.estimatedVramGb || data.estimatedVramGB || data.maxGpuMemoryGb,
+          })
+        }
+      } catch (err) {
+        console.error('Failed to load GPU settings', err)
+        setError(
+          translate('pages.settings.batchEmbedding.gpu.loadError', {
+            _: 'Failed to load GPU settings',
+          })
+        )
+      } finally {
+        if (mounted) setGpuLoading(false)
+      }
+    }
+    loadSettings()
+    return () => {
+      mounted = false
+    }
+  }, [dataProvider, translate])
 
   // Poll for progress when job is running
   useEffect(() => {
@@ -216,6 +296,48 @@ const BatchEmbeddingPanel = () => {
     }
   }, [dataProvider, notify, translate])
 
+  const handleGpuChange = (field, value) => {
+    setGpuSettings((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
+  }
+
+  const handleApplyGpuSettings = useCallback(async () => {
+    try {
+      setIsRestarting(true)
+      const { data } = await dataProvider.updateGpuSettings(gpuSettings)
+      const settings = data?.settings || data
+      setGpuSettings((prev) => ({
+        ...prev,
+        ...settings,
+      }))
+      notify(
+        translate('pages.settings.batchEmbedding.gpu.restarting', {
+          _: 'GPU settings applied. Restarting Python services...',
+        }),
+        'info'
+      )
+    } catch (err) {
+      console.error('Failed to update GPU settings', err)
+      const message =
+        err?.body?.message ||
+        translate('pages.settings.batchEmbedding.gpu.updateError', {
+          _: 'Failed to update GPU settings',
+        })
+      setError(message)
+      notify(message, 'error')
+    } finally {
+      setIsRestarting(false)
+    }
+  }, [dataProvider, gpuSettings, notify, translate])
+
+  const estimatedVram =
+    Math.round(
+      ((gpuSettings.estimatedVramGb || gpuSettings.estimatedVramGB || gpuSettings.maxGpuMemoryGb || 0) + Number.EPSILON) *
+        100
+    ) / 100
+
   const handleModelToggle = (modelValue) => {
     if (selectedModels.includes(modelValue)) {
       setSelectedModels(selectedModels.filter(m => m !== modelValue))
@@ -261,6 +383,133 @@ const BatchEmbeddingPanel = () => {
               _: 'Re-generate embeddings for all tracks in your library. This may take several hours for large libraries.',
             })}
           </Typography>
+
+          <Box className={classes.settingsCard}>
+            <Box className={classes.settingsHeader}>
+              <AutorenewIcon />
+              <Typography variant="subtitle1">
+                {translate('pages.settings.batchEmbedding.gpu.title', {
+                  _: 'GPU Memory Settings',
+                })}
+              </Typography>
+            </Box>
+            <Typography variant="body2" className={classes.helper}>
+              {translate('pages.settings.batchEmbedding.gpu.subtitle', {
+                _: 'Tune VRAM usage for embedding models. Defaults are safe for a 10GB GPU.',
+              })}
+            </Typography>
+
+            {gpuLoading ? (
+              <Box display="flex" alignItems="center" gap={8}>
+                <CircularProgress size={20} />
+                <Typography variant="body2" className={classes.helper}>
+                  {translate('pages.settings.batchEmbedding.gpu.loading', {
+                    _: 'Loading GPU settings...',
+                  })}
+                </Typography>
+              </Box>
+            ) : (
+              <>
+                <Box className={classes.settingsRow}>
+                  <TextField
+                    label={translate('pages.settings.batchEmbedding.gpu.maxMemory', {
+                      _: 'Max GPU memory (GiB)',
+                    })}
+                    type="number"
+                    variant="outlined"
+                    value={gpuSettings.maxGpuMemoryGb}
+                    onChange={(e) =>
+                      handleGpuChange('maxGpuMemoryGb', parseFloat(e.target.value) || 0)
+                    }
+                    inputProps={{ min: 2, max: 80, step: 0.5 }}
+                  />
+
+                  <FormControl variant="outlined">
+                    <InputLabel id="precision-label">
+                      {translate('pages.settings.batchEmbedding.gpu.precision', {
+                        _: 'Precision',
+                      })}
+                    </InputLabel>
+                    <Select
+                      labelId="precision-label"
+                      value={gpuSettings.precision}
+                      onChange={(e) => handleGpuChange('precision', e.target.value)}
+                      label={translate('pages.settings.batchEmbedding.gpu.precision', {
+                        _: 'Precision',
+                      })}
+                    >
+                      <MenuItem value="fp16">fp16</MenuItem>
+                      <MenuItem value="bf16">bf16</MenuItem>
+                      <MenuItem value="fp32">fp32</MenuItem>
+                    </Select>
+                  </FormControl>
+
+                  <FormControl variant="outlined">
+                    <InputLabel id="device-label">
+                      {translate('pages.settings.batchEmbedding.gpu.device', {
+                        _: 'Target device',
+                      })}
+                    </InputLabel>
+                    <Select
+                      labelId="device-label"
+                      value={gpuSettings.device}
+                      onChange={(e) => handleGpuChange('device', e.target.value)}
+                      label={translate('pages.settings.batchEmbedding.gpu.device', {
+                        _: 'Target device',
+                      })}
+                    >
+                      <MenuItem value="auto">auto</MenuItem>
+                      <MenuItem value="cuda">cuda</MenuItem>
+                      <MenuItem value="cpu">cpu</MenuItem>
+                    </Select>
+                  </FormControl>
+
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={!!gpuSettings.enableCpuOffload}
+                        onChange={(e) => handleGpuChange('enableCpuOffload', e.target.checked)}
+                        color="primary"
+                      />
+                    }
+                    label={translate('pages.settings.batchEmbedding.gpu.cpuOffload', {
+                      _: 'Enable CPU offload',
+                    })}
+                  />
+                </Box>
+
+                <Typography variant="caption" className={classes.helper}>
+                  {translate('pages.settings.batchEmbedding.gpu.estimated', {
+                    _: 'Estimated peak VRAM usage: ~%{value} GiB',
+                    value: estimatedVram.toFixed(2),
+                  })}
+                </Typography>
+
+                <Box className={classes.restartRow}>
+                  <Button
+                    onClick={handleApplyGpuSettings}
+                    color="primary"
+                    variant="outlined"
+                    startIcon={
+                      isRestarting ? <CircularProgress size={16} /> : <AutorenewIcon />
+                    }
+                    disabled={isRestarting}
+                  >
+                    {translate('pages.settings.batchEmbedding.gpu.apply', {
+                      _: 'Apply & Restart Python service',
+                    })}
+                  </Button>
+                  {isRestarting && (
+                    <Typography variant="caption" className={classes.helper}>
+                      {translate('pages.settings.batchEmbedding.gpu.restarting', {
+                        _: 'Restarting embedding service to apply settings...',
+                      })}
+                    </Typography>
+                  )}
+                </Box>
+              </>
+            )}
+          </Box>
 
           {isRunning && progress && (
             <Box className={classes.progressContainer}>
@@ -321,6 +570,15 @@ const BatchEmbeddingPanel = () => {
                     count: progress.failed_tracks,
                   })}
                   : {progress.failed_tracks}
+                </Typography>
+              )}
+
+              {progress.last_error && (
+                <Typography variant="caption" className={classes.error}>
+                  {translate('pages.settings.batchEmbedding.lastError', {
+                    _: 'Last error',
+                  })}
+                  : {progress.last_error}
                 </Typography>
               )}
 

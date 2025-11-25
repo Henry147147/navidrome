@@ -190,7 +190,7 @@ func (n *Router) addUploadRoute(r chi.Router) {
 			return
 		}
 
-		respPayload, err := embedClient.Embed(musicPath, musicName, cuePath, settings)
+		respPayload, err := getEmbedClient().Embed(musicPath, musicName, cuePath, settings)
 		if err != nil {
 			log.Error(req.Context(), "Failed to contact embedding server", err)
 			http.Error(w, "failed to contact embedding server", http.StatusBadGateway)

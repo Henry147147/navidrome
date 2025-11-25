@@ -251,6 +251,25 @@
         "saved": "Auto Play settings updated.",
         "serverError": "Unable to save settings right now."
       }
+    },
+    "settings": {
+      "batchEmbedding": {
+        "gpu": {
+          "title": "GPU Memory Settings",
+          "subtitle": "Tune VRAM usage for embedding models. Defaults are safe for a 10GB GPU.",
+          "loading": "Loading GPU settings...",
+          "maxMemory": "Max GPU memory (GiB)",
+          "precision": "Precision",
+          "device": "Target device",
+          "cpuOffload": "Enable CPU offload",
+          "estimated": "Estimated peak VRAM usage: ~%{value} GiB",
+          "apply": "Apply & Restart Python service",
+          "restarting": "Restarting embedding service to apply settings...",
+          "updateError": "Failed to update GPU settings",
+          "loadError": "Failed to load GPU settings"
+        },
+        "lastError": "Last error"
+      }
     }
   },
   "player": {

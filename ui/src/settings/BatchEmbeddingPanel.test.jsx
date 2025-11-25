@@ -19,6 +19,27 @@ describe('BatchEmbeddingPanel', () => {
       startBatchEmbedding: vi.fn(),
       getBatchEmbeddingProgress: vi.fn(),
       cancelBatchEmbedding: vi.fn(),
+      getGpuSettings: vi.fn().mockResolvedValue({
+        data: {
+          maxGpuMemoryGb: 9,
+          precision: 'fp16',
+          enableCpuOffload: true,
+          device: 'auto',
+          estimatedVramGb: 9,
+        },
+      }),
+      updateGpuSettings: vi.fn().mockResolvedValue({
+        data: {
+          status: 'restarting',
+          settings: {
+            maxGpuMemoryGb: 9,
+            precision: 'fp16',
+            enableCpuOffload: true,
+            device: 'auto',
+            estimatedVramGb: 9,
+          },
+        },
+      }),
     }
 
     // Mock localStorage for admin check
@@ -60,8 +81,7 @@ describe('BatchEmbeddingPanel', () => {
   it('opens configuration dialog when start clicked', async () => {
     createTestUtils()
 
-    const buttons = screen.getAllByRole('button')
-    const startButton = buttons[0] // First button is start
+    const startButton = screen.getByText(/Start Re-embedding/i)
     fireEvent.click(startButton)
 
     await waitFor(() => {
@@ -74,8 +94,8 @@ describe('BatchEmbeddingPanel', () => {
   it('shows model selection checkboxes in dialog', async () => {
     createTestUtils()
 
-    const buttons = screen.getAllByRole('button')
-    fireEvent.click(buttons[0])
+    const startButton = screen.getByText(/Start Re-embedding/i)
+    fireEvent.click(startButton)
 
     await waitFor(() => {
       const checkboxes = screen.getAllByRole('checkbox')
@@ -92,8 +112,8 @@ describe('BatchEmbeddingPanel', () => {
     createTestUtils()
 
     // Open dialog
-    const buttons = screen.getAllByRole('button')
-    fireEvent.click(buttons[0])
+    const startButton = screen.getByText(/Start Re-embedding/i)
+    fireEvent.click(startButton)
 
     await waitFor(() => {
       // Find and click start job button in dialog
@@ -128,8 +148,8 @@ describe('BatchEmbeddingPanel', () => {
     createTestUtils()
 
     // Start job (simplified)
-    const buttons = screen.getAllByRole('button')
-    fireEvent.click(buttons[0])
+    const startButton = screen.getByText(/Start Re-embedding/i)
+    fireEvent.click(startButton)
 
     await waitFor(() => {
       const allButtons = screen.getAllByRole('button')
@@ -162,8 +182,8 @@ describe('BatchEmbeddingPanel', () => {
 
     createTestUtils()
 
-    const buttons = screen.getAllByRole('button')
-    fireEvent.click(buttons[0])
+    const startButton = screen.getByText(/Start Re-embedding/i)
+    fireEvent.click(startButton)
 
     await waitFor(() => {
       const allButtons = screen.getAllByRole('button')

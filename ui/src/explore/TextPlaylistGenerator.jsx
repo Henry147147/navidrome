@@ -95,9 +95,16 @@ const useStyles = makeStyles((theme) => ({
 }))
 
 const MODEL_OPTIONS = [
-  { value: 'muq', label: 'MuQ (Default)', description: '1536-dim, balanced performance' },
-  { value: 'mert', label: 'MERT', description: '76,800-dim, detailed features' },
-  { value: 'latent', label: 'Latent Space', description: '576-dim, compact representation' },
+  {
+    value: 'qwen3',
+    label: 'Qwen3 (Text)',
+    description: 'Caption + text embeddings (4096-dim)',
+  },
+  {
+    value: 'muq',
+    label: 'MuQ (Audio)',
+    description: 'Balanced MuQ audio embeddings (1536-dim)',
+  },
 ]
 
 const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
@@ -107,7 +114,7 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
   const notify = useNotify()
 
   const [textQuery, setTextQuery] = useState('')
-  const [selectedModel, setSelectedModel] = useState('muq')
+  const [selectedModel, setSelectedModel] = useState('qwen3')
   const [negativePrompts, setNegativePrompts] = useState([])
   const [negativePenalty, setNegativePenalty] = useState(0.85)
   const [limit, setLimit] = useState(25)

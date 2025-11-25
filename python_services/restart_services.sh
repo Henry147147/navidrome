@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 #
-# Restart script for Navidrome Python Backend Services
+# Restart script for Navidrome Python Backend Service
 #
 # Usage:
-#   ./restart_services.sh [options]
-#
-# All options from start_services.sh are supported
-#
+#   ./restart_services.sh
 
 set -euo pipefail
 

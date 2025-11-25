@@ -1,7 +1,7 @@
-import { MdAutorenew } from 'react-icons/md'
+import AutorenewIcon from '@material-ui/icons/Autorenew'
 import BatchEmbeddingList from './BatchEmbeddingList'
 
 export default {
-  icon: MdAutorenew,
+  icon: AutorenewIcon,
   list: BatchEmbeddingList,
 }

@@ -145,6 +145,7 @@ def test_process_embedding_request_with_split(
         socket_path="/tmp/navidrome-test.sock",
         milvus_client=RecordingMilvusClient(),
         model=model,
+        enable_descriptions=False,  # keep tests fast and deterministic
     )
 
     track_a_path = tmp_path / "TrackA.flac"

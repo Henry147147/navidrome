@@ -129,6 +129,14 @@ class StubLatentTextEmbedder(StubTextEmbedder):
     def __init__(self):
         super().__init__(dimension=576, model_name="latent_stub")
 
+class StubQwen3TextEmbedder(StubTextEmbedder):
+    """
+    Stub for Qwen3 text embeddings (4096D).
+    """
+
+    def __init__(self):
+        super().__init__(dimension=4096, model_name="qwen3_stub")
+
 
 def get_stub_embedder(model: str) -> StubTextEmbedder:
     """
@@ -147,6 +155,7 @@ def get_stub_embedder(model: str) -> StubTextEmbedder:
         "muq": StubMuQTextEmbedder,
         "mert": StubMERTTextEmbedder,
         "latent": StubLatentTextEmbedder,
+        "qwen3": StubQwen3TextEmbedder,
     }
 
     if model not in embedders:

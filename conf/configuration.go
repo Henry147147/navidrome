@@ -223,6 +223,8 @@ type inspectOptions struct {
 
 type recommendationsOptions struct {
 	BaseURL      string
+	TextBaseURL  string
+	BatchBaseURL string
 	Timeout      time.Duration
 	DefaultLimit int
 	Diversity    float64
@@ -308,6 +310,15 @@ func Load(noConfigDump bool) {
 	}
 	if Server.Recommendations.Diversity > 1 {
 		Server.Recommendations.Diversity = 1
+	}
+
+	// Keep text/batch endpoints aligned with unified Python service unless explicitly overridden
+	if strings.TrimSpace(Server.Recommendations.TextBaseURL) == "" ||
+		strings.TrimSpace(Server.Recommendations.TextBaseURL) == "http://127.0.0.1:9003" {
+		Server.Recommendations.TextBaseURL = Server.Recommendations.BaseURL
+	}
+	if strings.TrimSpace(Server.Recommendations.BatchBaseURL) == "" {
+		Server.Recommendations.BatchBaseURL = Server.Recommendations.BaseURL
 	}
 
 	out := os.Stderr
@@ -522,6 +533,8 @@ func setViperDefaults() {
 	viper.SetDefault("enableexternalservices", true)
 	viper.SetDefault("enablemediafilecoverart", true)
 	viper.SetDefault("recommendations.baseurl", "http://127.0.0.1:9002")
+	viper.SetDefault("recommendations.textbaseurl", "http://127.0.0.1:9002")
+	viper.SetDefault("recommendations.batchbaseurl", "http://127.0.0.1:9002")
 	viper.SetDefault("recommendations.timeout", 5*time.Second)
 	viper.SetDefault("recommendations.defaultlimit", 25)
 	viper.SetDefault("recommendations.diversity", 0.15)

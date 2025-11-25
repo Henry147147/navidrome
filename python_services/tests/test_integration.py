@@ -96,6 +96,21 @@ class TestRecommendationEngineIntegration:
                         },
                     ]
                 ]
+            if collection_name == "description_embedding":  # qwen3
+                return [
+                    [
+                        {
+                            "name": "Track B",
+                            "distance": 0.85,
+                            "entity": {"id": "track_b"},
+                        },
+                        {
+                            "name": "Track C",
+                            "distance": 0.78,
+                            "entity": {"id": "track_c"},
+                        },
+                    ]
+                ]
             return [[]]
 
         mock_client.search.side_effect = mock_search
@@ -105,7 +120,7 @@ class TestRecommendationEngineIntegration:
         # Multi-model search
         embeddings = {
             "muq": np.random.randn(1536).tolist(),
-            "mert": np.random.randn(76800).tolist(),
+            "qwen3": np.random.randn(4096).tolist(),
         }
         results = searcher.search_multi_model(
             embeddings=embeddings, top_k=10, merge_strategy="union"
@@ -153,7 +168,7 @@ class TestRecommendationEngineIntegration:
 
         embeddings = {
             "muq": np.random.randn(1536).tolist(),
-            "mert": np.random.randn(76800).tolist(),
+            "qwen3": np.random.randn(4096).tolist(),
         }
         results = searcher.search_multi_model(
             embeddings=embeddings, top_k=10, merge_strategy="intersection"
@@ -305,19 +320,12 @@ class TestMultiModelAgreementIntegration:
                         {"name": "Track C", "distance": 0.80, "entity": {"id": "tc"}},
                     ]
                 ]
-            elif collection_name == "mert_embedding":
+            elif collection_name == "description_embedding":
                 return [
                     [
                         {"name": "Track A", "distance": 0.88, "entity": {"id": "ta"}},
                         {"name": "Track B", "distance": 0.83, "entity": {"id": "tb"}},
                         {"name": "Track D", "distance": 0.78, "entity": {"id": "td"}},
-                    ]
-                ]
-            elif collection_name == "latent_embedding":
-                return [
-                    [
-                        {"name": "Track A", "distance": 0.87, "entity": {"id": "ta"}},
-                        {"name": "Track E", "distance": 0.82, "entity": {"id": "te"}},
                     ]
                 ]
             return [[]]
@@ -328,8 +336,7 @@ class TestMultiModelAgreementIntegration:
 
         embeddings = {
             "muq": np.random.randn(1536).tolist(),
-            "mert": np.random.randn(76800).tolist(),
-            "latent": np.random.randn(576).tolist(),
+            "qwen3": np.random.randn(4096).tolist(),
         }
 
         # Test with min_model_agreement = 2
@@ -342,20 +349,19 @@ class TestMultiModelAgreementIntegration:
 
         track_names = [r["track_name"] for r in results]
 
-        # Track A appears in all 3 (should be included)
+        # Track A appears in both (should be included)
         assert "Track A" in track_names
 
-        # Track B appears in 2 (should be included)
+        # Track B appears in both (should be included)
         assert "Track B" in track_names
 
-        # Track C, D, E only appear in 1 each (should be excluded)
+        # Track C, D only appear in 1 each (should be excluded)
         assert "Track C" not in track_names
         assert "Track D" not in track_names
-        assert "Track E" not in track_names
 
-        # Verify Track A has all 3 models
+        # Verify Track A has both models
         track_a = next(r for r in results if r["track_name"] == "Track A")
-        assert len(track_a["models"]) == 3
+        assert len(track_a["models"]) == 2
 
 
 class TestAPIEndpointIntegration:
@@ -381,11 +387,10 @@ class TestAPIEndpointIntegration:
         data = response.json()
         # Response is a list of models
         assert isinstance(data, list)
-        assert len(data) == 3
+        assert len(data) == 2
         model_names = [m["name"] for m in data]
         assert "muq" in model_names
-        assert "mert" in model_names
-        assert "latent" in model_names
+        assert "qwen3" in model_names
 
 
 @pytest.mark.integration
@@ -411,7 +416,7 @@ class TestEndToEndFlow:
             limit=10,
             mode="recent",
             seeds=[RecommendationSeed(track_id="track1", weight=1.0, source="recent")],
-            models=["muq", "mert"],
+            models=["muq", "qwen3"],
             merge_strategy="union",
             min_model_agreement=1,
         )

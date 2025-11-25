@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
+from fastapi import APIRouter, FastAPI, HTTPException
+from pydantic import BaseModel, Field
 from pymilvus import MilvusClient
 
 from embedding_models import BaseEmbeddingModel, MuQEmbeddingModel
@@ -19,6 +21,7 @@ from description_pipeline import (
     DEFAULT_DESCRIPTION_COLLECTION,
     DescriptionEmbeddingPipeline,
 )
+from gpu_settings import is_oom_error, load_gpu_settings
 from cue_splitter import SplitTrack, split_flac_with_cue
 from models import SongEmbedding
 from upload_features import UploadFeaturePipeline, UploadSettings
@@ -31,6 +34,21 @@ SOCKET_PATH = "/tmp/navidrome_embed.sock"
 logger = logging.getLogger("navidrome.embed_server")
 
 
+class EmbedAudioRequest(BaseModel):
+    music_file: str = Field(..., description="Absolute path to the uploaded audio file")
+    name: str = Field(..., description="Original filename for metadata")
+    cue_file: Optional[str] = Field(None, description="Optional cuesheet path")
+    settings: Optional[dict] = Field(None, description="Upload settings payload")
+
+
+class EmbedAudioResponse(BaseModel):
+    status: str
+    duplicates: List[str] = Field(default_factory=list)
+    renamedFile: Optional[str] = None
+    allDuplicates: bool = False
+    splitFiles: Optional[List[dict]] = None
+
+
 class EmbedSocketServer:
     def __init__(
         self,
@@ -38,12 +56,30 @@ class EmbedSocketServer:
         *,
         milvus_client: Optional[MilvusClient] = None,
         model: Optional[BaseEmbeddingModel] = None,
+        enable_descriptions: Optional[bool] = None,
     ) -> None:
         self.socket_path = socket_path
         self.logger = logger
         self.milvus_client = milvus_client or MilvusClient("http://localhost:19530")
         self.model = model or MuQEmbeddingModel(logger=self.logger)
-        self.description_pipeline = DescriptionEmbeddingPipeline(logger=self.logger)
+        self.gpu_settings = load_gpu_settings()
+        self.enable_descriptions = (
+            DescriptionEmbeddingPipeline is not None
+            if enable_descriptions is None
+            else enable_descriptions
+        )
+        self.description_pipeline: Optional[DescriptionEmbeddingPipeline] = None
+        if self.enable_descriptions:
+            try:
+                self.description_pipeline = DescriptionEmbeddingPipeline(
+                    logger=self.logger,
+                    gpu_settings=self.gpu_settings,
+                )
+            except Exception:
+                self.logger.warning(
+                    "Description pipeline unavailable; continuing without descriptions"
+                )
+                self.enable_descriptions = False
         self._prepare_milvus()
         self.similarity_searcher = MilvusSimilaritySearcher(
             self.milvus_client,
@@ -62,8 +98,9 @@ class EmbedSocketServer:
         try:
             self.model.ensure_milvus_schemas(self.milvus_client)
             self.model.ensure_milvus_index(self.milvus_client)
-            self.description_pipeline.ensure_milvus_schemas(self.milvus_client)
-            self.description_pipeline.ensure_milvus_index(self.milvus_client)
+            if self.description_pipeline:
+                self.description_pipeline.ensure_milvus_schemas(self.milvus_client)
+                self.description_pipeline.ensure_milvus_index(self.milvus_client)
         except Exception:  # pragma: no cover - defensive logging
             self.logger.exception("Failed to ensure Milvus schema or index")
 
@@ -92,6 +129,48 @@ class EmbedSocketServer:
         combined["music_file"] = music_file
         combined["cue_file"] = None
         return combined
+
+    def process_payload(self, payload: dict) -> Dict[str, object]:
+        """Handle an embedding request payload (HTTP or socket).
+
+        Args:
+            payload: Incoming JSON payload containing music_file, name, optional cue_file and settings.
+
+        Returns:
+            Response payload mirroring the legacy socket server structure.
+        """
+
+        music_file = payload.get("music_file")
+        if not music_file:
+            raise ValueError("music_file is required")
+
+        settings = UploadSettings.from_payload(payload.get("settings"))
+        cue_file = payload.get("cue_file") or None
+        music_name = payload.get("name") or Path(str(music_file)).name
+
+        music_file = str(music_file)
+        music_name = str(music_name)
+        if cue_file:
+            cue_file = str(cue_file)
+
+        self.logger.debug("Processing embed payload music=%s cue=%s", music_file, cue_file)
+
+        summary: Optional[dict] = None
+        split_tracks: List[SplitTrack] = []
+
+        result, split_tracks = self._process_embedding_request(
+            music_file,
+            music_name,
+            cue_file,
+        )
+        summary = self.add_embedding_to_db(music_name, result, settings)
+
+        response_payload: Dict[str, object] = {"status": "ok"}
+        if isinstance(summary, dict):
+            response_payload.update(summary)
+        if split_tracks:
+            response_payload["splitFiles"] = [track.to_response() for track in split_tracks]
+        return response_payload
 
     def _process_embedding_request(
         self,
@@ -124,16 +203,19 @@ class EmbedSocketServer:
                         track.canonical_name(),
                         cue_file=None,
                     )
-                    desc_payload = self.description_pipeline.prepare_payload(
-                        str(track.file_path), track.canonical_name()
-                    )
+                    desc_payload = None
+                    if self.description_pipeline:
+                        desc_payload = self.description_pipeline.prepare_payload(
+                            str(track.file_path), track.canonical_name()
+                        )
                 except Exception:
                     self.logger.exception(
                         "Embedding failed for split track %s", track.file_path
                     )
                     continue
                 payloads.append(payload)
-                desc_payloads.append(desc_payload)
+                if desc_payload:
+                    desc_payloads.append(desc_payload)
             if payloads:
                 combined = self._combine_payloads(
                     payloads, desc_payloads, music_file=music_file
@@ -149,11 +231,12 @@ class EmbedSocketServer:
             music_name,
             cue_file=None,
         )
-        desc_payload = self.description_pipeline.prepare_payload(
-            music_file,
-            music_name,
+        desc_payload = (
+            self.description_pipeline.prepare_payload(music_file, music_name)
+            if self.description_pipeline
+            else None
         )
-        payload["descriptions"] = desc_payload.get("descriptions", [])
+        payload["descriptions"] = desc_payload.get("descriptions", []) if desc_payload else []
         payload["cue_file"] = None
         return payload, []
 
@@ -334,45 +417,28 @@ class EmbedSocketServer:
                 self.logger.debug(
                     "Received embedding request for %s (cue=%s)", music_file, cue_file
                 )
-
-                if not music_file:
-                    self.logger.error("Request missing music_file field")
-                    self._write_response(
-                        writer,
-                        {"status": "error", "message": "music_file is required"},
-                    )
-                    return
-
-                music_file = str(music_file)
-                music_path = Path(music_file)
-                music_name = payload.get("name") or music_path.name
-                music_name = str(music_name)
-                if cue_file:
-                    cue_file = str(cue_file)
-
-                summary: Optional[dict] = None
-                split_tracks: List[SplitTrack] = []
                 try:
-                    result, split_tracks = self._process_embedding_request(
-                        music_file,
-                        music_name,
-                        cue_file,
-                    )
-                    summary = self.add_embedding_to_db(music_name, result, settings)
-                except Exception as exc:  # pragma: no cover - propagate to client
-                    self.logger.exception("Embedding failed for %s", music_file)
+                    response_payload = self.process_payload(payload)
+                except ValueError as exc:
+                    self.logger.error("Invalid embed payload: %s", exc)
                     self._write_response(
                         writer, {"status": "error", "message": str(exc)}
                     )
                     return
+                except Exception as exc:  # pragma: no cover - propagate to client
+                    self.logger.exception("Embedding failed for %s", music_file)
+                    if is_oom_error(exc):
+                        msg = (
+                            "CUDA out of memory while generating embeddings; "
+                            "lower the GPU cap or enable CPU offload in settings."
+                        )
+                    else:
+                        msg = str(exc)
+                    self._write_response(
+                        writer, {"status": "error", "message": msg}
+                    )
+                    return
 
-                response_payload = {"status": "ok"}
-                if isinstance(summary, dict):
-                    response_payload.update(summary)
-                if split_tracks:
-                    response_payload["splitFiles"] = [
-                        track.to_response() for track in split_tracks
-                    ]
                 self._write_response(writer, response_payload)
             finally:
                 self.logger.debug("Closing connection")
@@ -386,15 +452,45 @@ class EmbedSocketServer:
         writer.flush()
 
 
+def build_embed_router(server: Optional[EmbedSocketServer] = None) -> APIRouter:
+    """Create an APIRouter exposing the embedding endpoints."""
+
+    embed_server = server or EmbedSocketServer()
+    router = APIRouter()
+
+    @router.post("/embed/audio", response_model=EmbedAudioResponse)
+    def embed_audio(request: EmbedAudioRequest) -> Dict[str, object]:
+        try:
+            payload = request.model_dump(by_alias=True, exclude_none=True)
+            return embed_server.process_payload(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # pragma: no cover - runtime safety
+            embed_server.logger.exception(
+                "Embedding failed for %s", request.music_file
+            )
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @router.get("/embed/health")
+    def embed_health() -> Dict[str, object]:
+        return {
+            "status": "ok",
+            "descriptions": embed_server.enable_descriptions,
+            "socket_mode": False,
+        }
+
+    return router
+
+
 def main() -> None:
-    logging.basicConfig(level=logging.DEBUG)
-    server = EmbedSocketServer()
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        logging.getLogger("navidrome.embed_server").info(
-            "Embedding server shutting down"
-        )
+    logging.basicConfig(level=logging.INFO)
+    app = FastAPI(title="Navidrome Embedding Service", version="2.0.0")
+    app.include_router(build_embed_router())
+
+    import uvicorn
+
+    port = int(os.getenv("NAVIDROME_EMBED_PORT", "9004"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":

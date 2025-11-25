@@ -40,8 +40,7 @@ class TestMultiModelSimilaritySearcher:
         assert searcher.client == client
         assert searcher.COLLECTION_MAP == {
             "muq": "embedding",
-            "mert": "mert_embedding",
-            "latent": "latent_embedding",
+            "qwen3": "description_embedding",
         }
 
     def test_union_merge_strategy(self):
@@ -56,16 +55,16 @@ class TestMultiModelSimilaritySearcher:
             {"name": "Song C", "distance": 0.7},
         ]
 
-        mert_results = [
+        qwen_results = [
             {"name": "Song B", "distance": 0.85},
             {"name": "Song D", "distance": 0.75},
         ]
 
         client.set_mock_results("embedding", muq_results)
-        client.set_mock_results("mert_embedding", mert_results)
+        client.set_mock_results("description_embedding", qwen_results)
 
         # Search with union strategy
-        embeddings = {"muq": [0.1] * 1536, "mert": [0.2] * 76800}
+        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 4096}
 
         results = searcher.search_multi_model(
             embeddings=embeddings, top_k=10, merge_strategy="union"
@@ -89,15 +88,15 @@ class TestMultiModelSimilaritySearcher:
             {"name": "Song B", "distance": 0.8},
         ]
 
-        mert_results = [
+        qwen_results = [
             {"name": "Song B", "distance": 0.85},
             {"name": "Song C", "distance": 0.75},
         ]
 
         client.set_mock_results("embedding", muq_results)
-        client.set_mock_results("mert_embedding", mert_results)
+        client.set_mock_results("description_embedding", qwen_results)
 
-        embeddings = {"muq": [0.1] * 1536, "mert": [0.2] * 76800}
+        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 4096}
 
         results = searcher.search_multi_model(
             embeddings=embeddings, top_k=10, merge_strategy="intersection"
@@ -118,22 +117,22 @@ class TestMultiModelSimilaritySearcher:
             {"name": "Song B", "distance": 0.8},
         ]
 
-        mert_results = [
+        qwen_results = [
             {"name": "Song C", "distance": 0.95},
             {"name": "Song D", "distance": 0.85},
         ]
 
         client.set_mock_results("embedding", muq_results)
-        client.set_mock_results("mert_embedding", mert_results)
+        client.set_mock_results("description_embedding", qwen_results)
 
-        embeddings = {"muq": [0.1] * 1536, "mert": [0.2] * 76800}
+        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 4096}
 
-        # muq has priority 1 (higher), mert has priority 2 (lower)
+        # muq has priority 1 (higher), qwen3 has priority 2 (lower)
         results = searcher.search_multi_model(
             embeddings=embeddings,
             top_k=10,
             merge_strategy="priority",
-            model_priorities={"muq": 1, "mert": 2},
+            model_priorities={"muq": 1, "qwen3": 2},
         )
 
         # Should prioritize muq results first
@@ -152,20 +151,15 @@ class TestMultiModelSimilaritySearcher:
             {"name": "Song B", "distance": 0.8},
         ]
 
-        mert_results = [
+        qwen_results = [
             {"name": "Song B", "distance": 0.85},
             {"name": "Song C", "distance": 0.75},
         ]
 
-        latent_results = [
-            {"name": "Song D", "distance": 0.8},
-        ]
-
         client.set_mock_results("embedding", muq_results)
-        client.set_mock_results("mert_embedding", mert_results)
-        client.set_mock_results("latent_embedding", latent_results)
+        client.set_mock_results("description_embedding", qwen_results)
 
-        embeddings = {"muq": [0.1] * 1536, "mert": [0.2] * 76800, "latent": [0.3] * 576}
+        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 4096}
 
         # Require at least 2 models to agree
         results = searcher.search_multi_model(
@@ -207,14 +201,14 @@ class TestMultiModelSimilaritySearcher:
             {"name": "Song A", "distance": 0.9},
         ]
 
-        mert_results = [
+        qwen_results = [
             {"name": "Song A", "distance": 0.85},
         ]
 
         client.set_mock_results("embedding", muq_results)
-        client.set_mock_results("mert_embedding", mert_results)
+        client.set_mock_results("description_embedding", qwen_results)
 
-        embeddings = {"muq": [0.1] * 1536, "mert": [0.2] * 76800}
+        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 4096}
 
         results = searcher.search_multi_model(
             embeddings=embeddings, top_k=10, merge_strategy="union"
@@ -223,7 +217,7 @@ class TestMultiModelSimilaritySearcher:
         # Check that models metadata is included
         assert len(results) == 1
         assert "models" in results[0]
-        assert set(results[0]["models"]) == {"muq", "mert"}
+        assert set(results[0]["models"]) == {"muq", "qwen3"}
 
     def test_empty_results(self):
         """Test handling of empty search results"""
@@ -259,14 +253,14 @@ class TestMultiModelSimilaritySearcher:
             {"name": "Song A", "distance": 1.0},
         ]
 
-        mert_results = [
+        qwen_results = [
             {"name": "Song A", "distance": 0.8},
         ]
 
         client.set_mock_results("embedding", muq_results)
-        client.set_mock_results("mert_embedding", mert_results)
+        client.set_mock_results("description_embedding", qwen_results)
 
-        embeddings = {"muq": [0.1] * 1536, "mert": [0.2] * 76800}
+        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 4096}
 
         results = searcher.search_multi_model(
             embeddings=embeddings, top_k=10, merge_strategy="union"
