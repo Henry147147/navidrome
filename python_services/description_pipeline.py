@@ -29,7 +29,7 @@ except Exception:  # pragma: no cover - optional heavy dependency
     MusicFlamingoForConditionalGeneration = None
     _HAS_MUSIC_FLAMINGO = False
 
-from gpu_settings import GPUSettings, load_gpu_settings
+from gpu_settings import GPUSettings, is_oom_error, load_gpu_settings
 
 
 DEFAULT_DESCRIPTION_COLLECTION = "description_embedding"
@@ -90,10 +90,28 @@ class MusicFlamingoCaptioner:
 
     def _build_model(self):
         max_memory = self.gpu_settings.max_memory_map()
-        model = MusicFlamingoForConditionalGeneration.from_pretrained(
-            self.model_id, torch_dtype=self.dtype, max_memory=max_memory
-        )
-        return model.to(self.device)
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+        try:
+            model = MusicFlamingoForConditionalGeneration.from_pretrained(
+                self.model_id, torch_dtype=self.dtype, max_memory=max_memory
+            )
+            return model.to(self.device)
+        except Exception as exc:
+            if is_oom_error(exc):
+                self.logger.warning(
+                    "MusicFlamingo load hit OOM on %s; retrying on CPU with fp32",
+                    self.device,
+                )
+                self.device = "cpu"
+                self.dtype = torch.float32
+                model = MusicFlamingoForConditionalGeneration.from_pretrained(
+                    self.model_id, torch_dtype=self.dtype
+                )
+                return model.to(self.device)
+            raise
 
     def unload(self):
         try:
@@ -171,17 +189,59 @@ class Qwen3Embedder:
         self.gpu_settings.apply_runtime_limits()
 
     def _build_model(self):
-        model = AutoModel.from_pretrained(
-            self.model_id,
-            trust_remote_code=True,
-            torch_dtype=self.dtype,
-            device_map=self.device_map,
-            max_memory=self.max_memory,
-            low_cpu_mem_usage=True,
-        )
-        if self.device_map is None:
-            model = model.to(self.device)
-        return model
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+        # If free memory is low, fall back to CPU proactively
+        if torch.cuda.is_available():
+            try:
+                free_bytes, total_bytes = torch.cuda.mem_get_info()
+                free_gb = free_bytes / (1024**3)
+                if free_gb < 2.0:
+                    self.logger.warning(
+                        "Only %.2f GiB free on GPU; loading %s on CPU to avoid OOM",
+                        free_gb,
+                        self.model_id,
+                    )
+                    self.device = "cpu"
+                    self.device_map = None
+                    self.dtype = torch.float32
+                    self.max_memory = None
+            except Exception:
+                pass
+
+        try:
+            model = AutoModel.from_pretrained(
+                self.model_id,
+                trust_remote_code=True,
+                torch_dtype=self.dtype,
+                device_map=self.device_map,
+                max_memory=self.max_memory,
+                low_cpu_mem_usage=True,
+            )
+            if self.device_map is None:
+                model = model.to(self.device)
+            return model
+        except Exception as exc:
+            if is_oom_error(exc):
+                self.logger.warning(
+                    "Qwen3 load hit OOM on %s; retrying on CPU fp32", self.device
+                )
+                self.device = "cpu"
+                self.device_map = None
+                self.dtype = torch.float32
+                self.max_memory = None
+                model = AutoModel.from_pretrained(
+                    self.model_id,
+                    trust_remote_code=True,
+                    torch_dtype=self.dtype,
+                    device_map=self.device_map,
+                    low_cpu_mem_usage=True,
+                ).to(self.device)
+                return model
+            raise
 
     def unload(self):
         try:

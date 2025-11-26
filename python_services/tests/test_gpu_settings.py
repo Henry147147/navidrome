@@ -7,7 +7,7 @@ def test_load_default_when_missing(tmp_path):
     path = tmp_path / "missing.json"
     settings = load_gpu_settings(path)
     assert isinstance(settings, GPUSettings)
-    assert settings.max_gpu_memory_gb == 9.0
+    assert settings.max_gpu_memory_gb == 7.0
 
 
 def test_save_and_load_roundtrip(tmp_path):

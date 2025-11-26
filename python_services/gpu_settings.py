@@ -28,7 +28,7 @@ GPU_SETTINGS_PATH = Path(
 class GPUSettings:
     """Configurable GPU limits exposed to the UI."""
 
-    max_gpu_memory_gb: float = 9.0  # Targets a 10GB card with headroom
+    max_gpu_memory_gb: float = 7.0  # Safer default for 10GB cards with headroom
     precision: str = "fp16"  # fp16 | bf16 | fp32
     enable_cpu_offload: bool = True
     device: str = "auto"  # auto|cuda|cpu
@@ -106,9 +106,18 @@ def load_gpu_settings(path: Optional[Path] = None) -> GPUSettings:
     """Load GPU settings from disk or return sane defaults."""
     settings_path = path or GPU_SETTINGS_PATH
     loaded = _load_from_file(settings_path)
-    if loaded:
-        return loaded
-    return GPUSettings()
+    cfg = loaded or GPUSettings()
+
+    # Clamp to available GPU memory if possible to avoid immediate OOM on load
+    if torch.cuda.is_available():
+        try:
+            total_bytes = torch.cuda.get_device_properties(0).total_memory
+            total_gb = total_bytes / (1024**3)
+            max_cap = max(min(cfg.max_gpu_memory_gb, total_gb * 0.85), 2.0)
+            cfg.max_gpu_memory_gb = round(max_cap, 2)
+        except Exception:
+            pass
+    return cfg
 
 
 def save_gpu_settings(settings: GPUSettings, path: Optional[Path] = None) -> None:
@@ -129,3 +138,6 @@ def is_oom_error(exc: Exception) -> bool:
     msg = str(exc).lower()
     return isinstance(exc, torch.cuda.OutOfMemoryError) or "out of memory" in msg
 
+
+# Encourage PyTorch to use expandable segments to reduce fragmentation OOMs.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
