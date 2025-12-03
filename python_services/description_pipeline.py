@@ -2,7 +2,7 @@
 Description generation and text embedding pipeline for Navidrome uploads.
 
 This module wires together NVIDIA's Music Flamingo captioning model with
-Qwen3-Embedding-4B to produce rich text descriptions and cosine-normalized
+Qwen3-Embedding-8B to produce rich text descriptions and cosine-normalized
 embeddings for each uploaded track. The resulting vectors are stored in a
 separate Milvus collection so they can be queried alongside the existing
 MuQ audio embeddings.
@@ -157,12 +157,12 @@ class MusicFlamingoCaptioner:
 
 
 class Qwen3Embedder:
-    """Embedding helper around Qwen3-Embedding-4B."""
+    """Embedding helper around Qwen3-Embedding-8B."""
 
     def __init__(
         self,
         *,
-        model_id: str = "Qwen/Qwen3-Embedding-4B",
+        model_id: str = "Qwen/Qwen3-Embedding-8B",
         device: Optional[str] = None,
         torch_dtype: Optional[torch.dtype] = torch.float16,
         logger: Optional[logging.Logger] = None,
@@ -275,7 +275,7 @@ class DescriptionEmbeddingPipeline:
         self,
         *,
         caption_model_id: str = "nvidia/music-flamingo-hf",
-        text_model_id: str = "Qwen/Qwen3-Embedding-4B",
+        text_model_id: str = "Qwen/Qwen3-Embedding-8B",
         device: Optional[str] = None,
         logger: Optional[logging.Logger] = None,
         gpu_settings: Optional[GPUSettings] = None,

@@ -17,6 +17,8 @@ from tqdm import tqdm
 from embedding_models import MuQEmbeddingModel
 from description_pipeline import DescriptionEmbeddingPipeline
 from gpu_settings import GPUSettings, is_oom_error, load_gpu_settings
+from pymilvus import MilvusClient
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -101,12 +103,35 @@ class BatchEmbeddingJob:
         # Initialize models (lazy loading)
         self.models = {}
         self._cancelled = False
+        self._paused = False
 
         # Collection mapping for each model
         self.collection_map = {
             "muq": "embedding",
             "qwen3": "description_embedding",
         }
+
+    def pause(self) -> None:
+        """Pause the job and unload any loaded models to free VRAM."""
+        if self._paused:
+            return
+        self._paused = True
+        self.progress.status = "paused"
+        for model in self.models.values():
+            try:
+                if hasattr(model, "unload_model"):
+                    model.unload_model()
+            except Exception:
+                pass
+        self.logger.info("Job paused; models unloaded")
+
+    def resume(self) -> None:
+        """Resume a paused job (models will reload lazily)."""
+        if not self._paused:
+            return
+        self._paused = False
+        self.progress.status = "running"
+        self.logger.info("Job resumed")
 
     def _initialize_models(self, model_names: List[str]) -> None:
         """Initialize embedding models."""
@@ -195,6 +220,7 @@ class BatchEmbeddingJob:
         self,
         models_to_use: Optional[List[str]] = None,
         clear_existing: bool = True,
+        missing_only: bool = False,
     ) -> Dict:
         """
         Run batch embedding job with SEQUENTIAL model processing.
@@ -205,6 +231,7 @@ class BatchEmbeddingJob:
         Args:
             models_to_use: List of model names (default: all)
             clear_existing: Whether to clear existing embeddings first
+            missing_only: If True, skip tracks that already exist in Milvus
 
         Returns:
             Dict with progress and failed tracks
@@ -223,7 +250,11 @@ class BatchEmbeddingJob:
             self.progress.status = "failed"
             raise ValueError(error_msg)
 
-        self.logger.info(f"Starting batch embedding job with models: {models_to_use}")
+        self.logger.info(
+            f"Starting batch embedding job with models: {models_to_use} "
+            f"(missing_only={missing_only})"
+        )
+        self.progress.status = "running"
 
         # Initialize models
         self._initialize_models(models_to_use)
@@ -236,10 +267,10 @@ class BatchEmbeddingJob:
             self.progress.status = "failed"
             raise
 
-        # Calculate total operations (tracks × models)
-        total_operations = len(tracks) * len(models_to_use)
+        # Calculate total operations dynamically (important for missing_only)
+        total_operations = 0
         self.progress.total_tracks = len(tracks)
-        self.progress.total_operations = total_operations
+        self.progress.total_operations = 0
         self.progress.processed_tracks = 0
         self.progress.processed_operations = 0
         self.progress.status = "running"
@@ -279,13 +310,32 @@ class BatchEmbeddingJob:
                 collection = self.collection_map[model_name]
                 tracks_processed_this_model = 0
 
+                # Filter to missing-only if requested
+                model_tracks = tracks
+                if missing_only:
+                    name_list = [self._canonical_name(t) for t in tracks]
+                    existing = self._existing_names_for_collection(
+                        client, collection, name_list
+                    )
+                    model_tracks = [
+                        t for t, name in zip(tracks, name_list) if name not in existing
+                    ]
+                    self.logger.info(
+                        "Missing-only enabled: %s tracks already present in %s; %s remaining",
+                        len(tracks) - len(model_tracks),
+                        collection,
+                        len(model_tracks),
+                    )
+                total_operations += len(model_tracks)
+                self.progress.total_operations = total_operations
+
                 # Ensure model is loaded
                 model.ensure_model_loaded()
 
                 try:
                     # Process all tracks with this model
                     for track_idx, track in enumerate(
-                        tqdm(tracks, desc=f"Embedding with {model_name}")
+                        tqdm(model_tracks, desc=f"Embedding with {model_name}")
                     ):
                         if self._cancelled:
                             self.progress.status = "cancelled"
@@ -293,6 +343,18 @@ class BatchEmbeddingJob:
                             break
                         if stop_due_to_error:
                             break
+
+                        # Handle pauses
+                        if self._paused:
+                            try:
+                                model.unload_model()
+                            except Exception:
+                                pass
+                            while self._paused and not self._cancelled:
+                                time.sleep(0.5)
+                            if self._cancelled:
+                                break
+                            model.ensure_model_loaded()
 
                         self.progress.current_track = (
                             f"{track['artist']} - {track['title']}"
@@ -536,13 +598,7 @@ class BatchEmbeddingJob:
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
         # Normalize track name (artist - title format)
-        artist = (
-            str(track["artist"]).replace("•", "&").replace("/", "_").replace("\\", "_")
-        )
-        title = (
-            str(track["title"]).replace("•", "&").replace("/", "_").replace("\\", "_")
-        )
-        canonical_name = f"{artist} - {title}".strip()
+        canonical_name = self._canonical_name(track)
 
         # Generate embedding
         result = model.embed_music(str(audio_path), canonical_name)
@@ -567,6 +623,53 @@ class BatchEmbeddingJob:
             )
 
         return batch_data
+
+    def _canonical_name(self, track: Dict) -> str:
+        artist = (
+            str(track["artist"]).replace("•", "&").replace("/", "_").replace("\\", "_")
+        )
+        title = (
+            str(track["title"]).replace("•", "&").replace("/", "_").replace("\\", "_")
+        )
+        return f"{artist} - {title}".strip()
+
+    def _existing_names_for_collection(
+        self, client: MilvusClient, collection: str, names: List[str]
+    ) -> set:
+        """
+        Return a set of names already present in the given collection.
+        Uses batch queries to avoid huge filters; assumes 'name' field exists.
+        """
+        existing = set()
+        if not names:
+            return existing
+
+        BATCH = 256
+        lite_mode = "://" not in self.milvus_uri or self.milvus_uri.startswith("file:")
+        for i in range(0, len(names), BATCH):
+            chunk = names[i : i + BATCH]
+            try:
+                if lite_mode:
+                    filter_expr = f"name in {json.dumps(chunk)}"
+                    rows = client.query(
+                        collection_name=collection,
+                        filter=filter_expr,
+                        output_fields=["name"],
+                    )
+                else:
+                    rows = client.query(
+                        collection_name=collection,
+                        filter="name in {names}",
+                        filter_params={"names": chunk},
+                        output_fields=["name"],
+                    )
+                for row in rows or []:
+                    if "name" in row:
+                        existing.add(str(row["name"]))
+            except Exception:
+                # Best-effort; if query fails, skip filtering for this batch
+                self.logger.exception("Failed to query existing names for %s", collection)
+        return existing
 
     def cancel(self) -> None:
         """Cancel the running job."""

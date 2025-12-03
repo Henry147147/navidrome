@@ -10,9 +10,16 @@ Usage:
         --no-clear-existing
 """
 
+import os
+
+# Ensure HuggingFace/HF Hub offline flags are disabled BEFORE importing transformers
+os.environ.pop("HF_HUB_OFFLINE", None)
+os.environ.pop("TRANSFORMERS_OFFLINE", None)
+os.environ["HF_HUB_OFFLINE"] = "0"
+os.environ["TRANSFORMERS_OFFLINE"] = "0"
+
 import argparse
 import logging
-import os
 import sys
 import time
 from pathlib import Path
@@ -46,6 +53,12 @@ def parse_args() -> argparse.Namespace:
         help="Clear existing embeddings before re-embedding (default: true).",
     )
     parser.add_argument(
+        "--missing-only",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Only embed tracks missing from Milvus (per model). Implies no clearing.",
+    )
+    parser.add_argument(
         "--checkpoint-interval",
         type=int,
         default=50,
@@ -55,6 +68,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    # Ensure HuggingFace is allowed to fetch models needed for description pipeline
+    # Explicitly disable offline flags that may be exported in the environment
+    os.environ.pop("HF_HUB_OFFLINE", None)
+    os.environ.pop("TRANSFORMERS_OFFLINE", None)
+    os.environ["HF_HUB_OFFLINE"] = "0"
+    os.environ["TRANSFORMERS_OFFLINE"] = "0"
+
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     logger = logging.getLogger("embed_library")
@@ -77,6 +97,8 @@ def main() -> int:
     os.environ["NAVIDROME_MILVUS_URI"] = str(milvus_db_path)
 
     gpu_settings = load_gpu_settings()
+    missing_only = args.missing_only
+    clear_existing = False if missing_only else args.clear_existing
     logger.info(
         "Starting batch embedding: db=%s music_root=%s milvus_db=%s models=%s clear_existing=%s",
         db_path,
@@ -94,8 +116,58 @@ def main() -> int:
         gpu_settings=gpu_settings,
     )
 
-    # Run synchronously
-    job.run(models=args.models, clearExisting=args.clear_existing)
+    import threading
+
+    result = {"exit": 0}
+
+    def run_job():
+        try:
+            job.run(
+                models_to_use=args.models,
+                clear_existing=clear_existing,
+                missing_only=missing_only,
+            )
+        except Exception as exc:
+            logger.exception("Embedding job failed: %s", exc)
+            result["exit"] = 1
+
+    worker = threading.Thread(target=run_job, daemon=True)
+    worker.start()
+
+    logger.info(
+        "Embedding started. Commands: 'p' pause (unload), 'r' resume (reload), 'q' cancel, 'status' to print progress."
+    )
+
+    try:
+        for line in sys.stdin:
+            cmd = line.strip().lower()
+            if cmd == "p":
+                job.pause()
+            elif cmd == "r":
+                job.resume()
+            elif cmd in {"q", "quit", "exit"}:
+                job.cancel()
+                break
+            elif cmd == "status":
+                prog = job.get_progress()
+                logger.info(
+                    "Status=%s model=%s track=%s progress %s/%s ops %s/%s failures=%s",
+                    prog.status,
+                    prog.current_model,
+                    prog.current_track,
+                    prog.processed_tracks,
+                    prog.total_tracks,
+                    prog.processed_operations,
+                    prog.total_operations,
+                    prog.failed_tracks,
+                )
+            if not worker.is_alive():
+                break
+    except KeyboardInterrupt:
+        logger.info("KeyboardInterrupt received; cancelling job...")
+        job.cancel()
+
+    worker.join()
 
     progress = job.get_progress()
     logger.info(
@@ -107,7 +179,7 @@ def main() -> int:
     )
     if progress.last_error:
         logger.warning("Last error: %s", progress.last_error)
-    return 0
+    return result["exit"]
 
 
 if __name__ == "__main__":
