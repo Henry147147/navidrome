@@ -16,7 +16,6 @@ import playlist from './playlist'
 import radio from './radio'
 import share from './share'
 import library from './library'
-import batchembedding from './batchembedding'
 import { Player } from './audioplayer'
 import customRoutes from './routes'
 import {
@@ -140,14 +139,6 @@ const Admin = (props) => {
             options={{ subMenu: 'settings' }}
           />
         ) : null,
-        permissions === 'admin' ? (
-          <Resource
-            name="batchembedding"
-            {...batchembedding}
-            options={{ subMenu: 'settings' }}
-          />
-        ) : null,
-
         <Resource name="translation" />,
         <Resource name="genre" />,
         <Resource name="tag" />,

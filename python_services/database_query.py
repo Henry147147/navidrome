@@ -2,7 +2,7 @@
 Helpers for performing Milvus similarity lookups used during uploads.
 
 This module centralizes the reusable database access logic that was previously
-embedded inside ad-hoc scripts (see load_all.find_closest_vector). It exposes a
+embedded inside ad-hoc scripts. It exposes a
 small helper that can be wired into the upload pipeline so that the embedding
 server and upload features share the same behavior when checking for
 duplicates.

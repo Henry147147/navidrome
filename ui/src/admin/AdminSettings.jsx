@@ -3,7 +3,6 @@ import { Title, useTranslate } from 'react-admin'
 import { Box, Typography } from '@material-ui/core'
 import { makeStyles } from '@material-ui/core/styles'
 import { BRAND_NAME } from '../consts'
-import BatchEmbeddingPanel from '../settings/BatchEmbeddingPanel'
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -58,8 +57,6 @@ const AdminSettings = () => {
             })}
           </Typography>
         </Box>
-
-        <BatchEmbeddingPanel />
       </Box>
     </Box>
   )

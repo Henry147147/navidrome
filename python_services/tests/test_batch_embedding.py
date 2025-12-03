@@ -440,3 +440,21 @@ class TestBatchJobConcurrency:
         progress2 = job.get_progress()
 
         assert progress2.processed_tracks == progress1.processed_tracks + 1
+
+    def test_pause_and_resume_flags(self, temp_paths):
+        """Pause/resume should toggle flags without requiring models."""
+        db_path, music_root = temp_paths
+        job = BatchEmbeddingJob(
+            db_path=db_path,
+            music_root=music_root,
+            milvus_uri="http://localhost:19530",
+        )
+
+        assert job.progress.status == "initialized"
+        job.pause()
+        assert job._paused is True
+        assert job.progress.status == "paused"
+
+        job.resume()
+        assert job._paused is False
+        assert job.progress.status == "running"

@@ -239,9 +239,24 @@ class RecommendationEngine:
             id_to_name = self.name_resolver.ids_to_names(seed_ids)
             unique_names = list({name for name in id_to_name.values()})
 
-            if len(request.models) == 1:
-                primary_model = request.models[0]
-                name_embeddings = self.searcher.get_embeddings_by_name(unique_names)
+            # If multi-model search is unavailable, fall back to primary model.
+            if len(request.models) == 1 or self.multi_model_searcher is None:
+                primary_model = request.models[0] if request.models else "muq"
+                model_searcher = self.searcher
+                if (
+                    self.multi_model_searcher
+                    and primary_model != "muq"
+                    and hasattr(self.multi_model_searcher, "searchers")
+                ):
+                    model_searcher = self.multi_model_searcher.searchers.get(
+                        primary_model, model_searcher
+                    )
+
+                name_embeddings = (
+                    model_searcher.get_embeddings_by_name(unique_names)
+                    if model_searcher
+                    else {}
+                )
                 for track_id, name in id_to_name.items():
                     vector = name_embeddings.get(name)
                     if vector is not None:
