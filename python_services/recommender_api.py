@@ -494,9 +494,20 @@ class RecommendationEngine:
         return response
 
 
-def build_engine() -> RecommendationEngine:
-    uri = os.getenv("NAVIDROME_MILVUS_URI", "http://localhost:19530")
-    client = MilvusClient(uri=uri)
+def build_engine(
+    *,
+    milvus_client: MilvusClient | None = None,
+    milvus_uri: str | None = None,
+) -> RecommendationEngine:
+    """
+    Build a recommender engine, allowing callers to inject a Milvus client.
+
+    Injecting the client lets the unified service point at a Milvus Lite
+    database file (e.g., file:/path/to/milvus.db) instead of a remote server.
+    """
+
+    uri = milvus_uri or os.getenv("NAVIDROME_MILVUS_URI", "http://localhost:19530")
+    client = milvus_client or MilvusClient(uri=uri)
     debug_logging = _env_flag("NAVIDROME_RECOMMENDER_DEBUG")
     # TODO: remove this line
     debug_logging = True
@@ -511,7 +522,9 @@ def build_engine() -> RecommendationEngine:
     )
 
     # Create multi-model searcher
-    multi_model_searcher = MultiModelSimilaritySearcher(milvus_uri=uri, logger=LOGGER)
+    multi_model_searcher = MultiModelSimilaritySearcher(
+        milvus_uri=client, logger=LOGGER
+    )
 
     resolver = TrackNameResolver()
     return RecommendationEngine(

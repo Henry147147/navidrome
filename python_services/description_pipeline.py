@@ -334,12 +334,22 @@ class DescriptionEmbeddingPipeline:
 
         params = MilvusClient.prepare_index_params()
         params.add_index(field_name="name", index_type="INVERTED")
-        params.add_index(
-            field_name="embedding",
-            index_type="HNSW",
-            metric_type="COSINE",
-            params={"M": 50, "efConstruction": 250},
-        )
+        from embedding_models import _milvus_uses_lite
+
+        if _milvus_uses_lite():
+            params.add_index(
+                field_name="embedding",
+                index_type="IVF_FLAT",
+                metric_type="COSINE",
+                params={"nlist": 1024},
+            )
+        else:
+            params.add_index(
+                field_name="embedding",
+                index_type="HNSW",
+                metric_type="COSINE",
+                params={"M": 50, "efConstruction": 250},
+            )
         client.create_index(DEFAULT_DESCRIPTION_COLLECTION, params)
 
     def describe_music(

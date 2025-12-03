@@ -10,13 +10,19 @@ or via uvicorn:
     uvicorn navidrome_service:app --host 0.0.0.0 --port 9002
 """
 
+import argparse
 import logging
 import os
 from fastapi import FastAPI
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-from python_embed_server import EmbedSocketServer, build_embed_router
-from recommender_api import build_engine, build_recommender_router
-from text_embedding_service import build_text_embedding_router, text_service
+if TYPE_CHECKING:
+    # Imported only for type checking; runtime imports are inside create_app.
+    from pymilvus import MilvusClient
+    from python_embed_server import EmbedSocketServer
+    from recommender_api import RecommendationEngine
+    from text_embedding_service import TextEmbeddingService
 
 
 def _service_port() -> int:
@@ -32,6 +38,24 @@ def _service_port() -> int:
     return 9002
 
 
+def _resolve_milvus_uri() -> str:
+    """
+    Prefer a local Milvus Lite database file when NAVIDROME_MILVUS_DB_PATH is set.
+    Falls back to NAVIDROME_MILVUS_URI or the default remote Milvus endpoint.
+    """
+
+    db_path = os.getenv("NAVIDROME_MILVUS_DB_PATH")
+    if db_path:
+        expanded = Path(db_path).expanduser().resolve()
+        # Ensure parent directory exists so Milvus Lite can create the file.
+        expanded.parent.mkdir(parents=True, exist_ok=True)
+        # Milvus Lite expects a plain file path (no scheme). A new DB file will
+        # be created automatically if it doesn't already exist.
+        return str(expanded)
+
+    return os.getenv("NAVIDROME_MILVUS_URI", "http://localhost:19530")
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Navidrome AI Service",
@@ -39,9 +63,21 @@ def create_app() -> FastAPI:
         description="Combined service for embeddings, recommendations, and uploads.",
     )
 
+    milvus_uri = _resolve_milvus_uri()
+    # Make sure downstream modules that still read NAVIDROME_MILVUS_URI pick up the
+    # resolved value (including the local file:// form).
+    os.environ["NAVIDROME_MILVUS_URI"] = milvus_uri
+
+    # Local imports to avoid connecting to Milvus when invoked with --help.
+    from pymilvus import MilvusClient
+    from python_embed_server import EmbedSocketServer, build_embed_router
+    from recommender_api import build_engine, build_recommender_router
+    from text_embedding_service import build_text_embedding_router, text_service
+    milvus_client = MilvusClient(uri=milvus_uri)
+
     # Shared engines instantiated once
-    embed_server = EmbedSocketServer()
-    recommender_engine = build_engine()
+    embed_server = EmbedSocketServer(milvus_client=milvus_client)
+    recommender_engine = build_engine(milvus_client=milvus_client, milvus_uri=milvus_uri)
 
     app.include_router(build_text_embedding_router(text_service))
     app.include_router(build_recommender_router(recommender_engine))
@@ -62,12 +98,33 @@ def create_app() -> FastAPI:
     return app
 
 
-app = create_app()
-
-
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Navidrome AI unified service")
+    parser.add_argument(
+        "--milvus-db-path",
+        help=(
+            "Path to a Milvus Lite .db file (overrides NAVIDROME_MILVUS_DB_PATH "
+            "and NAVIDROME_MILVUS_URI). Useful when running with a local, "
+            "copied Milvus database instead of a remote server."
+        ),
+    )
+    args, _unknown = parser.parse_known_args()
+
+    if args.milvus_db_path:
+        os.environ["NAVIDROME_MILVUS_DB_PATH"] = args.milvus_db_path
+        # Ensure any previously-set URI is ignored in favor of the DB file.
+        os.environ.pop("NAVIDROME_MILVUS_URI", None)
+
+    # Recreate app to pick up CLI-provided environment overrides
+    app = create_app()
+
     logging.basicConfig(level=logging.INFO)
     import uvicorn
 
     port = _service_port()
     uvicorn.run(app, host="0.0.0.0", port=port)
+
+else:
+    # When imported by uvicorn (`uvicorn navidrome_service:app`), build the app
+    # immediately using environment variables.
+    app = create_app()

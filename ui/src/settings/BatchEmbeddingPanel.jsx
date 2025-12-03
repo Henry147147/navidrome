@@ -101,6 +101,8 @@ const useStyles = makeStyles((theme) => ({
   },
   helper: {
     color: theme.palette.text.secondary,
+    marginBottom: theme.spacing(1),
+    display: 'block',
   },
 }))
 

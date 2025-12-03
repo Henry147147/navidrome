@@ -723,6 +723,9 @@
       },
       "name": "Song |||| Songs"
     },
+    "batchembedding": {
+      "name": "Batch Re-embedding |||| Batch Re-embedding"
+    },
     "transcoding": {
       "fields": {
         "command": "Command",

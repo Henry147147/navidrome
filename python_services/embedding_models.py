@@ -5,6 +5,7 @@ Embedding model abstractions and concrete implementations for the embedding serv
 from __future__ import annotations
 
 import logging
+import os
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,6 +20,15 @@ import numpy as np
 import torch
 import torchaudio
 from pymilvus import MilvusClient, DataType
+
+def _milvus_uses_lite() -> bool:
+    """
+    Detect whether we're running Milvus Lite (local file URI).
+
+    Lite mode only supports FLAT/IVF_FLAT/AUTOINDEX indexes.
+    """
+    uri = os.getenv("NAVIDROME_MILVUS_URI", "")
+    return "://" not in uri or uri.startswith("file:")
 
 # Use try-except to handle import from different contexts
 try:
@@ -467,12 +477,20 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
 
         index_params = MilvusClient.prepare_index_params()
         index_params.add_index(field_name="name", index_type="INVERTED")
-        index_params.add_index(
-            field_name="embedding",
-            index_type="HNSW",
-            metric_type="COSINE",
-            params={"M": 50, "efConstruction": 250},
-        )
+        if _milvus_uses_lite():
+            index_params.add_index(
+                field_name="embedding",
+                index_type="IVF_FLAT",
+                metric_type="COSINE",
+                params={"nlist": 1024},
+            )
+        else:
+            index_params.add_index(
+                field_name="embedding",
+                index_type="HNSW",
+                metric_type="COSINE",
+                params={"M": 50, "efConstruction": 250},
+            )
         client.create_index("embedding", index_params)
 
     def _embed_single_segment(
@@ -1105,12 +1123,20 @@ class MertModel(BaseEmbeddingModel):
 
         index_params = MilvusClient.prepare_index_params()
         index_params.add_index(field_name="name", index_type="INVERTED")
-        index_params.add_index(
-            field_name="embedding",
-            index_type="HNSW",
-            metric_type="COSINE",
-            params={"M": 50, "efConstruction": 250},
-        )
+        if _milvus_uses_lite():
+            index_params.add_index(
+                field_name="embedding",
+                index_type="IVF_FLAT",
+                metric_type="COSINE",
+                params={"nlist": 1024},
+            )
+        else:
+            index_params.add_index(
+                field_name="embedding",
+                index_type="HNSW",
+                metric_type="COSINE",
+                params={"M": 50, "efConstruction": 250},
+            )
         client.create_index("mert_embedding", index_params)
 
 
@@ -1365,12 +1391,20 @@ class MusicLatentSpaceModel(BaseEmbeddingModel):
 
         index_params = MilvusClient.prepare_index_params()
         index_params.add_index(field_name="name", index_type="INVERTED")
-        index_params.add_index(
-            field_name="embedding",
-            index_type="HNSW",
-            metric_type="COSINE",
-            params={"M": 50, "efConstruction": 250},
-        )
+        if _milvus_uses_lite():
+            index_params.add_index(
+                field_name="embedding",
+                index_type="IVF_FLAT",
+                metric_type="COSINE",
+                params={"nlist": 1024},
+            )
+        else:
+            index_params.add_index(
+                field_name="embedding",
+                index_type="HNSW",
+                metric_type="COSINE",
+                params={"M": 50, "efConstruction": 250},
+            )
         client.create_index("latent_embedding", index_params)
 
     def _embed_single_segment(

@@ -387,7 +387,7 @@ def test_mert_milvus_collection_name(mock_mert_components, mock_milvus_client):
 
 @pytest.mark.unit
 def test_mert_milvus_index_creation(mock_mert_components, mock_milvus_client):
-    """Test MERT creates HNSW and INVERTED indexes."""
+    """Test MERT creates vector and inverted indexes."""
     model = MertModel(device="cpu")
 
     # Mock describe_collection to return empty indexes
@@ -931,7 +931,7 @@ def test_muq_milvus_collection_name(mock_muq_components, mock_milvus_client):
 
 @pytest.mark.unit
 def test_muq_milvus_index_creation(mock_muq_components, mock_milvus_client):
-    """Test MuQ creates HNSW and INVERTED indexes."""
+    """Test MuQ creates vector and inverted indexes."""
     model = MuQEmbeddingModel(device="cpu")
 
     mock_milvus_client.describe_collection.return_value = {"indexes": []}
@@ -1153,7 +1153,7 @@ def test_latent_milvus_collection_name(mock_latent_components, mock_milvus_clien
 
 @pytest.mark.unit
 def test_latent_milvus_index_creation(mock_latent_components, mock_milvus_client):
-    """Test latent creates HNSW and INVERTED indexes."""
+    """Test latent creates vector and inverted indexes."""
     model = MusicLatentSpaceModel(device="cpu")
 
     mock_milvus_client.describe_collection.return_value = {"indexes": []}

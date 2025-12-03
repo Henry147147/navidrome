@@ -9,6 +9,8 @@ duplicates.
 """
 
 import logging
+import os
+import json
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
@@ -22,6 +24,15 @@ logger = logging.getLogger("navidrome.database_query")
 DEFAULT_COLLECTION = "embedding"
 DEFAULT_TOP_K = 25
 DEFAULT_MIN_EF = 64
+
+
+def _using_milvus_lite() -> bool:
+    """
+    Detect whether Milvus Lite is being used (local file path URI).
+    Lite mode does not support parameterized filters.
+    """
+    uri = os.getenv("NAVIDROME_MILVUS_URI", "")
+    return "://" not in uri or uri.startswith("file:")
 
 
 @dataclass
