@@ -3,6 +3,7 @@ Shared pytest fixtures for embedding_models test suite.
 """
 
 import logging
+import os
 import tempfile
 from pathlib import Path
 from typing import Generator
@@ -11,6 +12,44 @@ from unittest.mock import Mock, MagicMock
 import numpy as np
 import pytest
 import torch
+import torchaudio
+
+# Ensure torchaudio uses soundfile backend (avoids torchcodec dependency in tests)
+os.environ.setdefault("TORCHAUDIO_USE_SOUNDFILE", "1")
+
+# Provide missing torchaudio.info/save shims when backend is minimal
+if not hasattr(torchaudio, "info"):
+    def _dummy_info(path):
+        class _Info:
+            sample_rate = 44100
+            num_channels = 2
+            num_frames = 0
+        return _Info()
+    torchaudio.info = _dummy_info  # type: ignore[attr-defined]
+
+if not hasattr(torchaudio, "_original_save"):
+    torchaudio._original_save = getattr(torchaudio, "save", None)
+
+def _sf_save(path, waveform, sample_rate, format=None, **kwargs):
+    try:
+        import soundfile as sf
+    except Exception as exc:  # pragma: no cover - fallback
+        raise RuntimeError("soundfile backend required for torchaudio.save in tests") from exc
+    # waveform expected as torch.Tensor [channels, frames]
+    data = waveform.detach().cpu().numpy()
+    if data.ndim == 2:
+        data = data.T  # soundfile expects frames x channels
+    sf.write(path, data, sample_rate, format=format or "FLAC")
+
+# Replace torchaudio.save if it fails to import torchcodec
+try:
+    # quick sanity check to ensure save callable
+    getattr(torchaudio, "save")
+except Exception:
+    torchaudio.save = _sf_save  # type: ignore[assignment]
+else:
+    # Even if present, force use of soundfile to avoid codec dependency
+    torchaudio.save = _sf_save  # type: ignore[assignment]
 
 from models import TrackSegment
 

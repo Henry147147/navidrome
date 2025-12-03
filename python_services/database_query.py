@@ -140,8 +140,12 @@ class MilvusSimilaritySearcher:
         if exclude_names:
             exclusions = sorted({name for name in exclude_names if name})
             if exclusions:
-                filter_expr = "name not in {names}"
-                filter_params = {"names": exclusions}
+                if _using_milvus_lite():
+                    # Lite cannot parse placeholders; embed the list directly.
+                    filter_expr = f"name not in {json.dumps(exclusions)}"
+                else:
+                    filter_expr = "name not in {names}"
+                    filter_params = {"names": exclusions}
 
         self._load_collection()
 
@@ -182,8 +186,11 @@ class MilvusSimilaritySearcher:
         if exclude_names:
             exclusions = sorted({name for name in exclude_names if name})
             if exclusions:
-                filter_expr = "name not in {names}"
-                filter_params = {"names": exclusions}
+                if _using_milvus_lite():
+                    filter_expr = f"name not in {json.dumps(exclusions)}"
+                else:
+                    filter_expr = "name not in {names}"
+                    filter_params = {"names": exclusions}
 
         self._load_collection()
 
@@ -218,12 +225,20 @@ class MilvusSimilaritySearcher:
         self._load_collection()
 
         try:
-            rows = self.client.query(
-                collection_name=self.collection_name,
-                filter="name in {names}",
-                filter_params={"names": unique_names},
-                output_fields=["name", self.anns_field],
-            )
+            if _using_milvus_lite():
+                filter_expr = f"name in {json.dumps(unique_names)}"
+                rows = self.client.query(
+                    collection_name=self.collection_name,
+                    filter=filter_expr,
+                    output_fields=["name", self.anns_field],
+                )
+            else:
+                rows = self.client.query(
+                    collection_name=self.collection_name,
+                    filter="name in {names}",
+                    filter_params={"names": unique_names},
+                    output_fields=["name", self.anns_field],
+                )
         except Exception:  # pragma: no cover - defensive logging
             self.logger.exception("Milvus query failed when loading embeddings")
             return {}

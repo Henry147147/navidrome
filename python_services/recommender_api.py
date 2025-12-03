@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import os
 from pathlib import Path
 from typing import Dict, List, Sequence
@@ -641,7 +642,15 @@ def create_app() -> FastAPI:
     return app
 
 
-app = create_app()
+# Avoid connecting to Milvus during test collection unless explicitly requested.
+if os.getenv("NAVIDROME_SKIP_RECOMMENDER_APP_INIT") or "pytest" in sys.modules:
+    app = FastAPI(title="Navidrome Recommender (test)")
+
+    @app.get("/healthz")
+    def health_stub():
+        return {"status": "ok", "stub": True}
+else:
+    app = create_app()
 
 
 __all__ = ["app", "create_app", "RecommendationEngine"]

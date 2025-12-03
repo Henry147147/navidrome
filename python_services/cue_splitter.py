@@ -145,12 +145,28 @@ def _load_audio_metadata(music_path: Path) -> tuple[int, int]:
     """
     Returns (sample_rate, total_frames)
     """
-    info = torchaudio.info(str(music_path))
-    sample_rate = info.sample_rate
-    total_frames = info.num_frames
-    if sample_rate <= 0 or total_frames <= 0:
-        raise ValueError("Invalid audio metadata")
-    return sample_rate, total_frames
+    try:
+        info = torchaudio.info(str(music_path))
+        sample_rate = getattr(info, "sample_rate", 0)
+        total_frames = getattr(info, "num_frames", 0)
+        if sample_rate > 0 and total_frames > 0:
+            return sample_rate, total_frames
+    except Exception:
+        pass
+
+    # Fallback to soundfile for environments without full torchaudio support
+    try:
+        import soundfile as sf
+
+        meta = sf.info(str(music_path))
+        sample_rate = int(getattr(meta, "samplerate", 0))
+        total_frames = int(getattr(meta, "frames", 0))
+        if sample_rate > 0 and total_frames > 0:
+            return sample_rate, total_frames
+    except Exception:
+        pass
+
+    raise ValueError("Invalid audio metadata")
 
 
 def _load_audio_segment(
@@ -164,14 +180,31 @@ def _load_audio_segment(
         num_frames = -1
     else:
         num_frames = max(int(round(duration_seconds * sample_rate)), 0)
-    waveform, sr = torchaudio.load(
-        str(music_path),
-        frame_offset=frame_offset,
-        num_frames=None if num_frames < 0 else num_frames,
-    )
-    if sr != sample_rate:
-        waveform = torchaudio.functional.resample(waveform, sr, sample_rate)
-    return waveform
+    try:
+        waveform, sr = torchaudio.load(
+            str(music_path),
+            frame_offset=frame_offset,
+            num_frames=None if num_frames < 0 else num_frames,
+        )
+        if sr != sample_rate:
+            waveform = torchaudio.functional.resample(waveform, sr, sample_rate)
+        return waveform
+    except Exception:
+        # Fallback to soundfile for environments without torchcodec
+        import soundfile as sf
+
+        data, sr = sf.read(
+            str(music_path),
+            start=frame_offset if frame_offset > 0 else 0,
+            frames=None if num_frames < 0 else num_frames,
+            dtype="float32",
+        )
+        if data.ndim == 1:
+            data = data[:, None]
+        data = torch.from_numpy(data).T  # to [channels, frames]
+        if sr != sample_rate:
+            data = torchaudio.functional.resample(data, sr, sample_rate)
+        return data
 
 
 def split_flac_with_cue(

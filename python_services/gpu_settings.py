@@ -9,6 +9,7 @@ the working cap at ~9GB and using fp16 precision with CPU offload enabled.
 from __future__ import annotations
 
 import json
+import configparser
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -16,9 +17,8 @@ from typing import Any, Dict, Optional
 
 import torch
 
-# Default path can be overridden from both Go and Python via env var so the UI
-# and services stay in sync.
-_DEFAULT_SETTINGS_PATH = Path(__file__).parent / "gpu_settings.json"
+# Default path can be overridden from env var so all Python services stay in sync.
+_DEFAULT_SETTINGS_PATH = Path(__file__).parent / "gpu_settings.conf"
 GPU_SETTINGS_PATH = Path(
     os.getenv("NAVIDROME_GPU_SETTINGS_PATH", _DEFAULT_SETTINGS_PATH)
 ).expanduser()
@@ -90,6 +90,22 @@ class GPUSettings:
 def _load_from_file(path: Path) -> Optional[GPUSettings]:
     if not path.exists():
         return None
+    # First try ini/conf format
+    try:
+        cp = configparser.ConfigParser()
+        cp.read(path)
+        if "gpu" in cp:
+            section = cp["gpu"]
+            return GPUSettings(
+                max_gpu_memory_gb=float(section.get("max_gpu_memory_gb", 9.0)),
+                precision=section.get("precision", "fp16"),
+                enable_cpu_offload=section.getboolean("enable_cpu_offload", True),
+                device=section.get("device", "auto"),
+            )
+    except Exception:
+        pass
+
+    # Backward compatibility: accept legacy JSON
     try:
         data = json.loads(path.read_text())
         return GPUSettings(
@@ -121,16 +137,18 @@ def load_gpu_settings(path: Optional[Path] = None) -> GPUSettings:
 
 
 def save_gpu_settings(settings: GPUSettings, path: Optional[Path] = None) -> None:
-    """Persist GPU settings so the UI and services stay aligned."""
+    """Persist GPU settings to an .conf (ini) file."""
     settings_path = path or GPU_SETTINGS_PATH
     settings_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "maxGpuMemoryGb": settings.max_gpu_memory_gb,
+    cp = configparser.ConfigParser()
+    cp["gpu"] = {
+        "max_gpu_memory_gb": str(settings.max_gpu_memory_gb),
         "precision": settings.precision,
-        "enableCpuOffload": settings.enable_cpu_offload,
+        "enable_cpu_offload": str(settings.enable_cpu_offload).lower(),
         "device": settings.device,
     }
-    settings_path.write_text(json.dumps(payload, indent=2))
+    with settings_path.open("w") as fh:
+        cp.write(fh)
 
 
 def is_oom_error(exc: Exception) -> bool:

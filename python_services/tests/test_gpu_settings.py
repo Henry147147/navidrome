@@ -4,14 +4,14 @@ from gpu_settings import GPUSettings, is_oom_error, load_gpu_settings, save_gpu_
 
 
 def test_load_default_when_missing(tmp_path):
-    path = tmp_path / "missing.json"
+    path = tmp_path / "missing.conf"
     settings = load_gpu_settings(path)
     assert isinstance(settings, GPUSettings)
     assert settings.max_gpu_memory_gb == 7.0
 
 
 def test_save_and_load_roundtrip(tmp_path):
-    path = tmp_path / "gpu.json"
+    path = tmp_path / "gpu.conf"
     settings = GPUSettings(max_gpu_memory_gb=7.5, precision="bf16", enable_cpu_offload=False, device="cpu")
     save_gpu_settings(settings, path)
     loaded = load_gpu_settings(path)

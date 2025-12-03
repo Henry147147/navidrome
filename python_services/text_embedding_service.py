@@ -4,7 +4,7 @@ Text Embedding Service
 Provides REST API for embedding text queries into embedding spaces.
 Supported models:
 - muq   : MuQ text projection (stub-backed unless checkpoint provided)
-- qwen3 : Qwen3-Embedding-8B text embeddings (real model)
+- qwen3 : Qwen3-Embedding-4B text embeddings (real model)
 """
 
 import logging
@@ -179,7 +179,7 @@ class TextEmbeddingService:
                 name="qwen3",
                 dimension=4096,
                 status="available",
-                description="Qwen3-Embedding-8B text embeddings for caption search",
+                description="Qwen3-Embedding-4B text embeddings for caption search",
             )
         )
 

@@ -55,7 +55,7 @@ class RecommendationRequest(BaseModel):
 
     # Multi-model support
     models: List[str] = Field(
-        default_factory=lambda: ["muq"],
+        default_factory=lambda: ["muq", "qwen3"],
         description="Embedding models to use (muq, qwen3)",
     )
     merge_strategy: str = Field(
