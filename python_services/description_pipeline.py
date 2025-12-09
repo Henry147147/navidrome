@@ -23,11 +23,20 @@ from pymilvus import MilvusClient, DataType
 from transformers import AutoModel, AutoProcessor, AutoTokenizer
 
 try:
-    from transformers import MusicFlamingoForConditionalGeneration
+    # Newer Transformers (5.x dev) expose AudioFlamingo3
+    from transformers import AudioFlamingo3ForConditionalGeneration
+    _FlamingoCls = AudioFlamingo3ForConditionalGeneration
     _HAS_MUSIC_FLAMINGO = True
 except Exception:  # pragma: no cover - optional heavy dependency
-    MusicFlamingoForConditionalGeneration = None
-    _HAS_MUSIC_FLAMINGO = False
+    try:
+        # Older builds used MusicFlamingoForConditionalGeneration
+        from transformers import MusicFlamingoForConditionalGeneration
+
+        _FlamingoCls = MusicFlamingoForConditionalGeneration
+        _HAS_MUSIC_FLAMINGO = True
+    except Exception:
+        _FlamingoCls = None
+        _HAS_MUSIC_FLAMINGO = False
 
 from gpu_settings import GPUSettings, is_oom_error, load_gpu_settings
 
@@ -71,7 +80,8 @@ class MusicFlamingoCaptioner:
         if not _HAS_MUSIC_FLAMINGO:
             raise ImportError(
                 "MusicFlamingoForConditionalGeneration not available. "
-                "Install transformers with the music-flamingo extras or pin a version that provides it."
+                "Install the latest transformers (git+https://github.com/huggingface/transformers) "
+                "or pin a version that provides AudioFlamingo3/MusicFlamingo."
             )
         self.model_id = model_id
         self.gpu_settings = gpu_settings or load_gpu_settings()
@@ -95,7 +105,7 @@ class MusicFlamingoCaptioner:
         except Exception:
             pass
         try:
-            model = MusicFlamingoForConditionalGeneration.from_pretrained(
+            model = _FlamingoCls.from_pretrained(
                 self.model_id, torch_dtype=self.dtype, max_memory=max_memory
             )
             return model.to(self.device)
@@ -107,7 +117,7 @@ class MusicFlamingoCaptioner:
                 )
                 self.device = "cpu"
                 self.dtype = torch.float32
-                model = MusicFlamingoForConditionalGeneration.from_pretrained(
+                model = _FlamingoCls.from_pretrained(
                     self.model_id, torch_dtype=self.dtype
                 )
                 return model.to(self.device)
@@ -182,6 +192,11 @@ class Qwen3Embedder:
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_id, trust_remote_code=True
         )
+        # Qwen3 embedding models expect right padding; ensure consistent behavior
+        try:
+            self.tokenizer.padding_side = "right"
+        except Exception:
+            pass
         self.device_map = "auto" if self.device.startswith("cuda") else None
         self.max_memory = self.gpu_settings.max_memory_map()
         self.model = self._build_model()
@@ -256,16 +271,56 @@ class Qwen3Embedder:
             pass
 
     def embed_text(self, text: str) -> torch.Tensor:
+        """
+        Embed a single text string and return an L2-normalized CPU tensor.
+
+        The upstream Qwen3 HF implementation no longer exposes an `.encode()`
+        helper, so we perform a lightweight forward pass and pool the last token
+        per sequence. When the helper exists (older checkpoints), we still use
+        it for compatibility.
+        """
         if self.model is None:
             self.model = self._build_model()
             self.model.eval()
-        # The model provides an encode helper when trust_remote_code=True
-        embeddings = self.model.encode(text, tokenizer=self.tokenizer)
-        if isinstance(embeddings, (list, tuple)):
-            embeddings = embeddings[0]
 
-        tensor = torch.as_tensor(embeddings, device="cpu", dtype=torch.float32)
-        return _normalize(tensor)
+        encode_fn = getattr(self.model, "encode", None)
+        if callable(encode_fn):
+            embeddings = encode_fn(text, tokenizer=self.tokenizer)
+            if isinstance(embeddings, (list, tuple)):
+                embeddings = embeddings[0]
+            tensor = torch.as_tensor(embeddings, device="cpu", dtype=torch.float32)
+            if tensor.dim() == 2 and tensor.size(0) == 1:
+                tensor = tensor.squeeze(0)
+            return _normalize(tensor)
+
+        inputs = self.tokenizer(
+            text,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=min(self.tokenizer.model_max_length, 8192),
+        )
+
+        target_device = getattr(self.model, "device", torch.device(self.device))
+        inputs = {k: v.to(target_device) for k, v in inputs.items()}
+
+        with torch.inference_mode():
+            outputs = self.model(**inputs)
+            pooled = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
+        if pooled.dim() == 2 and pooled.size(0) == 1:
+            pooled = pooled.squeeze(0)
+        return _normalize(pooled).to("cpu")
+
+    @staticmethod
+    def _last_token_pool(last_hidden_state: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        """
+        Pool by taking the hidden state of the last non-padding token.
+        Mirrors the approach recommended in the official Qwen3 embedding docs.
+        """
+        # attention_mask shape: (batch, seq_len) with 1s for real tokens
+        seq_lengths = attention_mask.sum(dim=1) - 1  # last valid token index
+        batch_indices = torch.arange(last_hidden_state.size(0), device=last_hidden_state.device)
+        return last_hidden_state[batch_indices, seq_lengths]
 
 
 class DescriptionEmbeddingPipeline:
@@ -284,7 +339,8 @@ class DescriptionEmbeddingPipeline:
         self.device = device or self.gpu_settings.device_target()
         self.logger = logger or logging.getLogger("navidrome.description")
         self.caption_model_id = caption_model_id
-        self._captioner: Optional[MusicFlamingoCaptioner] = None
+        # Avoid name clash with the _get_captioner() accessor below
+        self._captioner_instance: Optional[MusicFlamingoCaptioner] = None
         self.embedder = Qwen3Embedder(
             model_id=text_model_id,
             device=self.device,
@@ -292,24 +348,24 @@ class DescriptionEmbeddingPipeline:
             gpu_settings=self.gpu_settings,
         )
 
-    def _captioner(self) -> MusicFlamingoCaptioner:
+    def _get_captioner(self) -> MusicFlamingoCaptioner:
         """
         Lazily construct the Music Flamingo captioner so environments without the
         heavy dependency (or CI) can still run embed-only paths.
         """
-        if self._captioner is None:
+        if self._captioner_instance is None:
             if not _HAS_MUSIC_FLAMINGO:
                 raise ImportError(
                     "MusicFlamingoForConditionalGeneration not available. "
                     "Install transformers with Music Flamingo support to generate captions."
                 )
-            self._captioner = MusicFlamingoCaptioner(
+            self._captioner_instance = MusicFlamingoCaptioner(
                 model_id=self.caption_model_id,
                 device=self.device,
                 logger=self.logger,
                 gpu_settings=self.gpu_settings,
             )
-        return self._captioner
+        return self._captioner_instance
 
     def ensure_milvus_schemas(self, client: MilvusClient) -> None:
         existing = set(client.list_collections())
@@ -356,7 +412,7 @@ class DescriptionEmbeddingPipeline:
         self, music_file: str, music_name: str, *, offset_seconds: float = 0.0
     ) -> List[DescriptionSegment]:
         try:
-            description = self._captioner().generate(music_file)
+            description = self._get_captioner().generate(music_file)
         except Exception:
             self.logger.exception(
                 "Failed to generate caption with Music Flamingo; using fallback text"
@@ -400,9 +456,9 @@ class DescriptionEmbeddingPipeline:
 
     def unload_model(self) -> None:
         try:
-            if self._captioner:
-                self._captioner.unload()
-                self._captioner = None
+            if self._captioner_instance:
+                self._captioner_instance.unload()
+                self._captioner_instance = None
             if hasattr(self.embedder, "unload"):
                 self.embedder.unload()
             torch.cuda.empty_cache()
