@@ -21,22 +21,8 @@ import torch
 import torchaudio
 from pymilvus import MilvusClient, DataType
 from transformers import AutoModel, AutoProcessor, AutoTokenizer
+from transformers import AudioFlamingo3ForConditionalGeneration, AutoProcessor
 
-try:
-    # Newer Transformers (5.x dev) expose AudioFlamingo3
-    from transformers import AudioFlamingo3ForConditionalGeneration
-    _FlamingoCls = AudioFlamingo3ForConditionalGeneration
-    _HAS_MUSIC_FLAMINGO = True
-except Exception:  # pragma: no cover - optional heavy dependency
-    try:
-        # Older builds used MusicFlamingoForConditionalGeneration
-        from transformers import MusicFlamingoForConditionalGeneration
-
-        _FlamingoCls = MusicFlamingoForConditionalGeneration
-        _HAS_MUSIC_FLAMINGO = True
-    except Exception:
-        _FlamingoCls = None
-        _HAS_MUSIC_FLAMINGO = False
 
 from gpu_settings import GPUSettings, is_oom_error, load_gpu_settings
 
@@ -77,12 +63,7 @@ class MusicFlamingoCaptioner:
         logger: Optional[logging.Logger] = None,
         gpu_settings: Optional[GPUSettings] = None,
     ) -> None:
-        if not _HAS_MUSIC_FLAMINGO:
-            raise ImportError(
-                "MusicFlamingoForConditionalGeneration not available. "
-                "Install the latest transformers (git+https://github.com/huggingface/transformers) "
-                "or pin a version that provides AudioFlamingo3/MusicFlamingo."
-            )
+
         self.model_id = model_id
         self.gpu_settings = gpu_settings or load_gpu_settings()
         self.device = device or self.gpu_settings.device_target()
@@ -99,29 +80,7 @@ class MusicFlamingoCaptioner:
         self.model.eval()
 
     def _build_model(self):
-        max_memory = self.gpu_settings.max_memory_map()
-        try:
-            torch.cuda.empty_cache()
-        except Exception:
-            pass
-        try:
-            model = _FlamingoCls.from_pretrained(
-                self.model_id, torch_dtype=self.dtype, max_memory=max_memory
-            )
-            return model.to(self.device)
-        except Exception as exc:
-            if is_oom_error(exc):
-                self.logger.warning(
-                    "MusicFlamingo load hit OOM on %s; retrying on CPU with fp32",
-                    self.device,
-                )
-                self.device = "cpu"
-                self.dtype = torch.float32
-                model = _FlamingoCls.from_pretrained(
-                    self.model_id, torch_dtype=self.dtype
-                )
-                return model.to(self.device)
-            raise
+        return AudioFlamingo3ForConditionalGeneration.from_pretrained(self.model_id, device_map=self.device)
 
     def unload(self):
         try:
@@ -354,11 +313,6 @@ class DescriptionEmbeddingPipeline:
         heavy dependency (or CI) can still run embed-only paths.
         """
         if self._captioner_instance is None:
-            if not _HAS_MUSIC_FLAMINGO:
-                raise ImportError(
-                    "MusicFlamingoForConditionalGeneration not available. "
-                    "Install transformers with Music Flamingo support to generate captions."
-                )
             self._captioner_instance = MusicFlamingoCaptioner(
                 model_id=self.caption_model_id,
                 device=self.device,
