@@ -11,33 +11,36 @@ MuQ audio embeddings.
 from __future__ import annotations
 
 import logging
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-import numpy as np
 import torch
-import torchaudio
+import torch.nn.functional as F
 from pymilvus import MilvusClient, DataType
-from transformers import AutoModel, AutoProcessor, AutoTokenizer
-from transformers import AudioFlamingo3ForConditionalGeneration, AutoProcessor
+from transformers import AutoModel, AutoTokenizer
 
+from gpu_settings import GPUSettings, load_gpu_settings
 
-from gpu_settings import GPUSettings, is_oom_error, load_gpu_settings
+# Music Flamingo is optional at import time so the rest of the module can still
+# be used for text-only embedding routes (tests, stubs, etc.).
+try:
+    from transformers import (
+        AudioFlamingo3ForConditionalGeneration,
+        AutoProcessor as FlamingoProcessor,
+    )
+
+    _HAS_MUSIC_FLAMINGO = True
+except Exception:  # pragma: no cover - best effort detection
+    AudioFlamingo3ForConditionalGeneration = None
+    FlamingoProcessor = None
+    _HAS_MUSIC_FLAMINGO = False
 
 
 DEFAULT_DESCRIPTION_COLLECTION = "description_embedding"
-
-
-def _default_device() -> str:
-    return "cuda" if torch.cuda.is_available() else "cpu"
-
-
-def _normalize(vec: torch.Tensor) -> torch.Tensor:
-    vec = vec.detach().float()
-    denom = torch.linalg.norm(vec) + 1e-8
-    return vec / denom
+DESCRIPTION_JSON_PATH = Path("song_descriptions.json")
 
 
 @dataclass
@@ -64,23 +67,34 @@ class MusicFlamingoCaptioner:
         gpu_settings: Optional[GPUSettings] = None,
     ) -> None:
 
+        if not _HAS_MUSIC_FLAMINGO:
+            raise RuntimeError(
+                "Music Flamingo dependencies are unavailable. "
+                "Install transformers>=4.51 and try again."
+            )
+
         self.model_id = model_id
         self.gpu_settings = gpu_settings or load_gpu_settings()
         self.device = device or self.gpu_settings.device_target()
-        if torch_dtype is not None:
-            self.dtype = torch_dtype
-        else:
-            self.dtype = (
-                torch.float16 if self.device.startswith("cuda") else torch.float32
-            )
+        if not str(self.device).startswith("cuda"):
+            raise RuntimeError("Music Flamingo must run on CUDA; CPU is too slow.")
+        self.dtype = torch_dtype or torch.float16
         self.logger = logger or logging.getLogger("navidrome.description.captioner")
 
-        self.processor = AutoProcessor.from_pretrained(self.model_id)
+        self.processor = FlamingoProcessor.from_pretrained(self.model_id)
         self.model = self._build_model()
         self.model.eval()
 
     def _build_model(self):
-        return AudioFlamingo3ForConditionalGeneration.from_pretrained(self.model_id, device_map=self.device)
+        # Prefer PyTorch SDPA attention to avoid optional flash-attn dependency.
+        model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
+            self.model_id,
+            torch_dtype=torch.float16,
+            low_cpu_mem_usage=True,
+            attn_implementation="sdpa",
+            device_map=None,
+        ).to(self.device)
+        return model
 
     def unload(self):
         try:
@@ -95,34 +109,51 @@ class MusicFlamingoCaptioner:
             pass
 
     def generate(self, audio_path: str, prompt: Optional[str] = None) -> str:
+        """
+        Generate a rich caption for the provided audio file using the official
+        Music Flamingo chat template, mirroring the model card example.
+        """
         prompt = prompt or (
-            "Provide a vivid, detailed description of this song's mood, style, "
-            "instrumentation, vocals, tempo, genre influences, and production details."
+            "Describe this track in full detail - tell me the genre, tempo, and key, "
+            "then dive into the instruments, production style, and overall mood it creates."
         )
 
         if self.model is None:
             self.model = self._build_model()
             self.model.eval()
 
-        waveform, sample_rate = torchaudio.load(audio_path)
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
+        conversation = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "audio", "path": str(audio_path)},
+                ],
+            }
+        ]
 
-        audio = waveform.squeeze(0).numpy()
-        inputs = self.processor(
-            audios=audio,
-            sampling_rate=sample_rate,
-            text=[prompt],
-            padding=True,
-            return_tensors="pt",
-        ).to(self.device)
+        inputs = self.processor.apply_chat_template(
+            conversation,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+        )
+        # Ensure tensors are on the correct device/dtype
+        for k, v in list(inputs.items()):
+            if isinstance(v, torch.Tensor):
+                if torch.is_floating_point(v):
+                    inputs[k] = v.to(self.model.device, dtype=self.dtype)
+                else:
+                    inputs[k] = v.to(self.model.device)
 
         with torch.inference_mode():
-            generated_ids = self.model.generate(**inputs, max_new_tokens=120)
-        caption = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[
-            0
-        ].strip()
-        return caption
+            outputs = self.model.generate(**inputs, max_new_tokens=256)
+
+        # Strip the prompt tokens from the generated sequence
+        decoded = self.processor.batch_decode(
+            outputs[:, inputs.input_ids.shape[1] :], skip_special_tokens=True
+        )
+        return decoded[0].strip()
 
 
 class Qwen3Embedder:
@@ -133,89 +164,41 @@ class Qwen3Embedder:
         *,
         model_id: str = "Qwen/Qwen3-Embedding-8B",
         device: Optional[str] = None,
-        torch_dtype: Optional[torch.dtype] = torch.float16,
+        torch_dtype: Optional[torch.dtype] = None,
         logger: Optional[logging.Logger] = None,
         gpu_settings: Optional[GPUSettings] = None,
     ) -> None:
         self.model_id = model_id
         self.gpu_settings = gpu_settings or load_gpu_settings()
         self.device = device or self.gpu_settings.device_target()
-        if torch_dtype is not None:
-            self.dtype = torch_dtype
-        else:
-            self.dtype = (
-                torch.float16 if self.device.startswith("cuda") else torch.float32
-            )
+        self.dtype = (
+            torch_dtype
+            if torch_dtype is not None
+            else (torch.float16 if self.device.startswith("cuda") else torch.float32)
+        )
         self.logger = logger or logging.getLogger("navidrome.description.qwen3")
 
+        # Follow the official model card recommendations: left padding and last-token pooling.
         self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_id, trust_remote_code=True
+            self.model_id, padding_side="left", trust_remote_code=True
         )
-        # Qwen3 embedding models expect right padding; ensure consistent behavior
-        try:
-            self.tokenizer.padding_side = "right"
-        except Exception:
-            pass
         self.device_map = "auto" if self.device.startswith("cuda") else None
-        self.max_memory = self.gpu_settings.max_memory_map()
         self.model = self._build_model()
         self.model.eval()
         self.gpu_settings.apply_runtime_limits()
 
     def _build_model(self):
-        try:
-            torch.cuda.empty_cache()
-        except Exception:
-            pass
-
-        # If free memory is low, fall back to CPU proactively
-        if torch.cuda.is_available():
-            try:
-                free_bytes, total_bytes = torch.cuda.mem_get_info()
-                free_gb = free_bytes / (1024**3)
-                if free_gb < 2.0:
-                    self.logger.warning(
-                        "Only %.2f GiB free on GPU; loading %s on CPU to avoid OOM",
-                        free_gb,
-                        self.model_id,
-                    )
-                    self.device = "cpu"
-                    self.device_map = None
-                    self.dtype = torch.float32
-                    self.max_memory = None
-            except Exception:
-                pass
-
-        try:
-            model = AutoModel.from_pretrained(
-                self.model_id,
-                trust_remote_code=True,
-                torch_dtype=self.dtype,
-                device_map=self.device_map,
-                max_memory=self.max_memory,
-                low_cpu_mem_usage=True,
-            )
-            if self.device_map is None:
-                model = model.to(self.device)
-            return model
-        except Exception as exc:
-            if is_oom_error(exc):
-                self.logger.warning(
-                    "Qwen3 load hit OOM on %s; retrying on CPU fp32", self.device
-                )
-                self.device = "cpu"
-                self.device_map = None
-                self.dtype = torch.float32
-                self.max_memory = None
-                model = AutoModel.from_pretrained(
-                    self.model_id,
-                    trust_remote_code=True,
-                    torch_dtype=self.dtype,
-                    device_map=self.device_map,
-                    low_cpu_mem_usage=True,
-                ).to(self.device)
-                return model
-            raise
+        model = AutoModel.from_pretrained(
+            self.model_id,
+            trust_remote_code=True,
+            torch_dtype=self.dtype,
+            low_cpu_mem_usage=True,
+            attn_implementation="sdpa",
+            device_map=self.device_map,
+        )
+        if self.device_map is None:
+            model = model.to(self.device)
+        return model
 
     def unload(self):
         try:
@@ -233,24 +216,11 @@ class Qwen3Embedder:
         """
         Embed a single text string and return an L2-normalized CPU tensor.
 
-        The upstream Qwen3 HF implementation no longer exposes an `.encode()`
-        helper, so we perform a lightweight forward pass and pool the last token
-        per sequence. When the helper exists (older checkpoints), we still use
-        it for compatibility.
+        Mirrors the official model card recipe: left padding + last token pooling.
         """
         if self.model is None:
             self.model = self._build_model()
             self.model.eval()
-
-        encode_fn = getattr(self.model, "encode", None)
-        if callable(encode_fn):
-            embeddings = encode_fn(text, tokenizer=self.tokenizer)
-            if isinstance(embeddings, (list, tuple)):
-                embeddings = embeddings[0]
-            tensor = torch.as_tensor(embeddings, device="cpu", dtype=torch.float32)
-            if tensor.dim() == 2 and tensor.size(0) == 1:
-                tensor = tensor.squeeze(0)
-            return _normalize(tensor)
 
         inputs = self.tokenizer(
             text,
@@ -258,25 +228,27 @@ class Qwen3Embedder:
             padding=True,
             truncation=True,
             max_length=min(self.tokenizer.model_max_length, 8192),
-        )
-
-        target_device = getattr(self.model, "device", torch.device(self.device))
-        inputs = {k: v.to(target_device) for k, v in inputs.items()}
+        ).to(self.model.device)
 
         with torch.inference_mode():
             outputs = self.model(**inputs)
             pooled = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
-        if pooled.dim() == 2 and pooled.size(0) == 1:
-            pooled = pooled.squeeze(0)
-        return _normalize(pooled).to("cpu")
+
+        # Normalize as cosine embedding and move to CPU for downstream storage
+        normalized = F.normalize(pooled, p=2, dim=-1)
+        if normalized.dim() == 2 and normalized.size(0) == 1:
+            normalized = normalized.squeeze(0)
+        return normalized.to("cpu")
 
     @staticmethod
     def _last_token_pool(last_hidden_state: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         """
         Pool by taking the hidden state of the last non-padding token.
-        Mirrors the approach recommended in the official Qwen3 embedding docs.
+        Mirrors the official Qwen3 embedding docs (handles left padding).
         """
-        # attention_mask shape: (batch, seq_len) with 1s for real tokens
+        left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
+        if left_padding:
+            return last_hidden_state[:, -1]
         seq_lengths = attention_mask.sum(dim=1) - 1  # last valid token index
         batch_indices = torch.arange(last_hidden_state.size(0), device=last_hidden_state.device)
         return last_hidden_state[batch_indices, seq_lengths]
@@ -300,12 +272,8 @@ class DescriptionEmbeddingPipeline:
         self.caption_model_id = caption_model_id
         # Avoid name clash with the _get_captioner() accessor below
         self._captioner_instance: Optional[MusicFlamingoCaptioner] = None
-        self.embedder = Qwen3Embedder(
-            model_id=text_model_id,
-            device=self.device,
-            logger=self.logger,
-            gpu_settings=self.gpu_settings,
-        )
+        self.text_model_id = text_model_id
+        self._embedder_instance: Optional[Qwen3Embedder] = None
 
     def _get_captioner(self) -> MusicFlamingoCaptioner:
         """
@@ -320,6 +288,19 @@ class DescriptionEmbeddingPipeline:
                 gpu_settings=self.gpu_settings,
             )
         return self._captioner_instance
+
+    def _get_embedder(self) -> Qwen3Embedder:
+        """Lazily construct the Qwen3 embedder (never loaded alongside Flamingo)."""
+        if self._embedder_instance is None:
+            # Make sure captioner is not occupying GPU when embedding
+            self.unload_captioner()
+            self._embedder_instance = Qwen3Embedder(
+                model_id=self.text_model_id,
+                device=self.device,
+                logger=self.logger,
+                gpu_settings=self.gpu_settings,
+            )
+        return self._embedder_instance
 
     def ensure_milvus_schemas(self, client: MilvusClient) -> None:
         existing = set(client.list_collections())
@@ -375,7 +356,12 @@ class DescriptionEmbeddingPipeline:
                 f"Audio track titled '{music_name}' with mixed instrumentation."
             )
 
-        embedding = self.embedder.embed_text(description)
+        # Persist raw description immediately
+        self._persist_description(music_name, description, music_file)
+
+        # Avoid keeping Flamingo and Qwen on GPU at the same time
+        self.unload_captioner()
+        embedding = self._get_embedder().embed_text(description)
 
         return [
             DescriptionSegment(
@@ -387,8 +373,48 @@ class DescriptionEmbeddingPipeline:
             )
         ]
 
+    def caption_only(self, music_file: str, music_name: str) -> str:
+        """Generate caption only (no embeddings) and persist to JSON."""
+        description = self._get_captioner().generate(music_file)
+        self._persist_description(music_name, description, music_file)
+        return description
+
+    def embed_description(
+        self, description: str, music_name: str, *, offset_seconds: float = 0.0
+    ) -> DescriptionSegment:
+        """Embed a pre-generated description."""
+        self.unload_captioner()
+        embedding = self._get_embedder().embed_text(description)
+        return DescriptionSegment(
+            title=music_name,
+            description=description,
+            embedding=embedding.cpu().tolist(),
+            offset_seconds=float(offset_seconds),
+            duration_seconds=None,
+        )
+
+    def _persist_description(self, music_name: str, description: str, music_file: str) -> None:
+        """Append/replace description in song_descriptions.json."""
+        try:
+            existing: List[dict] = []
+            if DESCRIPTION_JSON_PATH.exists():
+                existing = json.loads(DESCRIPTION_JSON_PATH.read_text())
+            # Replace if name already exists
+            existing = [entry for entry in existing if entry.get("name") != music_name]
+            existing.append(
+                {
+                    "name": music_name,
+                    "description": description,
+                    "music_file": str(music_file),
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            DESCRIPTION_JSON_PATH.write_text(json.dumps(existing, indent=2))
+        except Exception:
+            self.logger.exception("Failed to persist description for %s", music_name)
+
     def embed_text(self, text: str) -> List[float]:
-        return self.embedder.embed_text(text).cpu().tolist()
+        return self._get_embedder().embed_text(text).cpu().tolist()
 
     def embed_music(self, music_file: str, music_name: str) -> dict:
         """Compatibility wrapper so batch jobs can treat this like other models."""
@@ -409,13 +435,26 @@ class DescriptionEmbeddingPipeline:
         return self
 
     def unload_model(self) -> None:
+        self.unload_captioner()
+        self.unload_embedder()
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+    def unload_captioner(self) -> None:
         try:
             if self._captioner_instance:
                 self._captioner_instance.unload()
                 self._captioner_instance = None
-            if hasattr(self.embedder, "unload"):
-                self.embedder.unload()
-            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+    def unload_embedder(self) -> None:
+        try:
+            if self._embedder_instance and hasattr(self._embedder_instance, "unload"):
+                self._embedder_instance.unload()
+                self._embedder_instance = None
         except Exception:
             pass
 
@@ -423,12 +462,12 @@ class DescriptionEmbeddingPipeline:
         segments = self.describe_music(music_file, music_name)
         return {
             "music_file": str(Path(music_file)),
-            "model_id": self.embedder.model_id,
+            "model_id": self.text_model_id,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "descriptions": [
                 {
                     **segment.__dict__,
-                    "model_id": self.embedder.model_id,
+                    "model_id": self.text_model_id,
                 }
                 for segment in segments
             ],

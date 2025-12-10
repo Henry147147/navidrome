@@ -333,88 +333,100 @@ class BatchEmbeddingJob:
                 model.ensure_model_loaded()
 
                 try:
-                    # Process all tracks with this model
-                    for track_idx, track in enumerate(
-                        tqdm(model_tracks, desc=f"Embedding with {model_name}")
-                    ):
-                        if self._cancelled:
-                            self.progress.status = "cancelled"
-                            self.logger.info("Job cancelled by user")
-                            break
-                        if stop_due_to_error:
-                            break
-
-                        # Handle pauses
-                        if self._paused:
-                            try:
-                                model.unload_model()
-                            except Exception:
-                                pass
-                            while self._paused and not self._cancelled:
-                                time.sleep(0.5)
-                            if self._cancelled:
-                                break
-                            model.ensure_model_loaded()
-
-                        self.progress.current_track = (
-                            f"{track['artist']} - {track['title']}"
+                    if model_name == "qwen3" and hasattr(model, "caption_only"):
+                        ops_done = self._process_qwen3_two_stage(
+                            model_tracks=model_tracks,
+                            model=model,
+                            collection=collection,
+                            client=client,
+                            batch_size=BATCH_SIZE,
                         )
+                        operations_completed += ops_done
+                        tracks_processed_this_model += len(model_tracks)
+                        self.progress.processed_operations = operations_completed
+                    else:
+                        # Process all tracks with this model
+                        for track_idx, track in enumerate(
+                            tqdm(model_tracks, desc=f"Embedding with {model_name}")
+                        ):
+                            if self._cancelled:
+                                self.progress.status = "cancelled"
+                                self.logger.info("Job cancelled by user")
+                                break
+                            if stop_due_to_error:
+                                break
 
-                        try:
-                            # Process track and add to batch
-                            embedding_data = self._process_track_with_model_batched(
-                                track, model_name, model, collection
-                            )
-                            batch_data.extend(embedding_data)
-
-                            # Insert batch if it's large enough
-                            if len(batch_data) >= BATCH_SIZE:
-                                client.insert(
-                                    collection_name=collection, data=batch_data
-                                )
-                                batch_data = []
-
-                            operations_completed += 1
-                            tracks_processed_this_model += 1
-                            self.progress.processed_operations = operations_completed
-                        except Exception as e:
-                            if is_oom_error(e):
-                                message = (
-                                    f"CUDA out of memory while processing "
-                                    f"{track.get('title') or track.get('id')} "
-                                    f"with {model_name}. Lower the GPU memory cap "
-                                    "or enable CPU offload in batch settings."
-                                )
-                                self.logger.error(message)
-                                self.progress.status = "failed"
-                                self.progress.last_error = message
-                                stop_due_to_error = True
+                            # Handle pauses
+                            if self._paused:
                                 try:
                                     model.unload_model()
                                 except Exception:
                                     pass
-                                try:
-                                    import torch
+                                while self._paused and not self._cancelled:
+                                    time.sleep(0.5)
+                                if self._cancelled:
+                                    break
+                                model.ensure_model_loaded()
 
-                                    torch.cuda.empty_cache()
-                                except Exception:
-                                    pass
-                                break
-                            self.logger.error(
-                                f"Failed to process track {track['id']} with {model_name}: {e}"
+                            self.progress.current_track = (
+                                f"{track['artist']} - {track['title']}"
                             )
-                            failed_tracks.append((track["id"], model_name, str(e)))
-                            self.progress.failed_tracks += 1
-                            self.progress.last_error = str(e)
 
-                        # Update estimated completion every 10 operations
-                        if operations_completed > 0 and operations_completed % 10 == 0:
-                            elapsed = time.time() - self.progress.started_at
-                            rate = elapsed / operations_completed
-                            remaining = total_operations - operations_completed
-                            self.progress.estimated_completion = time.time() + (
-                                rate * remaining
-                            )
+                            try:
+                                # Process track and add to batch
+                                embedding_data = self._process_track_with_model_batched(
+                                    track, model_name, model, collection
+                                )
+                                batch_data.extend(embedding_data)
+
+                                # Insert batch if it's large enough
+                                if len(batch_data) >= BATCH_SIZE:
+                                    client.insert(
+                                        collection_name=collection, data=batch_data
+                                    )
+                                    batch_data = []
+
+                                operations_completed += 1
+                                tracks_processed_this_model += 1
+                                self.progress.processed_operations = operations_completed
+                            except Exception as e:
+                                if is_oom_error(e):
+                                    message = (
+                                        f"CUDA out of memory while processing "
+                                        f"{track.get('title') or track.get('id')} "
+                                        f"with {model_name}. Lower the GPU memory cap "
+                                        "or enable CPU offload in batch settings."
+                                    )
+                                    self.logger.error(message)
+                                    self.progress.status = "failed"
+                                    self.progress.last_error = message
+                                    stop_due_to_error = True
+                                    try:
+                                        model.unload_model()
+                                    except Exception:
+                                        pass
+                                    try:
+                                        import torch
+
+                                        torch.cuda.empty_cache()
+                                    except Exception:
+                                        pass
+                                    break
+                                self.logger.error(
+                                    f"Failed to process track {track['id']} with {model_name}: {e}"
+                                )
+                                failed_tracks.append((track["id"], model_name, str(e)))
+                                self.progress.failed_tracks += 1
+                                self.progress.last_error = str(e)
+
+                            # Update estimated completion every 10 operations
+                            if operations_completed > 0 and operations_completed % 10 == 0:
+                                elapsed = time.time() - self.progress.started_at
+                                rate = elapsed / operations_completed
+                                remaining = total_operations - operations_completed
+                                self.progress.estimated_completion = time.time() + (
+                                    rate * remaining
+                                )
 
                     # Insert remaining batch for this model
                     if batch_data:
@@ -623,6 +635,63 @@ class BatchEmbeddingJob:
             )
 
         return batch_data
+
+    def _process_qwen3_two_stage(
+        self, model_tracks: List[Dict], model, collection: str, client, batch_size: int
+    ) -> int:
+        """
+        Two-stage pipeline for qwen3:
+        1) Run Music Flamingo captions for all tracks (fp16 on GPU), writing descriptions to JSON.
+        2) Unload Flamingo, load Qwen3, embed all descriptions, and insert into Milvus.
+        Returns number of completed embedding operations.
+        """
+        # Stage 1: captions
+        caption_results = []
+        for track in tqdm(model_tracks, desc="Flamingo captions"):
+            audio_path = self.music_root / track["path"]
+            if not audio_path.exists():
+                raise FileNotFoundError(f"Audio file not found: {audio_path}")
+            canonical_name = self._canonical_name(track)
+            try:
+                description = model.caption_only(str(audio_path), canonical_name)
+            except Exception as e:
+                if is_oom_error(e):
+                    raise
+                # Store minimal fallback description and continue
+                self.logger.warning(
+                    "Caption failed for %s, using fallback: %s", canonical_name, e
+                )
+                description = f"Audio track titled '{canonical_name}' with mixed instrumentation."
+            caption_results.append((canonical_name, description))
+
+        # Free Flamingo before embedding
+        model.unload_captioner()
+
+        # Stage 2: embeddings
+        batch_data: List[Dict] = []
+        operations_completed = 0
+        for canonical_name, description in tqdm(
+            caption_results, desc="Qwen3 embeddings"
+        ):
+            segment = model.embed_description(description, canonical_name)
+            row = {
+                "name": segment.title,
+                "embedding": segment.embedding,
+                "offset": segment.offset_seconds,
+                "model_id": model.text_model_id,
+                "description": segment.description,
+            }
+            batch_data.append(row)
+            operations_completed += 1
+
+            if len(batch_data) >= batch_size:
+                client.insert(collection_name=collection, data=batch_data)
+                batch_data = []
+
+        if batch_data:
+            client.insert(collection_name=collection, data=batch_data)
+
+        return operations_completed
 
     def _canonical_name(self, track: Dict) -> str:
         artist = (
