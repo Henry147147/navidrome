@@ -24,21 +24,12 @@ from transformers import AutoModel, AutoTokenizer
 
 from gpu_settings import GPUSettings, load_gpu_settings
 
-# Music Flamingo is optional at import time so the rest of the module can still
-# be used for text-only embedding routes (tests, stubs, etc.).
-try:
-    from transformers import (
-        AudioFlamingo3ForConditionalGeneration,
-        AutoProcessor as FlamingoProcessor,
-    )
+from transformers import (
+    AudioFlamingo3ForConditionalGeneration,
+    AutoProcessor as FlamingoProcessor,
+)
 
-    _HAS_MUSIC_FLAMINGO = True
-except Exception:  # pragma: no cover - best effort detection
-    AudioFlamingo3ForConditionalGeneration = None
-    FlamingoProcessor = None
-    _HAS_MUSIC_FLAMINGO = False
-
-
+_HAS_MUSIC_FLAMINGO = True
 DEFAULT_DESCRIPTION_COLLECTION = "description_embedding"
 DESCRIPTION_JSON_PATH = Path("song_descriptions.json")
 
@@ -66,12 +57,6 @@ class MusicFlamingoCaptioner:
         logger: Optional[logging.Logger] = None,
         gpu_settings: Optional[GPUSettings] = None,
     ) -> None:
-
-        if not _HAS_MUSIC_FLAMINGO:
-            raise RuntimeError(
-                "Music Flamingo dependencies are unavailable. "
-                "Install transformers>=4.51 and try again."
-            )
 
         self.model_id = model_id
         self.gpu_settings = gpu_settings or load_gpu_settings()
@@ -114,8 +99,11 @@ class MusicFlamingoCaptioner:
         Music Flamingo chat template, mirroring the model card example.
         """
         prompt = prompt or (
-            "Describe this track in full detail - tell me the genre, tempo, and key, "
-            "then dive into the instruments, production style, and overall mood it creates."
+            """Describe this track in full detail - tell me the genre, tempo, and key, then dive into the instruments, production style, 
+            and overall mood it creates. Also describe the language used (or if it is instrumental), any clearly intelligible and 
+            important lyrics or recurring phrases and what they are about, the emotions the music and vocals evoke, any cultural or 
+            regional influences you can hear, and the era or scene it most strongly resembles based only on the audio. Include any 
+            other musically relevant details you can infer directly from the sound, such as song structure, vocal style, and how the energy changes over time."""
         )
 
         if self.model is None:

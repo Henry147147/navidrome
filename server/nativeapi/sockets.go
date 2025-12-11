@@ -2,9 +2,11 @@ package nativeapi
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +21,8 @@ type embedRequest struct {
 	MusicFile string         `json:"music_file"`
 	CueFile   string         `json:"cue_file,omitempty"`
 	Settings  map[string]any `json:"settings,omitempty"`
+	MusicData string         `json:"music_data_b64,omitempty"`
+	CueData   string         `json:"cue_data_b64,omitempty"`
 }
 
 type EmbedClient interface {
@@ -46,13 +50,24 @@ func (c *embedHTTPClient) Embed(musicPath, musicName, cuePath string, settings m
 		return nil, fmt.Errorf("embed client not configured")
 	}
 
+	musicBytes, err := os.ReadFile(musicPath)
+	if err != nil {
+		return nil, fmt.Errorf("read audio file %q: %w", musicPath, err)
+	}
+
 	payload := embedRequest{
 		MusicFile: musicPath,
 		MusicName: musicName,
 		Settings:  settings,
+		MusicData: base64.StdEncoding.EncodeToString(musicBytes),
 	}
 	if cuePath != "" {
+		cueBytes, err := os.ReadFile(cuePath)
+		if err != nil {
+			return nil, fmt.Errorf("read cue file %q: %w", cuePath, err)
+		}
 		payload.CueFile = cuePath
+		payload.CueData = base64.StdEncoding.EncodeToString(cueBytes)
 	}
 
 	data, err := json.Marshal(payload)
@@ -99,7 +114,11 @@ var (
 func getEmbedClient() EmbedClient {
 	embedClientOnce.Do(func() {
 		base := conf.Server.Recommendations.BaseURL
-		embedClient = NewEmbedHTTPClient(base, conf.Server.Recommendations.Timeout)
+		timeout := conf.Server.Recommendations.EmbedTimeout
+		if timeout <= 0 {
+			timeout = conf.Server.Recommendations.Timeout
+		}
+		embedClient = NewEmbedHTTPClient(base, timeout)
 	})
 	return embedClient
 }

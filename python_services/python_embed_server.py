@@ -2,6 +2,7 @@
 Hosts the server that will create the embedding from the music file and push it to milvus client
 """
 
+import base64
 import json
 import logging
 import os
@@ -10,6 +11,7 @@ from dataclasses import asdict
 from hashlib import sha224
 from pathlib import Path
 from typing import Dict, List, Optional
+import tempfile
 
 import numpy as np
 from fastapi import APIRouter, FastAPI, HTTPException
@@ -39,6 +41,14 @@ class EmbedAudioRequest(BaseModel):
     name: str = Field(..., description="Original filename for metadata")
     cue_file: Optional[str] = Field(None, description="Optional cuesheet path")
     settings: Optional[dict] = Field(None, description="Upload settings payload")
+    music_data_b64: Optional[str] = Field(
+        None,
+        description="Base64-encoded audio contents (used when the file path is not reachable)",
+    )
+    cue_data_b64: Optional[str] = Field(
+        None,
+        description="Base64-encoded cuesheet contents (used when the file path is not reachable)",
+    )
 
 
 class EmbedAudioResponse(BaseModel):
@@ -134,7 +144,8 @@ class EmbedSocketServer:
         """Handle an embedding request payload (HTTP or socket).
 
         Args:
-            payload: Incoming JSON payload containing music_file, name, optional cue_file and settings.
+            payload: Incoming JSON payload containing music_file, name, optional cue_file,
+                     optional base64 file contents, and settings.
 
         Returns:
             Response payload mirroring the legacy socket server structure.
@@ -157,13 +168,39 @@ class EmbedSocketServer:
 
         summary: Optional[dict] = None
         split_tracks: List[SplitTrack] = []
+        temp_paths: List[Path] = []
 
-        result, split_tracks = self._process_embedding_request(
-            music_file,
-            music_name,
-            cue_file,
-        )
-        summary = self.add_embedding_to_db(music_name, result, settings)
+        try:
+            music_file = self._ensure_local_file(
+                music_file,
+                payload.get("music_data_b64"),
+                suggested_name=music_name,
+                created_paths=temp_paths,
+            )
+            if cue_file:
+                cue_file = self._ensure_local_file(
+                    cue_file,
+                    payload.get("cue_data_b64"),
+                    suggested_name=cue_file,
+                    created_paths=temp_paths,
+                )
+
+            result, split_tracks = self._process_embedding_request(
+                music_file,
+                music_name,
+                cue_file,
+            )
+            summary = self.add_embedding_to_db(music_name, result, settings)
+        finally:
+            for path in temp_paths:
+                try:
+                    path.unlink(missing_ok=True)
+                    if path.parent.name.startswith("navidrome-embed-"):
+                        # Remove the temporary directory if it's empty
+                        path.parent.rmdir()
+                except Exception:
+                    # Best-effort cleanup; don't fail the request because of cleanup issues
+                    self.logger.debug("Failed to clean up temp file %s", path, exc_info=True)
 
         response_payload: Dict[str, object] = {"status": "ok"}
         if isinstance(summary, dict):
@@ -201,7 +238,6 @@ class EmbedSocketServer:
                     payload = self.model.embed_music(
                         str(track.file_path),
                         track.canonical_name(),
-                        cue_file=None,
                     )
                     desc_payload = None
                     if self.description_pipeline:
@@ -229,7 +265,6 @@ class EmbedSocketServer:
         payload = self.model.embed_music(
             music_file,
             music_name,
-            cue_file=None,
         )
         desc_payload = (
             self.description_pipeline.prepare_payload(music_file, music_name)
@@ -451,6 +486,42 @@ class EmbedSocketServer:
         writer.write("\n")
         writer.flush()
 
+    def _ensure_local_file(
+        self,
+        path: str,
+        b64_data: Optional[str],
+        *,
+        suggested_name: Optional[str],
+        created_paths: List[Path],
+    ) -> str:
+        """Return a local path to the audio/cue file, materializing from base64 if needed."""
+
+        candidate = Path(path)
+        if candidate.exists():
+            return str(candidate)
+
+        if not b64_data:
+            raise FileNotFoundError(
+                f"File not found: {candidate}. Provide music_data_b64 or ensure the path is reachable."
+            )
+
+        try:
+            data = base64.b64decode(b64_data)
+        except Exception as exc:  # pragma: no cover - defensive
+            raise ValueError("Invalid base64 payload for uploaded file") from exc
+
+        suffix = Path(suggested_name or candidate.name or "upload").suffix
+        temp_dir = Path(tempfile.mkdtemp(prefix="navidrome-embed-"))
+        temp_path = temp_dir / f"upload{suffix}"
+        temp_path.write_bytes(data)
+        created_paths.append(temp_path)
+        self.logger.debug(
+            "Materialized uploaded file to %s because original path %s was not accessible",
+            temp_path,
+            path,
+        )
+        return str(temp_path)
+
 
 def build_embed_router(server: Optional[EmbedSocketServer] = None) -> APIRouter:
     """Create an APIRouter exposing the embedding endpoints."""
@@ -464,6 +535,8 @@ def build_embed_router(server: Optional[EmbedSocketServer] = None) -> APIRouter:
             payload = request.model_dump(by_alias=True, exclude_none=True)
             return embed_server.process_payload(payload)
         except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except FileNotFoundError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:  # pragma: no cover - runtime safety
             embed_server.logger.exception(

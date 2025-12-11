@@ -7,6 +7,8 @@ from cue_splitter import SplitTrack
 from models import SongEmbedding, UploadSettings
 from python_embed_server import EmbedSocketServer
 
+import base64
+from pathlib import Path
 
 class StubEmbeddingModel:
     def __init__(self, segments: List[Dict[str, Any]] | None = None) -> None:
@@ -192,3 +194,36 @@ def test_process_embedding_request_with_split(
     assert titles == ["Artist - Track A", "Artist - Track B"]
     assert payload["music_file"] == "album.flac"
     assert returned_tracks == split_tracks
+
+
+def test_process_payload_materializes_base64_when_missing(tmp_path, logger: logging.Logger):
+    class PathRecordingModel(StubEmbeddingModel):
+        def embed_music(self, music_file: str, music_name: str, cue_file: str | None = None):
+            assert Path(music_file).exists()
+            return super().embed_music(music_file, music_name, cue_file)
+
+    model = PathRecordingModel()
+    server = EmbedSocketServer(
+        socket_path="/tmp/navidrome-test.sock",
+        milvus_client=RecordingMilvusClient(),
+        model=model,
+        enable_descriptions=False,
+    )
+    # Avoid Milvus writes
+    server.add_embedding_to_db = lambda *_args, **_kwargs: {}
+
+    original_path = "/tmp/does-not-exist/audio.mp3"
+    audio_bytes = b"test-audio"
+    payload = {
+        "music_file": original_path,
+        "name": "audio.mp3",
+        "music_data_b64": base64.b64encode(audio_bytes).decode("ascii"),
+    }
+
+    response = server.process_payload(payload)
+
+    assert response["status"] == "ok"
+    assert len(model.embed_calls) == 1
+    materialized_path = model.embed_calls[0]["music_file"]
+    assert materialized_path != original_path
+    assert not Path(materialized_path).exists()  # cleaned up after processing

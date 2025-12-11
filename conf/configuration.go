@@ -226,6 +226,7 @@ type recommendationsOptions struct {
 	TextBaseURL  string
 	BatchBaseURL string
 	Timeout      time.Duration
+	EmbedTimeout time.Duration
 	DefaultLimit int
 	Diversity    float64
 }
@@ -301,6 +302,10 @@ func Load(noConfigDump bool) {
 
 	if Server.Recommendations.Timeout <= 0 {
 		Server.Recommendations.Timeout = 5 * time.Second
+	}
+	if Server.Recommendations.EmbedTimeout <= 0 {
+		// Embedding requests can take minutes for large files; use a generous default.
+		Server.Recommendations.EmbedTimeout = 10 * time.Minute
 	}
 	if Server.Recommendations.DefaultLimit <= 0 {
 		Server.Recommendations.DefaultLimit = 25
