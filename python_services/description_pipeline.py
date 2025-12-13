@@ -135,7 +135,8 @@ class MusicFlamingoCaptioner:
                     inputs[k] = v.to(self.model.device)
 
         with torch.inference_mode():
-            outputs = self.model.generate(**inputs, max_new_tokens=256)
+            # Allow long, detailed captions for complex tracks.
+            outputs = self.model.generate(**inputs, max_new_tokens=8192)
 
         # Strip the prompt tokens from the generated sequence
         decoded = self.processor.batch_decode(

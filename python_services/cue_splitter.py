@@ -323,7 +323,12 @@ def split_flac_with_cue(
         if not performer:
             performer = album_artist
 
-        dest_name = _sanitize_filename(title, track.number or (idx + 1))
+        index = track.number or (idx + 1)
+        base_stem = _ILLEGAL_FILENAME_CHARS.sub("_", music_path.stem).strip(". ")
+        if not base_stem:
+            base_stem = "track"
+        safe_title = _ILLEGAL_FILENAME_CHARS.sub("_", title.strip() or f"Track {index:02d}")
+        dest_name = f"{index:02d} - {base_stem} - {safe_title}.flac"
         track_path = output_root / dest_name
         try:
             torchaudio.save(str(track_path), waveform, sample_rate, format="FLAC")

@@ -113,12 +113,14 @@ var (
 
 func getEmbedClient() EmbedClient {
 	embedClientOnce.Do(func() {
-		base := conf.Server.Recommendations.BaseURL
-		timeout := conf.Server.Recommendations.EmbedTimeout
-		if timeout <= 0 {
-			timeout = conf.Server.Recommendations.Timeout
+		if embedClient == nil {
+			base := conf.Server.Recommendations.BaseURL
+			timeout := conf.Server.Recommendations.EmbedTimeout
+			if timeout <= 0 {
+				timeout = conf.Server.Recommendations.Timeout
+			}
+			embedClient = NewEmbedHTTPClient(base, timeout)
 		}
-		embedClient = NewEmbedHTTPClient(base, timeout)
 	})
 	return embedClient
 }

@@ -1,6 +1,7 @@
 package nativeapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -109,6 +110,209 @@ func saveUploadedFile(header *multipart.FileHeader, dir string) (string, error) 
 	return tmp.Name(), nil
 }
 
+type embedJobInput struct {
+	MusicPath string
+	CuePath   string
+	MusicName string
+	CueName   string
+	Settings  map[string]any
+	TempDir   string
+}
+
+func (n *Router) processEmbedJob(ctx context.Context, input embedJobInput) (map[string]any, error) {
+	respPayload, err := getEmbedClient().Embed(input.MusicPath, input.MusicName, input.CuePath, input.Settings)
+	if err != nil {
+		return nil, fmt.Errorf("contact embedding server: %w", err)
+	}
+
+	statusCode := http.StatusOK
+	if statusValue, ok := respPayload["status"]; ok {
+		if statusText, ok := statusValue.(string); ok && !strings.EqualFold(statusText, "ok") {
+			statusCode = http.StatusBadGateway
+		}
+	}
+
+	duplicates := toStringSlice(respPayload["duplicates"])
+	if duplicates == nil {
+		duplicates = []string{}
+	}
+	respPayload["duplicates"] = duplicates
+
+	renamedFile := ""
+	if value, ok := respPayload["renamedFile"]; ok {
+		if s, ok := value.(string); ok {
+			renamedFile = strings.TrimSpace(s)
+		}
+	}
+	if renamedFile == "" {
+		renamedFile = input.MusicName
+	}
+	respPayload["renamedFile"] = renamedFile
+
+	allDuplicates := false
+	if raw, ok := respPayload["allDuplicates"]; ok {
+		if flag, ok := raw.(bool); ok {
+			allDuplicates = flag
+		}
+	}
+	respPayload["allDuplicates"] = allDuplicates
+
+	type splitFilePayload struct {
+		Path        string `json:"path"`
+		DestName    string `json:"destName"`
+		Title       string `json:"title"`
+		Artist      string `json:"artist"`
+		Album       string `json:"album"`
+		AlbumArtist string `json:"albumArtist"`
+	}
+
+	var splitFiles []splitFilePayload
+	if raw, ok := respPayload["splitFiles"]; ok {
+		if data, err := json.Marshal(raw); err != nil {
+			log.Warn(ctx, "Failed to marshal splitFiles payload", err)
+		} else if err := json.Unmarshal(data, &splitFiles); err != nil {
+			log.Warn(ctx, "Failed to decode splitFiles payload", err)
+			splitFiles = nil
+		}
+	}
+
+	copied := false
+	copyConflict := false
+	var copyConflicts []string
+	copyError := ""
+
+	if statusCode == http.StatusOK {
+		musicFolder := strings.TrimSpace(conf.Server.MusicFolder)
+		if musicFolder == "" {
+			copyError = "music folder is not configured"
+		} else if !allDuplicates {
+			if len(splitFiles) > 0 {
+				destinations := make([]string, len(splitFiles))
+				for i, split := range splitFiles {
+					destName := strings.TrimSpace(split.DestName)
+					if destName == "" {
+						destName = filepath.Base(split.Path)
+					}
+					if destName == "" {
+						copyError = fmt.Sprintf("unable to determine destination filename for split track %d", i+1)
+						break
+					}
+					destPath := filepath.Join(musicFolder, destName)
+					destinations[i] = destPath
+					if exists, err := fileExists(destPath); err != nil {
+						copyError = fmt.Sprintf("check split destination: %v", err)
+						break
+					} else if exists {
+						copyConflict = true
+						copyConflicts = append(copyConflicts, destName)
+					}
+				}
+
+				if copyError == "" && copyConflict {
+					log.Warn(ctx, "Split track destinations already exist, skipping copy", "conflicts", copyConflicts)
+				}
+
+				if copyError == "" && !copyConflict {
+					for i, split := range splitFiles {
+						if err := copyFile(split.Path, destinations[i]); err != nil {
+							copyError = fmt.Sprintf("copy split track: %v", err)
+							log.Error(ctx, "Failed to copy split track", err, "source", split.Path, "dest", destinations[i])
+							break
+						}
+					}
+					if copyError == "" {
+						copied = true
+						log.Info(ctx, "Copied split tracks to music folder", "count", len(splitFiles), "folder", musicFolder)
+					}
+				}
+			} else {
+				destAudioName := filepath.Base(renamedFile)
+				if destAudioName == "" {
+					destAudioName = filepath.Base(input.MusicName)
+				}
+				if destAudioName == "" {
+					copyError = "unable to determine destination filename"
+				} else {
+					destAudioPath := filepath.Join(musicFolder, destAudioName)
+
+					var destCuePath string
+					var destCueName string
+					if input.CuePath != "" && input.CueName != "" {
+						baseName := strings.TrimSuffix(destAudioName, filepath.Ext(destAudioName))
+						if baseName == "" {
+							baseName = strings.TrimSuffix(filepath.Base(input.MusicName), filepath.Ext(input.MusicName))
+						}
+						cueExt := filepath.Ext(input.CueName)
+						destCueName = baseName + cueExt
+						destCuePath = filepath.Join(musicFolder, destCueName)
+					}
+
+					conflicts := []string{}
+					if exists, err := fileExists(destAudioPath); err != nil {
+						copyError = fmt.Sprintf("check audio destination: %v", err)
+					} else if exists {
+						conflicts = append(conflicts, destAudioName)
+					}
+
+					if copyError == "" && destCuePath != "" {
+						if exists, err := fileExists(destCuePath); err != nil {
+							copyError = fmt.Sprintf("check cue destination: %v", err)
+						} else if exists {
+							conflicts = append(conflicts, destCueName)
+						}
+					}
+
+					if copyError == "" && len(conflicts) > 0 {
+						copyConflict = true
+						copyConflicts = conflicts
+						log.Warn(ctx, "Destination already exists, skipping copy", "conflicts", conflicts)
+					}
+
+					if copyError == "" && !copyConflict {
+						if err := copyFile(input.MusicPath, destAudioPath); err != nil {
+							copyError = fmt.Sprintf("copy audio: %v", err)
+							log.Error(ctx, "Failed to copy uploaded audio", err, "source", input.MusicPath, "dest", destAudioPath)
+						} else {
+							if destCuePath != "" && input.CuePath != "" {
+								if err := copyFile(input.CuePath, destCuePath); err != nil {
+									copyError = fmt.Sprintf("copy cue: %v", err)
+									log.Error(ctx, "Failed to copy uploaded cue", err, "source", input.CuePath, "dest", destCuePath)
+									if removeErr := os.Remove(destAudioPath); removeErr != nil {
+										log.Warn(ctx, "Failed to clean up audio after cue copy error", "path", destAudioPath, "error", removeErr)
+									}
+								}
+							}
+							if copyError == "" {
+								copied = true
+								log.Info(ctx, "Copied uploaded files to music folder", "audio", destAudioName, "folder", musicFolder)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	respPayload["copied"] = copied
+	respPayload["copyConflict"] = copyConflict
+	if len(copyConflicts) > 0 {
+		respPayload["copyConflicts"] = copyConflicts
+	}
+	if copyError != "" {
+		respPayload["copyError"] = copyError
+	}
+
+	if input.TempDir != "" {
+		_ = os.RemoveAll(input.TempDir)
+	}
+
+	if statusCode != http.StatusOK {
+		return respPayload, fmt.Errorf("embedding server returned non-ok status")
+	}
+
+	return respPayload, nil
+}
+
 func (n *Router) addUploadRoute(r chi.Router) {
 	r.With(adminOnlyMiddleware).Post("/upload", func(w http.ResponseWriter, req *http.Request) {
 		if err := req.ParseMultipartForm(0); err != nil {
@@ -148,8 +352,6 @@ func (n *Router) addUploadRoute(r chi.Router) {
 			http.Error(w, "failed to process upload", http.StatusInternalServerError)
 			return
 		}
-		defer func() { _ = os.RemoveAll(tempDir) }()
-
 		var musicPath string
 		var cuePath string
 		var musicName string
@@ -190,194 +392,51 @@ func (n *Router) addUploadRoute(r chi.Router) {
 			return
 		}
 
-		respPayload, err := getEmbedClient().Embed(musicPath, musicName, cuePath, settings)
+		input := embedJobInput{
+			MusicPath: musicPath,
+			CuePath:   cuePath,
+			MusicName: musicName,
+			CueName:   cueName,
+			Settings:  settings,
+			TempDir:   tempDir,
+		}
+
+		work := &embedWork{}
+		work.run = func() error {
+			resp, err := n.processEmbedJob(context.Background(), input)
+			if err == nil {
+				work.result = resp
+			}
+			return err
+		}
+
+		jobID, err := n.embedQueue.Enqueue(work)
 		if err != nil {
-			log.Error(req.Context(), "Failed to contact embedding server", err)
-			http.Error(w, "failed to contact embedding server", http.StatusBadGateway)
+			log.Error(req.Context(), "Failed to enqueue embed job", err)
+			http.Error(w, "embedding queue is full", http.StatusServiceUnavailable)
 			return
 		}
 
-		statusCode := http.StatusOK
-		if statusValue, ok := respPayload["status"]; ok {
-			if statusText, ok := statusValue.(string); ok && !strings.EqualFold(statusText, "ok") {
-				statusCode = http.StatusBadGateway
-			}
-		}
-
-		duplicates := toStringSlice(respPayload["duplicates"])
-		if duplicates == nil {
-			duplicates = []string{}
-		}
-		respPayload["duplicates"] = duplicates
-
-		renamedFile := ""
-		if value, ok := respPayload["renamedFile"]; ok {
-			if s, ok := value.(string); ok {
-				renamedFile = strings.TrimSpace(s)
-			}
-		}
-		if renamedFile == "" {
-			renamedFile = musicName
-		}
-		respPayload["renamedFile"] = renamedFile
-
-		allDuplicates := false
-		if raw, ok := respPayload["allDuplicates"]; ok {
-			if flag, ok := raw.(bool); ok {
-				allDuplicates = flag
-			}
-		}
-		respPayload["allDuplicates"] = allDuplicates
-
-		type splitFilePayload struct {
-			Path        string `json:"path"`
-			DestName    string `json:"destName"`
-			Title       string `json:"title"`
-			Artist      string `json:"artist"`
-			Album       string `json:"album"`
-			AlbumArtist string `json:"albumArtist"`
-		}
-
-		var splitFiles []splitFilePayload
-		if raw, ok := respPayload["splitFiles"]; ok {
-			if data, err := json.Marshal(raw); err != nil {
-				log.Warn(req.Context(), "Failed to marshal splitFiles payload", err)
-			} else if err := json.Unmarshal(data, &splitFiles); err != nil {
-				log.Warn(req.Context(), "Failed to decode splitFiles payload", err)
-				splitFiles = nil
-			}
-		}
-
-		copied := false
-		copyConflict := false
-		var copyConflicts []string
-		copyError := ""
-
-		if statusCode == http.StatusOK {
-			musicFolder := strings.TrimSpace(conf.Server.MusicFolder)
-			if musicFolder == "" {
-				copyError = "music folder is not configured"
-			} else if !allDuplicates {
-				if len(splitFiles) > 0 {
-					destinations := make([]string, len(splitFiles))
-					for i, split := range splitFiles {
-						destName := strings.TrimSpace(split.DestName)
-						if destName == "" {
-							destName = filepath.Base(split.Path)
-						}
-						if destName == "" {
-							copyError = fmt.Sprintf("unable to determine destination filename for split track %d", i+1)
-							break
-						}
-						destPath := filepath.Join(musicFolder, destName)
-						destinations[i] = destPath
-						if exists, err := fileExists(destPath); err != nil {
-							copyError = fmt.Sprintf("check split destination: %v", err)
-							break
-						} else if exists {
-							copyConflict = true
-							copyConflicts = append(copyConflicts, destName)
-						}
-					}
-
-					if copyError == "" && copyConflict {
-						log.Warn(req.Context(), "Split track destinations already exist, skipping copy", "conflicts", copyConflicts)
-					}
-
-					if copyError == "" && !copyConflict {
-						for i, split := range splitFiles {
-							if err := copyFile(split.Path, destinations[i]); err != nil {
-								copyError = fmt.Sprintf("copy split track: %v", err)
-								log.Error(req.Context(), "Failed to copy split track", err, "source", split.Path, "dest", destinations[i])
-								break
-							}
-						}
-						if copyError == "" {
-							copied = true
-							log.Info(req.Context(), "Copied split tracks to music folder", "count", len(splitFiles), "folder", musicFolder)
-						}
-					}
-				} else {
-					destAudioName := filepath.Base(renamedFile)
-					if destAudioName == "" {
-						destAudioName = filepath.Base(musicName)
-					}
-					if destAudioName == "" {
-						copyError = "unable to determine destination filename"
-					} else {
-						destAudioPath := filepath.Join(musicFolder, destAudioName)
-
-						var destCuePath string
-						var destCueName string
-						if cuePath != "" && cueName != "" {
-							baseName := strings.TrimSuffix(destAudioName, filepath.Ext(destAudioName))
-							if baseName == "" {
-								baseName = strings.TrimSuffix(filepath.Base(musicName), filepath.Ext(musicName))
-							}
-							cueExt := filepath.Ext(cueName)
-							destCueName = baseName + cueExt
-							destCuePath = filepath.Join(musicFolder, destCueName)
-						}
-
-						conflicts := []string{}
-						if exists, err := fileExists(destAudioPath); err != nil {
-							copyError = fmt.Sprintf("check audio destination: %v", err)
-						} else if exists {
-							conflicts = append(conflicts, destAudioName)
-						}
-
-						if copyError == "" && destCuePath != "" {
-							if exists, err := fileExists(destCuePath); err != nil {
-								copyError = fmt.Sprintf("check cue destination: %v", err)
-							} else if exists {
-								conflicts = append(conflicts, destCueName)
-							}
-						}
-
-						if copyError == "" && len(conflicts) > 0 {
-							copyConflict = true
-							copyConflicts = conflicts
-							log.Warn(req.Context(), "Destination already exists, skipping copy", "conflicts", conflicts)
-						}
-
-						if copyError == "" && !copyConflict {
-							if err := copyFile(musicPath, destAudioPath); err != nil {
-								copyError = fmt.Sprintf("copy audio: %v", err)
-								log.Error(req.Context(), "Failed to copy uploaded audio", err, "source", musicPath, "dest", destAudioPath)
-							} else {
-								if destCuePath != "" && cuePath != "" {
-									if err := copyFile(cuePath, destCuePath); err != nil {
-										copyError = fmt.Sprintf("copy cue: %v", err)
-										log.Error(req.Context(), "Failed to copy uploaded cue", err, "source", cuePath, "dest", destCuePath)
-										if removeErr := os.Remove(destAudioPath); removeErr != nil {
-											log.Warn(req.Context(), "Failed to clean up audio after cue copy error", "path", destAudioPath, "error", removeErr)
-										}
-									}
-								}
-								if copyError == "" {
-									copied = true
-									log.Info(req.Context(), "Copied uploaded files to music folder", "audio", destAudioName, "folder", musicFolder)
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-
-		respPayload["copied"] = copied
-		respPayload["copyConflict"] = copyConflict
-		if len(copyConflicts) > 0 {
-			respPayload["copyConflicts"] = copyConflicts
-		}
-		if copyError != "" {
-			respPayload["copyError"] = copyError
-		}
-
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(statusCode)
-		if err := json.NewEncoder(w).Encode(respPayload); err != nil {
-			log.Error(req.Context(), "Failed to write embedding server response", err)
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": "queued",
+			"jobId":  jobID,
+		})
+	})
+}
+
+func (n *Router) addUploadStatusRoute(r chi.Router) {
+	r.With(adminOnlyMiddleware).Get("/upload/jobs/{id}", func(w http.ResponseWriter, req *http.Request) {
+		jobID := chi.URLParam(req, "id")
+		job, ok := n.embedQueue.Get(jobID)
+		if !ok {
+			http.Error(w, "job not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(job); err != nil {
+			log.Error(req.Context(), "Failed to encode job status", err)
 		}
 	})
 }
