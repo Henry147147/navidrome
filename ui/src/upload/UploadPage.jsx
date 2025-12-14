@@ -9,7 +9,7 @@ import {
   List,
   ListItem,
   ListItemText,
-  MenuItem,
+  Chip,
   Tabs,
   Tab,
   Typography,
@@ -82,22 +82,31 @@ const useStyles = makeStyles((theme) => ({
   feedback: {
     marginTop: theme.spacing(2),
   },
+  queueHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing(2),
+  },
+  queueList: {
+    marginTop: theme.spacing(1),
+  },
+  queueMeta: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(0.5),
+    marginTop: theme.spacing(0.5),
+  },
+  queueStatusChip: {
+    marginLeft: theme.spacing(1),
+  },
 }))
 
 const SETTINGS_STORAGE_KEY = 'upload.settings'
 
-const REASONING_LEVEL_OPTIONS = ['none', 'low', 'medium', 'high', 'default']
-const ALLOWED_REASONING_LEVELS = new Set(REASONING_LEVEL_OPTIONS)
-
 const defaultUploadSettings = {
-  renameEnabled: false,
-  renamingPrompt: '',
-  openAiEndpoint: '',
-  openAiModel: '',
-  useMetadata: true,
   similaritySearchEnabled: false,
   dedupThreshold: '0.85',
-  reasoningLevel: 'default',
 }
 
 const normalizeUploadSettings = (settings = {}) => {
@@ -116,12 +125,10 @@ const normalizeUploadSettings = (settings = {}) => {
     merged.dedupThreshold = `${merged.dedupThreshold}`
   }
 
-  const rawReasoning = `${merged.reasoningLevel || ''}`.toLowerCase()
-  merged.reasoningLevel = ALLOWED_REASONING_LEVELS.has(rawReasoning)
-    ? rawReasoning
-    : defaultUploadSettings.reasoningLevel
-
-  return merged
+  return {
+    similaritySearchEnabled: !!merged.similaritySearchEnabled,
+    dedupThreshold: merged.dedupThreshold,
+  }
 }
 
 const clampDeduplicationThreshold = (value) => {
@@ -422,21 +429,21 @@ const UploadPage = () => {
   const [currentProgress, setCurrentProgress] = useState(null)
   const [activeTab, setActiveTab] = useState(0)
   const [settings, setSettings] = useState(() => loadStoredSettings())
+  const [jobs, setJobs] = useState([])
+  const [jobsLoading, setJobsLoading] = useState(false)
+  const [jobsError, setJobsError] = useState('')
   const handleUploadOutcome = useCallback(
     (response, group) => {
       if (!response) {
         return
       }
       const primaryName = group?.primary?.name
-      const renamedFile =
-        (typeof response.renamedFile === 'string' && response.renamedFile) ||
-        primaryName ||
-        ''
+      const displayName = primaryName || ''
 
       if (response.allDuplicates) {
         notify(
           translate('upload.notifications.allDuplicates', {
-            name: renamedFile || primaryName || '',
+            name: displayName,
           }),
           'warning',
         )
@@ -449,7 +456,7 @@ const UploadPage = () => {
             )
           : []
         const conflictLabel =
-          conflicts.length > 0 ? conflicts.join(', ') : renamedFile || primaryName || ''
+          conflicts.length > 0 ? conflicts.join(', ') : displayName
         notify(
           translate('upload.notifications.copyConflict', {
             files: conflictLabel,
@@ -461,7 +468,7 @@ const UploadPage = () => {
       if (response.copyError && !response.copyConflict) {
         notify(
           translate('upload.notifications.copyError', {
-            name: renamedFile || primaryName || '',
+            name: displayName,
           }),
           'warning',
         )
@@ -469,6 +476,109 @@ const UploadPage = () => {
     },
     [notify, translate],
   )
+
+  const formatTimestamp = (value) => {
+    if (!value) {
+      return null
+    }
+    const date = value instanceof Date ? value : new Date(value)
+    if (Number.isNaN(date.getTime())) {
+      return null
+    }
+    return date.toLocaleString()
+  }
+
+  const normalizeJob = useCallback((rawJob) => {
+    const result = (rawJob && rawJob.result) || {}
+    const parseDate = (value) => {
+      if (!value) {
+        return null
+      }
+      const date = new Date(value)
+      return Number.isNaN(date.getTime()) ? null : date
+    }
+    const copyConflicts = Array.isArray(result.copyConflicts)
+      ? result.copyConflicts
+          .filter((item) => typeof item === 'string' && item.trim() !== '')
+          .map((item) => item.trim())
+      : []
+
+    return {
+      id: rawJob?.id || rawJob?.ID || '',
+      musicName: rawJob?.musicName || rawJob?.MusicName || '',
+      status: (rawJob?.status || rawJob?.Status || '').toLowerCase(),
+      enqueuedAt: parseDate(rawJob?.enqueuedAt || rawJob?.EnqueuedAt),
+      startedAt: parseDate(rawJob?.startedAt || rawJob?.StartedAt),
+      completedAt: parseDate(rawJob?.completedAt || rawJob?.CompletedAt),
+      error: rawJob?.error || rawJob?.Error || '',
+      result: {
+        duplicates: Array.isArray(result.duplicates) ? result.duplicates : [],
+        copyConflict: !!result.copyConflict,
+        copyConflicts,
+        copyError: typeof result.copyError === 'string' ? result.copyError : '',
+        allDuplicates: !!result.allDuplicates,
+        copied: !!result.copied,
+      },
+    }
+  }, [])
+
+  const statusLabel = useCallback(
+    (status) => {
+      const key = status ? status.toLowerCase() : 'unknown'
+      return translate(`upload.queue.status.${key}`, {
+        _: status || translate('upload.queue.status.unknown'),
+      })
+    },
+    [translate],
+  )
+
+  const fetchJobs = useCallback(async () => {
+    setJobsLoading(true)
+    setJobsError('')
+    try {
+      const headers = applyAuthHeaders(new Headers())
+      const response = await fetch(baseUrl('/api/upload/jobs'), { headers })
+      updateAuthFromHeaders(response.headers)
+
+      if (!response.ok) {
+        let message = response.statusText || 'Request failed'
+        try {
+          const body = await response.json()
+          if (body?.message) {
+            message = body.message
+          }
+        } catch (error) {
+          // ignore parse errors and use statusText
+        }
+        throw new Error(message)
+      }
+
+      const data = await response.json()
+      const normalized = Array.isArray(data?.jobs)
+        ? data.jobs.map(normalizeJob)
+        : []
+      normalized.sort((a, b) => {
+        const aTime = a.enqueuedAt ? a.enqueuedAt.getTime() : 0
+        const bTime = b.enqueuedAt ? b.enqueuedAt.getTime() : 0
+        return bTime - aTime
+      })
+      setJobs(normalized)
+    } catch (error) {
+      const message = error?.message || translate('upload.notifications.error')
+      setJobsError(message)
+    } finally {
+      setJobsLoading(false)
+    }
+  }, [normalizeJob, translate])
+
+  useEffect(() => {
+    if (activeTab !== 1) {
+      return undefined
+    }
+    fetchJobs()
+    const timer = setInterval(fetchJobs, 5000)
+    return () => clearInterval(timer)
+  }, [activeTab, fetchJobs])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window?.localStorage) {
@@ -544,24 +654,9 @@ const UploadPage = () => {
       }))
     }
 
-    const trimmedEndpoint = settings.openAiEndpoint.trim()
-    const trimmedModel = settings.openAiModel.trim()
-    if (
-      trimmedEndpoint !== settings.openAiEndpoint ||
-      trimmedModel !== settings.openAiModel
-    ) {
-      setSettings((prev) => ({
-        ...prev,
-        openAiEndpoint: trimmedEndpoint,
-        openAiModel: trimmedModel,
-      }))
-    }
-
     const uploadSettings = {
-      ...settings,
+      similaritySearchEnabled: settings.similaritySearchEnabled,
       dedupThreshold: parseFloat(dedupValue),
-      openAiEndpoint: trimmedEndpoint,
-      openAiModel: trimmedModel,
     }
 
     setIsUploading(true)
@@ -660,6 +755,11 @@ const UploadPage = () => {
             label={translate('upload.tabs.upload')}
             id="upload-tab"
             aria-controls="upload-tabpanel"
+          />
+          <Tab
+            label={translate('upload.tabs.queue')}
+            id="upload-queue-tab"
+            aria-controls="upload-queue-tabpanel"
           />
           <Tab
             label={translate('upload.tabs.settings')}
@@ -804,98 +904,121 @@ const UploadPage = () => {
 
         <div
           role="tabpanel"
-          id="upload-settings-tabpanel"
-          aria-labelledby="upload-settings-tab"
+          id="upload-queue-tabpanel"
+          aria-labelledby="upload-queue-tab"
           hidden={activeTab !== 1}
           className={classes.tabPanel}
         >
+          <div className={classes.queueHeader}>
+            <Typography variant="h6">
+              {translate('upload.queue.title')}
+            </Typography>
+            <Button
+              variant="outlined"
+              color="primary"
+              onClick={fetchJobs}
+              disabled={jobsLoading}
+            >
+              {translate('upload.queue.refresh')}
+            </Button>
+          </div>
+          {jobsLoading && <LinearProgress />}
+          {jobsError && (
+            <Typography variant="body2" color="error">
+              {jobsError}
+            </Typography>
+          )}
+          {!jobsLoading && jobs.length === 0 ? (
+            <Typography variant="body2" className={classes.emptyState}>
+              {translate('upload.queue.empty')}
+            </Typography>
+          ) : (
+            <List dense className={classes.queueList}>
+              {jobs.map((job, index) => {
+                const statusText = statusLabel(job.status)
+                const statusKey = job.status || 'unknown'
+                const chipColor =
+                  statusKey === 'succeeded'
+                    ? 'primary'
+                    : statusKey === 'failed'
+                      ? 'secondary'
+                      : 'default'
+                const itemKey =
+                  job.id ||
+                  job.musicName ||
+                  (job.enqueuedAt ? job.enqueuedAt.toISOString() : `job-${index}`)
+                return (
+                  <ListItem key={itemKey} divider>
+                    <ListItemText
+                      primary={
+                        <div className={classes.queueHeader}>
+                          <Typography variant="subtitle1">
+                            {job.musicName || translate('upload.queue.columns.file')}
+                          </Typography>
+                          <Chip
+                            size="small"
+                            label={statusText}
+                            color={chipColor}
+                            className={classes.queueStatusChip}
+                          />
+                        </div>
+                      }
+                      secondary={
+                        <div className={classes.queueMeta}>
+                          <Typography variant="caption" color="textSecondary">
+                            {translate('upload.queue.columns.queuedAt')}: {formatTimestamp(job.enqueuedAt) || '—'}
+                          </Typography>
+                          {job.startedAt && (
+                            <Typography variant="caption" color="textSecondary">
+                              {translate('upload.queue.columns.startedAt')}: {formatTimestamp(job.startedAt)}
+                            </Typography>
+                          )}
+                          {job.completedAt && (
+                            <Typography variant="caption" color="textSecondary">
+                              {translate('upload.queue.columns.completedAt')}: {formatTimestamp(job.completedAt)}
+                            </Typography>
+                          )}
+                          {job.result?.duplicates?.length > 0 && (
+                            <Typography variant="caption" color="textSecondary">
+                              {translate('upload.queue.columns.duplicates')}: {job.result.duplicates.join(', ')}
+                            </Typography>
+                          )}
+                          {job.result?.copyConflict && (
+                            <Typography variant="caption" color="textSecondary">
+                              {translate('upload.queue.columns.copyConflict')}
+                              {job.result.copyConflicts?.length
+                                ? `: ${job.result.copyConflicts.join(', ')}`
+                                : ''}
+                            </Typography>
+                          )}
+                          {job.result?.copyError && (
+                            <Typography variant="caption" color="error">
+                              {translate('upload.queue.columns.copyError')}: {job.result.copyError}
+                            </Typography>
+                          )}
+                          {job.error && (
+                            <Typography variant="caption" color="error">
+                              {translate('upload.queue.columns.error')}: {job.error}
+                            </Typography>
+                          )}
+                        </div>
+                      }
+                    />
+                  </ListItem>
+                )
+              })}
+            </List>
+          )}
+        </div>
+
+        <div
+          role="tabpanel"
+          id="upload-settings-tabpanel"
+          aria-labelledby="upload-settings-tab"
+          hidden={activeTab !== 2}
+        className={classes.tabPanel}
+        >
           <div className={classes.settingsContainer}>
-            <div className={classes.settingsGroup}>
-              <Typography variant="h6">
-                {translate('upload.settings.renameTitle')}
-              </Typography>
-              <FormControlLabel
-                control={
-                  <Switch
-                    color="primary"
-                    checked={settings.renameEnabled}
-                    onChange={handleToggleSetting('renameEnabled')}
-                    name="upload-settings-rename-enabled"
-                  />
-                }
-                label={translate('upload.settings.renameToggle')}
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    color="primary"
-                    checked={settings.useMetadata}
-                    onChange={handleToggleSetting('useMetadata')}
-                    name="upload-settings-use-metadata"
-                  />
-                }
-                label={translate('upload.settings.useMetadataToggle')}
-              />
-              <Typography variant="caption" color="textSecondary">
-                {translate('upload.settings.useMetadataHelper')}
-              </Typography>
-              <TextField
-                label={translate('upload.settings.systemPromptLabel')}
-                placeholder={translate('upload.settings.systemPromptPlaceholder')}
-                value={settings.renamingPrompt}
-                onChange={handleTextSettingChange('renamingPrompt')}
-                variant="outlined"
-                fullWidth
-                multiline
-                rows={3}
-                disabled={!settings.renameEnabled}
-                helperText={translate('upload.settings.systemPromptHelper')}
-              />
-            </div>
-
-            <Divider className={classes.settingsDivider} />
-
-            <div className={classes.settingsGroup}>
-              <Typography variant="h6">
-                {translate('upload.settings.openAiTitle')}
-              </Typography>
-              <TextField
-                label={translate('upload.settings.endpointLabel')}
-                placeholder={translate('upload.settings.endpointPlaceholder')}
-                value={settings.openAiEndpoint}
-                onChange={handleTextSettingChange('openAiEndpoint')}
-                variant="outlined"
-                fullWidth
-                helperText={translate('upload.settings.endpointHelper')}
-              />
-              <TextField
-                label={translate('upload.settings.modelLabel')}
-                placeholder={translate('upload.settings.modelPlaceholder')}
-                value={settings.openAiModel}
-                onChange={handleTextSettingChange('openAiModel')}
-                variant="outlined"
-                fullWidth
-                helperText={translate('upload.settings.modelHelper')}
-              />
-              <TextField
-                label={translate('upload.settings.reasoningLabel')}
-                value={settings.reasoningLevel}
-                onChange={handleTextSettingChange('reasoningLevel')}
-                variant="outlined"
-                select
-                fullWidth
-                helperText={translate('upload.settings.reasoningHelper')}
-              >
-                {REASONING_LEVEL_OPTIONS.map((option) => (
-                  <MenuItem key={option} value={option}>
-                    {translate(`upload.settings.reasoningOptions.${option}`)}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </div>
-
-            <Divider className={classes.settingsDivider} />
-
             <div className={classes.settingsGroup}>
               <Typography variant="h6">
                 {translate('upload.settings.similarityTitle')}

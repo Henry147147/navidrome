@@ -54,9 +54,6 @@ class NoOpFeaturePipeline:
     def scan_for_dups(self, embeddings, settings):
         return []
 
-    def rename(self, name: str, settings, *, music_file=None) -> str:
-        return name
-
 
 @pytest.fixture()
 def logger() -> logging.Logger:

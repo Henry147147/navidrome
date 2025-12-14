@@ -797,38 +797,39 @@
     },
     "selectedCount": "%{smart_count} file selected |||| %{smart_count} files selected",
     "settings": {
-      "endpointHelper": "Leave blank to use the default OpenAI endpoint.",
-      "endpointLabel": "Endpoint",
-      "endpointPlaceholder": "https://api.openai.com",
-      "modelHelper": "Select the model that will handle renaming requests.",
-      "modelLabel": "Model",
-      "modelPlaceholder": "gpt-4o-mini",
-      "openAiTitle": "OpenAI",
-      "reasoningHelper": "Select how much reasoning the rename model should apply.",
-      "reasoningLabel": "Reasoning level",
-      "reasoningOptions": {
-        "default": "Default",
-        "high": "High",
-        "low": "Low",
-        "medium": "Medium",
-        "none": "None"
-      },
-      "renameTitle": "Renaming",
-      "renameToggle": "Enable automatic renaming",
       "similarityTitle": "Similarity Search",
       "similarityToggle": "Enable similarity search",
-      "systemPromptHelper": "This prompt is used when renaming uploaded files.",
-      "systemPromptLabel": "Renaming system prompt",
-      "systemPromptPlaceholder": "Describe how the uploaded tracks should be renamed.",
       "thresholdHelper": "Similar tracks at or above this value (0-1) are treated as duplicates.",
-      "thresholdLabel": "Deduplication threshold",
-      "useMetadataHelper": "Tag metadata may be polluted; disable this if it leads to inaccurate titles.",
-      "useMetadataToggle": "Use embedded metadata hints"
+      "thresholdLabel": "Deduplication threshold"
+    },
+    "queue": {
+      "title": "Upload Queue",
+      "empty": "No uploads are queued right now.",
+      "refresh": "Refresh",
+      "columns": {
+        "status": "Status",
+        "file": "File",
+        "queuedAt": "Queued",
+        "startedAt": "Started",
+        "completedAt": "Completed",
+        "error": "Error",
+        "duplicates": "Duplicates skipped",
+        "copyConflict": "Copy skipped (conflict)",
+        "copyError": "Copy error"
+      },
+      "status": {
+        "queued": "Queued",
+        "running": "Processing",
+        "succeeded": "Completed",
+        "failed": "Failed",
+        "unknown": "Unknown"
+      }
     },
     "tabs": {
       "label": "Upload sections",
-      "settings": "Settings",
-      "upload": "Upload"
+      "upload": "Upload",
+      "queue": "Queue Status",
+      "settings": "Settings"
     },
     "title": "Upload Music",
     "totalSize": "Total size: %{size}"

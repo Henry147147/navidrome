@@ -53,7 +53,7 @@ class MusicFlamingoCaptioner:
         *,
         model_id: str = "nvidia/music-flamingo-hf",
         device: Optional[str] = None,
-        torch_dtype: Optional[torch.dtype] = torch.float16,
+        torch_dtype: Optional[torch.dtype] = torch.bfloat16,
         logger: Optional[logging.Logger] = None,
         gpu_settings: Optional[GPUSettings] = None,
     ) -> None:
@@ -63,7 +63,7 @@ class MusicFlamingoCaptioner:
         self.device = device or self.gpu_settings.device_target()
         if not str(self.device).startswith("cuda"):
             raise RuntimeError("Music Flamingo must run on CUDA; CPU is too slow.")
-        self.dtype = torch_dtype or torch.float16
+        self.dtype = torch_dtype or torch.bfloat16
         self.logger = logger or logging.getLogger("navidrome.description.captioner")
 
         self.processor = FlamingoProcessor.from_pretrained(self.model_id)
@@ -72,13 +72,21 @@ class MusicFlamingoCaptioner:
 
     def _build_model(self):
         # Prefer PyTorch SDPA attention to avoid optional flash-attn dependency.
+        max_memory = self.gpu_settings.max_memory_map()
+        device_map = "auto" if max_memory is not None else {"": self.device}
+
         model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
             self.model_id,
-            torch_dtype=torch.float16,
+            torch_dtype=self.dtype,
             low_cpu_mem_usage=True,
             attn_implementation="sdpa",
-            device_map=None,
-        ).to(self.device)
+            device_map=device_map,
+            max_memory=max_memory,
+        )
+        if device_map and device_map != "auto":
+            # Ensure every module ends up on the requested CUDA device when not auto-sharded.
+            model = model.to(self.device)
+        self.gpu_settings.apply_runtime_limits()
         return model
 
     def unload(self):

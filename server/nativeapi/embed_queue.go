@@ -2,6 +2,7 @@ package nativeapi
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -24,6 +25,7 @@ type embedJob struct {
 	EnqueuedAt  time.Time      `json:"enqueuedAt"`
 	StartedAt   time.Time      `json:"startedAt,omitempty"`
 	CompletedAt time.Time      `json:"completedAt,omitempty"`
+	MusicName   string         `json:"musicName,omitempty"`
 	Result      map[string]any `json:"result,omitempty"`
 }
 
@@ -31,6 +33,7 @@ type embedWork struct {
 	job    *embedJob
 	run    func() error
 	result map[string]any
+	music  string
 }
 
 type embedQueue struct {
@@ -88,6 +91,7 @@ func (q *embedQueue) Enqueue(work *embedWork) (string, error) {
 		ID:         jobID,
 		Status:     StatusQueued,
 		EnqueuedAt: time.Now(),
+		MusicName:  work.music,
 	}
 	work.job = job
 
@@ -111,6 +115,25 @@ func (q *embedQueue) Get(jobID string) (*embedJob, bool) {
 	defer q.mu.RUnlock()
 	job, ok := q.jobs[jobID]
 	return job, ok
+}
+
+func (q *embedQueue) List(limit int) []*embedJob {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+
+	jobs := make([]*embedJob, 0, len(q.jobs))
+	for _, job := range q.jobs {
+		jobs = append(jobs, job)
+	}
+
+	sort.Slice(jobs, func(i, j int) bool {
+		return jobs[i].EnqueuedAt.After(jobs[j].EnqueuedAt)
+	})
+
+	if limit > 0 && len(jobs) > limit {
+		return jobs[:limit]
+	}
+	return jobs
 }
 
 func (q *embedQueue) markRunning(job *embedJob) {

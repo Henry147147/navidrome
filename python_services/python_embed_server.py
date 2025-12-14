@@ -54,7 +54,6 @@ class EmbedAudioRequest(BaseModel):
 class EmbedAudioResponse(BaseModel):
     status: str
     duplicates: List[str] = Field(default_factory=list)
-    renamedFile: Optional[str] = None
     allDuplicates: bool = False
     splitFiles: Optional[List[dict]] = None
 
@@ -349,9 +348,6 @@ class EmbedSocketServer:
 
         duplicates = self.feature_pipeline.scan_for_dups(songs, settings)
         songs_payload = [self._serialize_song(song) for song in songs]
-        new_name = self.feature_pipeline.rename(
-            file_name, settings, music_file=embedding.get("music_file")
-        )
 
         should_upsert_audio = len(duplicates) != len(songs_payload)
         if should_upsert_audio:
@@ -394,7 +390,6 @@ class EmbedSocketServer:
         all_duplicates = bool(songs_payload) and len(duplicates) >= len(songs_payload)
         return {
             "duplicates": duplicates,
-            "renamedFile": new_name,
             "allDuplicates": all_duplicates,
         }
 

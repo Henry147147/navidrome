@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -138,17 +139,6 @@ func (n *Router) processEmbedJob(ctx context.Context, input embedJobInput) (map[
 	}
 	respPayload["duplicates"] = duplicates
 
-	renamedFile := ""
-	if value, ok := respPayload["renamedFile"]; ok {
-		if s, ok := value.(string); ok {
-			renamedFile = strings.TrimSpace(s)
-		}
-	}
-	if renamedFile == "" {
-		renamedFile = input.MusicName
-	}
-	respPayload["renamedFile"] = renamedFile
-
 	allDuplicates := false
 	if raw, ok := respPayload["allDuplicates"]; ok {
 		if flag, ok := raw.(bool); ok {
@@ -226,10 +216,7 @@ func (n *Router) processEmbedJob(ctx context.Context, input embedJobInput) (map[
 					}
 				}
 			} else {
-				destAudioName := filepath.Base(renamedFile)
-				if destAudioName == "" {
-					destAudioName = filepath.Base(input.MusicName)
-				}
+				destAudioName := filepath.Base(input.MusicName)
 				if destAudioName == "" {
 					copyError = "unable to determine destination filename"
 				} else {
@@ -401,7 +388,7 @@ func (n *Router) addUploadRoute(r chi.Router) {
 			TempDir:   tempDir,
 		}
 
-		work := &embedWork{}
+		work := &embedWork{music: musicName}
 		work.run = func() error {
 			resp, err := n.processEmbedJob(context.Background(), input)
 			if err == nil {
@@ -427,6 +414,20 @@ func (n *Router) addUploadRoute(r chi.Router) {
 }
 
 func (n *Router) addUploadStatusRoute(r chi.Router) {
+	r.With(adminOnlyMiddleware).Get("/upload/jobs", func(w http.ResponseWriter, req *http.Request) {
+		limit := 50
+		if raw := strings.TrimSpace(req.URL.Query().Get("limit")); raw != "" {
+			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+				limit = parsed
+			}
+		}
+		jobs := n.embedQueue.List(limit)
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{"jobs": jobs}); err != nil {
+			log.Error(req.Context(), "Failed to encode jobs response", err)
+		}
+	})
+
 	r.With(adminOnlyMiddleware).Get("/upload/jobs/{id}", func(w http.ResponseWriter, req *http.Request) {
 		jobID := chi.URLParam(req, "id")
 		job, ok := n.embedQueue.Get(jobID)

@@ -1,10 +1,9 @@
 from dataclasses import dataclass
-from typing import Any, Optional, Sequence, Set, Union
+from typing import Any, Optional, Sequence, Union
 
 import torch
 
-_TRUTHY_STRINGS: Set[str] = {"1", "true", "yes", "on"}
-_REASONING_LEVELS: Set[str] = {"none", "low", "medium", "high", "default"}
+_TRUTHY_STRINGS = {"1", "true", "yes", "on"}
 
 
 @dataclass
@@ -32,14 +31,8 @@ class TrackSegment:
 
 @dataclass
 class UploadSettings:
-    rename_enabled: bool = False
-    renaming_prompt: str = ""
-    openai_endpoint: str = ""
-    openai_model: str = ""
-    use_metadata: bool = True
     similarity_search_enabled: bool = False
     dedup_threshold: float = 0.85
-    reasoning_level: str = "default"
 
     @classmethod
     def from_payload(cls, payload: Optional[dict]) -> "UploadSettings":
@@ -47,11 +40,6 @@ class UploadSettings:
             return cls()
 
         defaults = cls()
-
-        def _coerce_string(value: Any) -> str:
-            if value is None:
-                return ""
-            return str(value).strip()
 
         def _coerce_bool(value: Any) -> bool:
             if isinstance(value, str):
@@ -66,38 +54,9 @@ class UploadSettings:
         else:
             dedup_threshold = min(max(dedup_threshold, 0.0), 1.0)
 
-        raw_reasoning = payload.get("reasoningLevel", defaults.reasoning_level)
-        reasoning = cls._normalize_reasoning(raw_reasoning, defaults.reasoning_level)
-
-        raw_use_metadata = payload.get("useMetadata")
-        if raw_use_metadata is None:
-            use_metadata = defaults.use_metadata
-        else:
-            use_metadata = _coerce_bool(raw_use_metadata)
-
         return cls(
-            rename_enabled=_coerce_bool(payload.get("renameEnabled")),
-            renaming_prompt=_coerce_string(payload.get("renamingPrompt")),
-            openai_endpoint=_coerce_string(payload.get("openAiEndpoint")),
-            openai_model=_coerce_string(payload.get("openAiModel")),
-            use_metadata=use_metadata,
             similarity_search_enabled=_coerce_bool(
                 payload.get("similaritySearchEnabled")
             ),
             dedup_threshold=dedup_threshold,
-            reasoning_level=reasoning,
         )
-
-    @staticmethod
-    def _normalize_reasoning(value: Any, default: str) -> str:
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if not normalized:
-                return default
-            if normalized in _REASONING_LEVELS:
-                return normalized
-            if normalized in {"off", "disabled"}:
-                return "none"
-            if normalized in {"standard", "normal"}:
-                return "default"
-        return default
