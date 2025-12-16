@@ -1,8 +1,8 @@
 module github.com/navidrome/navidrome
 
-go 1.25.3
+go 1.25.4
 
-// Fork to fix https://github.com/navidrome/navidrome/pull/3254
+// Fork to fix https://github.com/navidrome/navidrome/issues/3254
 replace github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8 => github.com/deluan/tag v0.0.0-20241002021117-dfe5e6ea396d
 
 require (
@@ -43,7 +43,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/mileusna/useragent v1.3.5
-	github.com/onsi/ginkgo/v2 v2.27.1
+	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/pocketbase/dbx v1.11.0
@@ -56,15 +56,15 @@ require (
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
-	github.com/tetratelabs/wazero v1.9.0
+	github.com/tetratelabs/wazero v1.10.0
 	github.com/unrolled/secure v1.17.0
 	github.com/xrash/smetrics v0.0.0-20250705151800-55b8f293f342
 	go.uber.org/goleak v1.3.0
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
 	golang.org/x/image v0.32.0
 	golang.org/x/net v0.46.0
-	golang.org/x/sync v0.17.0
-	golang.org/x/sys v0.37.0
+	golang.org/x/sync v0.18.0
+	golang.org/x/sys v0.38.0
 	golang.org/x/text v0.30.0
 	golang.org/x/time v0.14.0
 	google.golang.org/protobuf v1.36.10
@@ -124,7 +124,6 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
-	go.uber.org/automaxprocs v1.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect

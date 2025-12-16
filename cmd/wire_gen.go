@@ -72,8 +72,9 @@ func CreateNativeAPIRouter(ctx context.Context) *nativeapi.Router {
 	scannerScanner := scanner.New(ctx, dataStore, cacheWarmer, broker, playlists, metricsMetrics)
 	watcher := scanner.GetWatcher(dataStore, scannerScanner)
 	library := core.NewLibrary(dataStore, scannerScanner, watcher, broker)
+	maintenance := core.NewMaintenance(dataStore)
 	recommenderClient := subsonic.NewRecommendationClient()
-	router := nativeapi.New(dataStore, share, playlists, insights, library, recommenderClient)
+	router := nativeapi.New(dataStore, share, playlists, insights, library, maintenance, recommenderClient)
 	return router
 }
 
