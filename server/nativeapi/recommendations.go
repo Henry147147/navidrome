@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"slices"
+
 	sq "github.com/Masterminds/squirrel"
 	"github.com/go-chi/chi/v5"
 	"github.com/navidrome/navidrome/conf"
@@ -21,7 +23,6 @@ import (
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 	"github.com/navidrome/navidrome/server/subsonic"
-	"slices"
 )
 
 type recommendationRequestPayload struct {
