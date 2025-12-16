@@ -23,6 +23,7 @@ from pymilvus import MilvusClient, DataType
 from transformers import AutoModel, AutoTokenizer
 
 from gpu_settings import GPUSettings, load_gpu_settings
+from gpu_model_coordinator import GPU_COORDINATOR
 
 from transformers import (
     AudioFlamingo3ForConditionalGeneration,
@@ -65,6 +66,8 @@ class MusicFlamingoCaptioner:
             raise RuntimeError("Music Flamingo must run on CUDA; CPU is too slow.")
         self.dtype = torch_dtype or torch.bfloat16
         self.logger = logger or logging.getLogger("navidrome.description.captioner")
+        self._gpu_owner = "music_flamingo_captioner"
+        GPU_COORDINATOR.register(self._gpu_owner, self._offload_to_cpu)
 
         self.processor = FlamingoProcessor.from_pretrained(self.model_id)
         self.model = self._build_model()
@@ -74,6 +77,8 @@ class MusicFlamingoCaptioner:
         # Prefer PyTorch SDPA attention to avoid optional flash-attn dependency.
         max_memory = self.gpu_settings.max_memory_map()
         device_map = "auto" if max_memory is not None else {"": self.device}
+
+        GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
 
         model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
             self.model_id,
@@ -88,6 +93,29 @@ class MusicFlamingoCaptioner:
             model = model.to(self.device)
         self.gpu_settings.apply_runtime_limits()
         return model
+
+    def _ensure_model_on_device(self):
+        GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
+        if self.model is None:
+            self.model = self._build_model()
+        else:
+            try:
+                self.model = self.model.to(self.device, dtype=self.dtype)
+            except Exception:
+                self.logger.exception("Failed to move Music Flamingo back to GPU; rebuilding")
+                self.model = self._build_model()
+        self.model.eval()
+
+    def _offload_to_cpu(self) -> None:
+        try:
+            if self.model is not None:
+                self.model = self.model.to("cpu")
+        except Exception:
+            self.logger.exception("Failed to offload Music Flamingo to CPU")
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
 
     def unload(self):
         try:
@@ -115,8 +143,9 @@ class MusicFlamingoCaptioner:
         )
 
         if self.model is None:
-            self.model = self._build_model()
-            self.model.eval()
+            self._ensure_model_on_device()
+        else:
+            self._ensure_model_on_device()
 
         conversation = [
             {
@@ -174,6 +203,8 @@ class Qwen3Embedder:
             else (torch.float16 if self.device.startswith("cuda") else torch.float32)
         )
         self.logger = logger or logging.getLogger("navidrome.description.qwen3")
+        self._gpu_owner = "qwen3_embedder"
+        GPU_COORDINATOR.register(self._gpu_owner, self._offload_to_cpu)
 
         # Follow the official model card recommendations: left padding and last-token pooling.
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -185,6 +216,7 @@ class Qwen3Embedder:
         self.gpu_settings.apply_runtime_limits()
 
     def _build_model(self):
+        GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
         model = AutoModel.from_pretrained(
             self.model_id,
             trust_remote_code=True,
@@ -196,6 +228,29 @@ class Qwen3Embedder:
         if self.device_map is None:
             model = model.to(self.device)
         return model
+
+    def _ensure_model_on_device(self):
+        GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
+        if self.model is None:
+            self.model = self._build_model()
+        else:
+            try:
+                self.model = self.model.to(self.device)
+            except Exception:
+                self.logger.exception("Failed to move Qwen3 embedder back to GPU; rebuilding")
+                self.model = self._build_model()
+        self.model.eval()
+
+    def _offload_to_cpu(self) -> None:
+        try:
+            if self.model is not None:
+                self.model = self.model.to("cpu")
+        except Exception:
+            self.logger.exception("Failed to offload Qwen3 embedder to CPU")
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
 
     def unload(self):
         try:
@@ -216,8 +271,9 @@ class Qwen3Embedder:
         Mirrors the official model card recipe: left padding + last token pooling.
         """
         if self.model is None:
-            self.model = self._build_model()
-            self.model.eval()
+            self._ensure_model_on_device()
+        else:
+            self._ensure_model_on_device()
 
         inputs = self.tokenizer(
             text,

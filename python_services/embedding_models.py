@@ -20,6 +20,7 @@ import numpy as np
 import torch
 import torchaudio
 from pymilvus import MilvusClient, DataType
+from gpu_model_coordinator import GPU_COORDINATOR
 
 def _milvus_uses_lite() -> bool:
     """
@@ -147,6 +148,19 @@ class BaseEmbeddingModel(ABC):
                 self._model = None
         self._empty_cuda_cache()
 
+    def offload_to_cpu(self) -> None:
+        """
+        Move the model to CPU to free VRAM while keeping weights in memory.
+        """
+        with self._lock:
+            if self._model is None:
+                return
+            try:
+                self._model = self._model.to("cpu")  # type: ignore[call-arg]
+            except Exception:
+                self.logger.exception("Failed to offload %s to CPU", self.__class__.__name__)
+        self._empty_cuda_cache()
+
     def _empty_cuda_cache(self) -> None:
         try:
             torch.cuda.empty_cache()
@@ -241,11 +255,32 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         self.sample_rate = sample_rate
         self.window_seconds = window_seconds
         self.hop_seconds = hop_seconds
+        self._gpu_owner = f"{self.__class__.__name__}"
+        GPU_COORDINATOR.register(self._gpu_owner, self.offload_to_cpu)
 
     def _load_model(self) -> torch.nn.Module:
+        GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
         model = MuQMuLan.from_pretrained(self.model_id)
         model = model.to(self.device).to(self.storage_dtype).eval()
         return model
+
+    def ensure_model_loaded(self) -> Any:  # type: ignore[override]
+        """
+        Override to ensure model is moved back to GPU if it was offloaded.
+        """
+        with self._lock:
+            if self._model is None:
+                self.logger.info("Loading embedding model %s", self.__class__.__name__)
+                self._model = self._load_model()
+            else:
+                GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
+                try:
+                    self._model = self._model.to(self.device).to(self.storage_dtype)  # type: ignore[attr-defined]
+                except Exception:
+                    self.logger.exception("Failed to move %s back to GPU", self.__class__.__name__)
+                    self._model = self._load_model()
+            self._last_used = datetime.now(timezone.utc)
+            return self._model
 
     def embed_music(self, music_file: str, music_name: str) -> dict:
         segments = self.prepare_music(music_file, music_name)
