@@ -37,7 +37,7 @@ func TestEmbedQueueProcessesJobAndCopiesFile(t *testing.T) {
 
 	tempDir := t.TempDir()
 	musicFile := filepath.Join(tempDir, "song.flac")
-	if err := os.WriteFile(musicFile, []byte("audio-bytes"), 0o644); err != nil {
+	if err := os.WriteFile(musicFile, []byte("audio-bytes"), 0o600); err != nil {
 		t.Fatalf("write temp music: %v", err)
 	}
 

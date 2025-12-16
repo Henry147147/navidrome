@@ -245,9 +245,11 @@ const wrapperDataProvider = {
       body: JSON.stringify({ models, clearExisting }),
     }).then(({ json }) => ({ data: json })),
   getBatchEmbeddingProgress: () =>
-    httpClient(`${REST_URL}/recommendations/batch/progress`).then(({ json }) => ({
-      data: json,
-    })),
+    httpClient(`${REST_URL}/recommendations/batch/progress`).then(
+      ({ json }) => ({
+        data: json,
+      }),
+    ),
   cancelBatchEmbedding: () =>
     httpClient(`${REST_URL}/recommendations/batch/cancel`, {
       method: 'POST',

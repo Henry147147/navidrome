@@ -22,11 +22,7 @@ import {
   Typography,
 } from '@material-ui/core'
 import { makeStyles } from '@material-ui/core/styles'
-import {
-  useDataProvider,
-  useNotify,
-  useTranslate,
-} from 'react-admin'
+import { useDataProvider, useNotify, useTranslate } from 'react-admin'
 import PlayArrowIcon from '@material-ui/icons/PlayArrow'
 import StopIcon from '@material-ui/icons/Stop'
 import WarningIcon from '@material-ui/icons/Warning'
@@ -153,15 +149,17 @@ const BatchEmbeddingPanel = () => {
           setGpuSettings({
             ...DEFAULT_GPU_SETTINGS,
             ...data,
-            estimatedVramGb: data.estimatedVramGb || data.estimatedVramGB || data.maxGpuMemoryGb,
+            estimatedVramGb:
+              data.estimatedVramGb ||
+              data.estimatedVramGB ||
+              data.maxGpuMemoryGb,
           })
         }
       } catch (err) {
-        console.error('Failed to load GPU settings', err)
         setError(
           translate('pages.settings.batchEmbedding.gpu.loadError', {
             _: 'Failed to load GPU settings',
-          })
+          }),
         )
       } finally {
         if (mounted) setGpuLoading(false)
@@ -185,10 +183,12 @@ const BatchEmbeddingPanel = () => {
         setProgress(data)
 
         // Check if job completed or was cancelled
-        if (data.status === 'completed' ||
-            data.status === 'cancelled' ||
-            data.status === 'completed_with_errors' ||
-            data.status === 'failed') {
+        if (
+          data.status === 'completed' ||
+          data.status === 'cancelled' ||
+          data.status === 'completed_with_errors' ||
+          data.status === 'failed'
+        ) {
           setIsRunning(false)
           clearInterval(pollInterval)
 
@@ -198,7 +198,7 @@ const BatchEmbeddingPanel = () => {
                 _: `Batch embedding completed: ${data.processed_tracks} tracks processed`,
                 count: data.processed_tracks,
               }),
-              'success'
+              'success',
             )
           } else if (data.status === 'completed_with_errors') {
             notify(
@@ -206,26 +206,25 @@ const BatchEmbeddingPanel = () => {
                 _: `Batch embedding completed with ${data.failed_tracks} errors`,
                 count: data.failed_tracks,
               }),
-              'warning'
+              'warning',
             )
           } else if (data.status === 'cancelled') {
             notify(
               translate('pages.settings.batchEmbedding.cancelled', {
                 _: 'Batch embedding was cancelled',
               }),
-              'info'
+              'info',
             )
           } else if (data.status === 'failed') {
             notify(
               translate('pages.settings.batchEmbedding.failed', {
                 _: 'Batch embedding failed',
               }),
-              'error'
+              'error',
             )
           }
         }
       } catch (err) {
-        console.error('Failed to get batch progress:', err)
         setError(err.message || 'Failed to get progress')
         setIsRunning(false)
         clearInterval(pollInterval)
@@ -241,7 +240,7 @@ const BatchEmbeddingPanel = () => {
         translate('pages.settings.batchEmbedding.noModelsSelected', {
           _: 'Please select at least one model',
         }),
-        'warning'
+        'warning',
       )
       return
     }
@@ -250,7 +249,7 @@ const BatchEmbeddingPanel = () => {
       setError(null)
       const { data } = await dataProvider.startBatchEmbedding(
         selectedModels,
-        clearExisting
+        clearExisting,
       )
 
       if (data && data.status === 'started') {
@@ -260,13 +259,12 @@ const BatchEmbeddingPanel = () => {
           translate('pages.settings.batchEmbedding.started', {
             _: 'Batch embedding job started',
           }),
-          'info'
+          'info',
         )
       } else {
         throw new Error('Unexpected response from server')
       }
     } catch (err) {
-      console.error('Failed to start batch embedding:', err)
       const message =
         err?.body?.message ||
         err?.message ||
@@ -285,15 +283,14 @@ const BatchEmbeddingPanel = () => {
         translate('pages.settings.batchEmbedding.cancelling', {
           _: 'Cancelling batch embedding job...',
         }),
-        'info'
+        'info',
       )
     } catch (err) {
-      console.error('Failed to cancel batch embedding:', err)
       notify(
         translate('pages.settings.batchEmbedding.cancelError', {
           _: 'Failed to cancel batch embedding job',
         }),
-        'error'
+        'error',
       )
     }
   }, [dataProvider, notify, translate])
@@ -318,10 +315,9 @@ const BatchEmbeddingPanel = () => {
         translate('pages.settings.batchEmbedding.gpu.restarting', {
           _: 'GPU settings applied. Restarting Python services...',
         }),
-        'info'
+        'info',
       )
     } catch (err) {
-      console.error('Failed to update GPU settings', err)
       const message =
         err?.body?.message ||
         translate('pages.settings.batchEmbedding.gpu.updateError', {
@@ -336,13 +332,17 @@ const BatchEmbeddingPanel = () => {
 
   const estimatedVram =
     Math.round(
-      ((gpuSettings.estimatedVramGb || gpuSettings.estimatedVramGB || gpuSettings.maxGpuMemoryGb || 0) + Number.EPSILON) *
-        100
+      ((gpuSettings.estimatedVramGb ||
+        gpuSettings.estimatedVramGB ||
+        gpuSettings.maxGpuMemoryGb ||
+        0) +
+        Number.EPSILON) *
+        100,
     ) / 100
 
   const handleModelToggle = (modelValue) => {
     if (selectedModels.includes(modelValue)) {
-      setSelectedModels(selectedModels.filter(m => m !== modelValue))
+      setSelectedModels(selectedModels.filter((m) => m !== modelValue))
     } else {
       setSelectedModels([...selectedModels, modelValue])
     }
@@ -387,8 +387,9 @@ const BatchEmbeddingPanel = () => {
           </Typography>
 
           <Typography variant="body2" className={classes.helper}>
-            GPU/VRAM limits are now read from `python_services/gpu_settings.conf`.
-            Update that file and restart the Python service to change memory, precision, or device.
+            GPU/VRAM limits are now read from
+            `python_services/gpu_settings.conf`. Update that file and restart
+            the Python service to change memory, precision, or device.
           </Typography>
 
           {isRunning && progress && (
@@ -412,8 +413,9 @@ const BatchEmbeddingPanel = () => {
                 {translate('pages.settings.batchEmbedding.progress', {
                   _: 'Progress',
                 })}
-                : {progress.processed_operations || 0} / {progress.total_operations || 0}
-                {' '}({Math.round(progress.progress_percent || 0)}%)
+                : {progress.processed_operations || 0} /{' '}
+                {progress.total_operations || 0} (
+                {Math.round(progress.progress_percent || 0)}%)
               </Typography>
 
               {progress.total_tracks && progress.processed_tracks > 0 && (
@@ -559,7 +561,10 @@ const BatchEmbeddingPanel = () => {
               })}
             />
 
-            <Box className={classes.warning} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <Box
+              className={classes.warning}
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}
+            >
               <WarningIcon />
               <Typography variant="body2">
                 {translate('pages.settings.batchEmbedding.warning', {

@@ -13,8 +13,7 @@ export const applyAuthHeaders = (incomingHeaders) => {
   const hasHeadersConstructor = typeof Headers !== 'undefined'
   let headers = incomingHeaders
   if (hasHeadersConstructor) {
-    headers =
-      headers instanceof Headers ? headers : new Headers(headers || {})
+    headers = headers instanceof Headers ? headers : new Headers(headers || {})
     if (!headers.has('Accept')) {
       headers.set('Accept', 'application/json')
     }

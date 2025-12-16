@@ -579,7 +579,8 @@ const ExploreSuggestions = () => {
       // Multi-model options
       models: selectedModels.length > 0 ? selectedModels : ['muq'],
       mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
-      minModelAgreement: selectedModels.length > 1 ? minModelAgreement : undefined,
+      minModelAgreement:
+        selectedModels.length > 1 ? minModelAgreement : undefined,
       ...requestOptions,
     }
     setGenerators((prev) => ({
@@ -798,10 +799,10 @@ const ExploreSuggestions = () => {
   })
   const [songQuery, setSongQuery] = useState('')
   const [searchState, setSearchState] = useState(createInitialSearchState)
-const [searchLoading, setSearchLoading] = useState(false)
-const [searchLoadingMore, setSearchLoadingMore] = useState(false)
-const [selectedSongs, setSelectedSongs] = useState([])
-const [excludePlaylistIds, setExcludePlaylistIds] = useState([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchLoadingMore, setSearchLoadingMore] = useState(false)
+  const [selectedSongs, setSelectedSongs] = useState([])
+  const [excludePlaylistIds, setExcludePlaylistIds] = useState([])
 
   useEffect(() => {
     const trimmed = songQuery.trim()
@@ -1307,7 +1308,9 @@ const [excludePlaylistIds, setExcludePlaylistIds] = useState([])
           label={translate('pages.explore.tabs.overview', { _: 'Overview' })}
         />
         <Tab
-          label={translate('pages.explore.tabs.textGenerator', { _: 'Text Generator' })}
+          label={translate('pages.explore.tabs.textGenerator', {
+            _: 'Text Generator',
+          })}
         />
         <Tab
           label={translate('pages.explore.tabs.settings', { _: 'Settings' })}
@@ -1442,9 +1445,12 @@ const [excludePlaylistIds, setExcludePlaylistIds] = useState([])
                 })}
                 renderValue={(selected) => {
                   if (!selected || selected.length === 0) {
-                    return translate('pages.explore.excludePlaylistsPlaceholder', {
-                      _: 'No playlists selected',
-                    })
+                    return translate(
+                      'pages.explore.excludePlaylistsPlaceholder',
+                      {
+                        _: 'No playlists selected',
+                      },
+                    )
                   }
                   return (
                     <Box className={classes.selectChips}>
@@ -1466,7 +1472,9 @@ const [excludePlaylistIds, setExcludePlaylistIds] = useState([])
               >
                 {playlists.map((playlist) => (
                   <MenuItem key={playlist.id} value={playlist.id}>
-                    <Checkbox checked={excludePlaylistIds.indexOf(playlist.id) > -1} />
+                    <Checkbox
+                      checked={excludePlaylistIds.indexOf(playlist.id) > -1}
+                    />
                     <ListItemText
                       primary={playlist.name}
                       secondary={playlist.comment || null}

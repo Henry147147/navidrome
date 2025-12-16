@@ -114,7 +114,10 @@ func (q *embedQueue) Get(jobID string) (*embedJob, bool) {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
 	job, ok := q.jobs[jobID]
-	return job, ok
+	if !ok {
+		return nil, false
+	}
+	return cloneJob(job), true
 }
 
 func (q *embedQueue) List(limit int) []*embedJob {
@@ -123,7 +126,7 @@ func (q *embedQueue) List(limit int) []*embedJob {
 
 	jobs := make([]*embedJob, 0, len(q.jobs))
 	for _, job := range q.jobs {
-		jobs = append(jobs, job)
+		jobs = append(jobs, cloneJob(job))
 	}
 
 	sort.Slice(jobs, func(i, j int) bool {
@@ -159,4 +162,18 @@ func (q *embedQueue) markFailed(job *embedJob, err error) {
 	if err != nil {
 		job.Error = err.Error()
 	}
+}
+
+func cloneJob(job *embedJob) *embedJob {
+	if job == nil {
+		return nil
+	}
+	copy := *job
+	if job.Result != nil {
+		copy.Result = make(map[string]any, len(job.Result))
+		for k, v := range job.Result {
+			copy.Result[k] = v
+		}
+	}
+	return &copy
 }

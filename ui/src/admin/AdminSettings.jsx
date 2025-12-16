@@ -27,7 +27,9 @@ const AdminSettings = () => {
   if (!isAdmin) {
     return (
       <Box className={classes.root}>
-        <Title title={`${BRAND_NAME} - ${translate('menu.admin.name', { _: 'Admin' })}`} />
+        <Title
+          title={`${BRAND_NAME} - ${translate('menu.admin.name', { _: 'Admin' })}`}
+        />
         <Typography variant="h6" color="error">
           {translate('ra.auth.auth_check_error', { _: 'Unauthorized' })}
         </Typography>
@@ -42,7 +44,9 @@ const AdminSettings = () => {
 
   return (
     <Box className={classes.root}>
-      <Title title={`${BRAND_NAME} - ${translate('menu.admin.name', { _: 'Admin Settings' })}`} />
+      <Title
+        title={`${BRAND_NAME} - ${translate('menu.admin.name', { _: 'Admin Settings' })}`}
+      />
 
       <Box className={classes.section}>
         <Box className={classes.header}>

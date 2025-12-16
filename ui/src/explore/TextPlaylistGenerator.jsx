@@ -20,11 +20,7 @@ import {
   Chip,
 } from '@material-ui/core'
 import { makeStyles } from '@material-ui/core/styles'
-import {
-  useDataProvider,
-  useNotify,
-  useTranslate,
-} from 'react-admin'
+import { useDataProvider, useNotify, useTranslate } from 'react-admin'
 import PlaylistAddIcon from '@material-ui/icons/PlaylistAdd'
 import DeleteIcon from '@material-ui/icons/Delete'
 import AddIcon from '@material-ui/icons/Add'
@@ -151,7 +147,7 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
         text: textQuery,
         model: selectedModel,
         limit,
-        negativePrompts: negativePrompts.filter(p => p.trim() !== ''),
+        negativePrompts: negativePrompts.filter((p) => p.trim() !== ''),
         negativePromptPenalty: negativePenalty,
       }
 
@@ -167,13 +163,12 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
             _: `Generated ${data.tracks.length} tracks`,
             count: data.tracks.length,
           }),
-          'success'
+          'success',
         )
       } else {
         throw new Error('No tracks returned')
       }
     } catch (err) {
-      console.error('Text recommendation failed:', err)
       const message =
         err?.body?.message ||
         err?.message ||
@@ -199,7 +194,9 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
       <Card className={classes.card}>
         <Box className={classes.section}>
           <Typography variant="h6" gutterBottom>
-            <MusicNoteIcon style={{ verticalAlign: 'middle', marginRight: 8 }} />
+            <MusicNoteIcon
+              style={{ verticalAlign: 'middle', marginRight: 8 }}
+            />
             {translate('pages.explore.textGenerator.title', {
               _: 'Generate Playlist from Text',
             })}
@@ -207,7 +204,7 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
 
           <Typography variant="body2" color="textSecondary">
             {translate('pages.explore.textGenerator.description', {
-              _: 'Describe the music you want and we\'ll find matching tracks in your library.',
+              _: "Describe the music you want and we'll find matching tracks in your library.",
             })}
           </Typography>
 
@@ -217,9 +214,12 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
               label={translate('pages.explore.textGenerator.queryLabel', {
                 _: 'Describe the music',
               })}
-              placeholder={translate('pages.explore.textGenerator.queryPlaceholder', {
-                _: 'e.g., upbeat rock with guitar solos, chill jazz for studying...',
-              })}
+              placeholder={translate(
+                'pages.explore.textGenerator.queryPlaceholder',
+                {
+                  _: 'e.g., upbeat rock with guitar solos, chill jazz for studying...',
+                },
+              )}
               value={textQuery}
               onChange={(e) => setTextQuery(e.target.value)}
               multiline
@@ -238,7 +238,9 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
               <Select
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
-                label={translate('pages.explore.textGenerator.model', { _: 'Model' })}
+                label={translate('pages.explore.textGenerator.model', {
+                  _: 'Model',
+                })}
                 disabled={loading}
               >
                 {MODEL_OPTIONS.map((option) => (
@@ -248,15 +250,24 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
                 ))}
               </Select>
               <FormHelperText>
-                {MODEL_OPTIONS.find(o => o.value === selectedModel)?.description}
+                {
+                  MODEL_OPTIONS.find((o) => o.value === selectedModel)
+                    ?.description
+                }
               </FormHelperText>
             </FormControl>
 
             <TextField
               type="number"
-              label={translate('pages.explore.textGenerator.limit', { _: 'Track Limit' })}
+              label={translate('pages.explore.textGenerator.limit', {
+                _: 'Track Limit',
+              })}
               value={limit}
-              onChange={(e) => setLimit(Math.max(1, Math.min(100, parseInt(e.target.value) || 25)))}
+              onChange={(e) =>
+                setLimit(
+                  Math.max(1, Math.min(100, parseInt(e.target.value) || 25)),
+                )
+              }
               variant="outlined"
               inputProps={{ min: 1, max: 100 }}
               style={{ width: 120 }}
@@ -266,7 +277,13 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
 
           {/* Negative Prompts Section */}
           <Box className={classes.section}>
-            <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
               <Typography variant="subtitle2">
                 {translate('pages.explore.textGenerator.negativePrompts', {
                   _: 'Negative Prompts (Optional)',
@@ -278,26 +295,36 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
                 onClick={handleAddNegativePrompt}
                 disabled={loading}
               >
-                {translate('pages.explore.textGenerator.addNegative', { _: 'Add' })}
+                {translate('pages.explore.textGenerator.addNegative', {
+                  _: 'Add',
+                })}
               </Button>
             </Box>
 
             {negativePrompts.length > 0 && (
               <>
                 <Typography variant="caption" color="textSecondary">
-                  {translate('pages.explore.textGenerator.negativeDescription', {
-                    _: 'Describe music styles to avoid',
-                  })}
+                  {translate(
+                    'pages.explore.textGenerator.negativeDescription',
+                    {
+                      _: 'Describe music styles to avoid',
+                    },
+                  )}
                 </Typography>
 
                 {negativePrompts.map((prompt, index) => (
                   <Box key={index} className={classes.negativePromptRow}>
                     <TextField
                       value={prompt}
-                      onChange={(e) => handleUpdateNegativePrompt(index, e.target.value)}
-                      placeholder={translate('pages.explore.textGenerator.negativePlaceholder', {
-                        _: 'e.g., slow ballads, acoustic guitar...',
-                      })}
+                      onChange={(e) =>
+                        handleUpdateNegativePrompt(index, e.target.value)
+                      }
+                      placeholder={translate(
+                        'pages.explore.textGenerator.negativePlaceholder',
+                        {
+                          _: 'e.g., slow ballads, acoustic guitar...',
+                        },
+                      )}
                       variant="outlined"
                       size="small"
                       fullWidth
@@ -326,9 +353,27 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
                     max={1.0}
                     step={0.05}
                     marks={[
-                      { value: 0.3, label: translate('pages.explore.textGenerator.penaltyStrong', { _: 'Strong' }) },
-                      { value: 0.85, label: translate('pages.explore.textGenerator.penaltyDefault', { _: 'Default' }) },
-                      { value: 1.0, label: translate('pages.explore.textGenerator.penaltyNone', { _: 'None' }) },
+                      {
+                        value: 0.3,
+                        label: translate(
+                          'pages.explore.textGenerator.penaltyStrong',
+                          { _: 'Strong' },
+                        ),
+                      },
+                      {
+                        value: 0.85,
+                        label: translate(
+                          'pages.explore.textGenerator.penaltyDefault',
+                          { _: 'Default' },
+                        ),
+                      },
+                      {
+                        value: 1.0,
+                        label: translate(
+                          'pages.explore.textGenerator.penaltyNone',
+                          { _: 'None' },
+                        ),
+                      },
                     ]}
                     valueLabelDisplay="auto"
                     disabled={loading}
@@ -345,17 +390,19 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
               color="primary"
               onClick={handleGenerate}
               disabled={loading || !textQuery.trim()}
-              startIcon={loading ? <CircularProgress size={20} /> : <PlaylistAddIcon />}
+              startIcon={
+                loading ? <CircularProgress size={20} /> : <PlaylistAddIcon />
+              }
             >
               {loading
-                ? translate('pages.explore.textGenerator.generating', { _: 'Generating...' })
-                : translate('pages.explore.textGenerator.generate', { _: 'Generate Playlist' })}
+                ? translate('pages.explore.textGenerator.generating', {
+                    _: 'Generating...',
+                  })
+                : translate('pages.explore.textGenerator.generate', {
+                    _: 'Generate Playlist',
+                  })}
             </Button>
-            <Button
-              variant="outlined"
-              onClick={handleClear}
-              disabled={loading}
-            >
+            <Button variant="outlined" onClick={handleClear} disabled={loading}>
               {translate('pages.explore.textGenerator.clear', { _: 'Clear' })}
             </Button>
           </Box>
@@ -373,9 +420,12 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
               <Typography variant="subtitle1">
                 {translate('pages.explore.textGenerator.results', {
                   _: 'Generated Playlist',
+                })}{' '}
+                ({result.tracks.length}{' '}
+                {translate('pages.explore.textGenerator.tracks', {
+                  _: 'tracks',
                 })}
-                {' '}
-                ({result.tracks.length} {translate('pages.explore.textGenerator.tracks', { _: 'tracks' })})
+                )
               </Typography>
 
               {result.warnings && result.warnings.length > 0 && (
@@ -394,7 +444,11 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
                     {track.models && track.models.length > 0 && (
                       <Box className={classes.modelChips}>
                         {track.models.map((model) => (
-                          <Chip key={model} label={model.toUpperCase()} size="small" />
+                          <Chip
+                            key={model}
+                            label={model.toUpperCase()}
+                            size="small"
+                          />
                         ))}
                       </Box>
                     )}

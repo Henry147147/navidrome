@@ -17,6 +17,7 @@ DOCKER_TAG ?= deluan/navidrome:develop
 # Taglib version to use in cross-compilation, from https://github.com/navidrome/cross-taglib
 CROSS_TAGLIB_VERSION ?= 2.1.1-1
 GOLANGCI_LINT_VERSION ?= v2.5.0
+JQ_VERSION ?= jq-1.7.1
 
 UI_SRC_FILES := $(shell find ui -type f -not -path "ui/build/*" -not -path "ui/node_modules/*")
 
@@ -61,8 +62,8 @@ test-js: ##@Development Run JS tests
 	@(cd ./ui && npm run test)
 .PHONY: test-js
 
-test-i18n: ##@Development Validate all translations files
-	./.github/workflows/validate-translations.sh 
+test-i18n: install-jq ##@Development Validate all translations files
+	PATH=$$PATH:./bin ./.github/workflows/validate-translations.sh 
 .PHONY: test-i18n
 
 install-golangci-lint: ##@Development Install golangci-lint if not present
@@ -83,6 +84,17 @@ install-golangci-lint: ##@Development Install golangci-lint if not present
 		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s $(GOLANGCI_LINT_VERSION); \
 	fi
 .PHONY: install-golangci-lint
+
+install-jq: ##@Development Install jq locally if not present
+	@if PATH=$$PATH:./bin which jq > /dev/null 2>&1; then \
+		exit 0; \
+	else \
+		echo "jq not found, installing $(JQ_VERSION)..."; \
+		mkdir -p ./bin; \
+		curl -sSfL https://github.com/jqlang/jq/releases/download/$(JQ_VERSION)/jq-linux-amd64 -o ./bin/jq; \
+		chmod +x ./bin/jq; \
+	fi
+.PHONY: install-jq
 
 lint: install-golangci-lint ##@Development Lint Go code
 	PATH=$$PATH:./bin golangci-lint run -v --timeout 5m

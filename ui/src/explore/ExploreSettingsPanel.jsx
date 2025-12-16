@@ -95,7 +95,8 @@ const ExploreSettingsPanel = ({
       helper: translate('pages.explore.settings.mixLengthHelper', {
         _: 'Applies to all automatic mix generators.',
       }),
-      format: (value) => `${value} ${translate('pages.explore.settings.tracksLabel', { _: 'tracks' })}`,
+      format: (value) =>
+        `${value} ${translate('pages.explore.settings.tracksLabel', { _: 'tracks' })}`,
     },
     {
       key: 'baseDiversity',
@@ -194,7 +195,9 @@ const ExploreSettingsPanel = ({
           {sliderConfigs.map((config) => {
             const value = draft[config.key]
             const handleChange = (_, nextValue) => {
-              const numericValue = Array.isArray(nextValue) ? nextValue[0] : nextValue
+              const numericValue = Array.isArray(nextValue)
+                ? nextValue[0]
+                : nextValue
               onFieldChange(config.key, numericValue)
             }
             return (
@@ -234,8 +237,13 @@ const ExploreSettingsPanel = ({
             onClick={onSave}
             disabled={!dirty || saving}
           >
-            {saving ? <CircularProgress size={18} color="inherit" /> :
-              translate('pages.explore.settings.saveButton', { _: 'Save settings' })}
+            {saving ? (
+              <CircularProgress size={18} color="inherit" />
+            ) : (
+              translate('pages.explore.settings.saveButton', {
+                _: 'Save settings',
+              })
+            )}
           </Button>
           <Button onClick={onReset} disabled={!dirty || saving}>
             {translate('pages.explore.settings.resetButton', { _: 'Reset' })}

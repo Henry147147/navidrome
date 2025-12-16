@@ -32,7 +32,7 @@ describe('TextPlaylistGenerator', () => {
         >
           <TextPlaylistGenerator />
         </TestContext>
-      </DataProviderContext.Provider>
+      </DataProviderContext.Provider>,
     )
 
   it('renders without crashing', () => {
@@ -66,8 +66,9 @@ describe('TextPlaylistGenerator', () => {
 
     // Click first button (likely Add button)
     const buttons = screen.getAllByRole('button')
-    const addButton = buttons.find(btn =>
-      btn.textContent.includes('Add') || btn.textContent.includes('add')
+    const addButton = buttons.find(
+      (btn) =>
+        btn.textContent.includes('Add') || btn.textContent.includes('add'),
     )
 
     if (addButton) {
@@ -105,8 +106,10 @@ describe('TextPlaylistGenerator', () => {
 
     // Find and click generate button
     const buttons = screen.getAllByRole('button')
-    const generateButton = buttons.find(btn =>
-      btn.textContent.includes('Generate') || btn.textContent.includes('generate')
+    const generateButton = buttons.find(
+      (btn) =>
+        btn.textContent.includes('Generate') ||
+        btn.textContent.includes('generate'),
     )
 
     if (generateButton) {
@@ -120,7 +123,7 @@ describe('TextPlaylistGenerator', () => {
 
   it('displays loading state during generation', async () => {
     mockDataProvider.getTextRecommendations.mockImplementation(
-      () => new Promise(() => {}) // Never resolves
+      () => new Promise(() => {}), // Never resolves
     )
 
     createTestUtils()
@@ -129,8 +132,10 @@ describe('TextPlaylistGenerator', () => {
     fireEvent.change(textInputs[0], { target: { value: 'test query' } })
 
     const buttons = screen.getAllByRole('button')
-    const generateButton = buttons.find(btn =>
-      btn.textContent.includes('Generate') || btn.textContent.includes('generate')
+    const generateButton = buttons.find(
+      (btn) =>
+        btn.textContent.includes('Generate') ||
+        btn.textContent.includes('generate'),
     )
 
     if (generateButton) {
@@ -145,7 +150,7 @@ describe('TextPlaylistGenerator', () => {
 
   it('handles API errors gracefully', async () => {
     mockDataProvider.getTextRecommendations.mockRejectedValue(
-      new Error('Service error')
+      new Error('Service error'),
     )
 
     createTestUtils()
@@ -154,8 +159,10 @@ describe('TextPlaylistGenerator', () => {
     fireEvent.change(textInputs[0], { target: { value: 'test query' } })
 
     const buttons = screen.getAllByRole('button')
-    const generateButton = buttons.find(btn =>
-      btn.textContent.includes('Generate') || btn.textContent.includes('generate')
+    const generateButton = buttons.find(
+      (btn) =>
+        btn.textContent.includes('Generate') ||
+        btn.textContent.includes('generate'),
     )
 
     if (generateButton) {
@@ -180,8 +187,9 @@ describe('TextPlaylistGenerator', () => {
     fireEvent.change(mainInput, { target: { value: 'test query' } })
 
     const buttons = screen.getAllByRole('button')
-    const clearButton = buttons.find(btn =>
-      btn.textContent.includes('Clear') || btn.textContent.includes('clear')
+    const clearButton = buttons.find(
+      (btn) =>
+        btn.textContent.includes('Clear') || btn.textContent.includes('clear'),
     )
 
     if (clearButton) {

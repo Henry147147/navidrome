@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"sync"
 
 	"github.com/sirupsen/logrus"
 )
@@ -18,6 +19,8 @@ type Hook struct {
 	AcceptedLevels []logrus.Level
 	RedactionList  []string
 	redactionKeys  []*regexp.Regexp
+	initOnce       sync.Once
+	initErr        error
 }
 
 // Levels returns the user defined AcceptedLevels
@@ -64,16 +67,17 @@ func (h *Hook) Fire(e *logrus.Entry) error {
 }
 
 func (h *Hook) initRedaction() error {
-	if len(h.redactionKeys) == 0 {
+	h.initOnce.Do(func() {
 		for _, redactionKey := range h.RedactionList {
 			re, err := regexp.Compile(redactionKey)
 			if err != nil {
-				return err
+				h.initErr = err
+				return
 			}
 			h.redactionKeys = append(h.redactionKeys, re)
 		}
-	}
-	return nil
+	})
+	return h.initErr
 }
 
 func (h *Hook) redact(msg string) (string, error) {

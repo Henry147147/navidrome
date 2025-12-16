@@ -64,7 +64,12 @@ describe('BatchEmbeddingPanel', () => {
         >
           <BatchEmbeddingPanel />
         </TestContext>
-      </DataProviderContext.Provider>
+      </DataProviderContext.Provider>,
+    )
+
+  const getStartButton = () =>
+    screen.getByText(
+      /Start Re-embedding|pages\.settings\.batchEmbedding\.start/i,
     )
 
   it('renders without crashing', () => {
@@ -81,7 +86,7 @@ describe('BatchEmbeddingPanel', () => {
   it('opens configuration dialog when start clicked', async () => {
     createTestUtils()
 
-    const startButton = screen.getByText(/Start Re-embedding/i)
+    const startButton = getStartButton()
     fireEvent.click(startButton)
 
     await waitFor(() => {
@@ -94,7 +99,7 @@ describe('BatchEmbeddingPanel', () => {
   it('shows model selection checkboxes in dialog', async () => {
     createTestUtils()
 
-    const startButton = screen.getByText(/Start Re-embedding/i)
+    const startButton = getStartButton()
     fireEvent.click(startButton)
 
     await waitFor(() => {
@@ -112,14 +117,16 @@ describe('BatchEmbeddingPanel', () => {
     createTestUtils()
 
     // Open dialog
-    const startButton = screen.getByText(/Start Re-embedding/i)
+    const startButton = getStartButton()
     fireEvent.click(startButton)
 
     await waitFor(() => {
       // Find and click start job button in dialog
       const allButtons = screen.getAllByRole('button')
-      const startJobButton = allButtons.find(btn =>
-        btn.textContent.includes('Start') || btn.textContent.includes('start')
+      const startJobButton = allButtons.find(
+        (btn) =>
+          btn.textContent.includes('Start') ||
+          btn.textContent.includes('start'),
       )
       if (startJobButton) {
         fireEvent.click(startJobButton)
@@ -148,7 +155,7 @@ describe('BatchEmbeddingPanel', () => {
     createTestUtils()
 
     // Start job (simplified)
-    const startButton = screen.getByText(/Start Re-embedding/i)
+    const startButton = getStartButton()
     fireEvent.click(startButton)
 
     await waitFor(() => {
@@ -162,7 +169,7 @@ describe('BatchEmbeddingPanel', () => {
       () => {
         expect(mockDataProvider.getBatchEmbeddingProgress).toHaveBeenCalled()
       },
-      { timeout: 2000 }
+      { timeout: 2000 },
     )
   })
 
@@ -182,7 +189,7 @@ describe('BatchEmbeddingPanel', () => {
 
     createTestUtils()
 
-    const startButton = screen.getByText(/Start Re-embedding/i)
+    const startButton = getStartButton()
     fireEvent.click(startButton)
 
     await waitFor(() => {
@@ -194,7 +201,7 @@ describe('BatchEmbeddingPanel', () => {
       () => {
         expect(mockDataProvider.getBatchEmbeddingProgress).toHaveBeenCalled()
       },
-      { timeout: 2000 }
+      { timeout: 2000 },
     )
   })
 })

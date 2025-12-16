@@ -524,14 +524,14 @@ const AutoPlayPage = () => {
       return player.queue.length
     }
     return player.queue.length - currentIndex - 1
-  }, [player.queue, player.current])
+  }, [player])
 
   useEffect(() => {
     const trackId = player.current?.trackId || player.current?.song?.id
     if (trackId) {
       playedIdsRef.current.add(trackId)
     }
-  }, [player.current?.uuid, player.current?.trackId, player.current?.song?.id])
+  }, [player])
 
   useEffect(() => {
     if (!sessionActive) {

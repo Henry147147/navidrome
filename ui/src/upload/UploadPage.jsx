@@ -584,10 +584,7 @@ const UploadPage = () => {
     if (typeof window === 'undefined' || !window?.localStorage) {
       return
     }
-    window.localStorage.setItem(
-      SETTINGS_STORAGE_KEY,
-      JSON.stringify(settings),
-    )
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings))
   }, [settings])
 
   const handleTabChange = (_, value) => {
@@ -684,21 +681,25 @@ const UploadPage = () => {
       })
 
       try {
-        const response = await uploadFileGroup(currentGroup.files, (progress) => {
-          setCurrentProgress((prev) => {
-            if (!prev || prev.id !== currentGroup.id) {
-              return prev
-            }
-            const nextTotal = progress.lengthComputable
-              ? progress.total
-              : prev.total
-            return {
-              ...prev,
-              ...progress,
-              total: nextTotal,
-            }
-          })
-        }, uploadSettings)
+        const response = await uploadFileGroup(
+          currentGroup.files,
+          (progress) => {
+            setCurrentProgress((prev) => {
+              if (!prev || prev.id !== currentGroup.id) {
+                return prev
+              }
+              const nextTotal = progress.lengthComputable
+                ? progress.total
+                : prev.total
+              return {
+                ...prev,
+                ...progress,
+                total: nextTotal,
+              }
+            })
+          },
+          uploadSettings,
+        )
         handleUploadOutcome(response, currentGroup)
         uploadedCount += currentGroup.files.length
         queue.shift()
@@ -709,7 +710,9 @@ const UploadPage = () => {
       } catch (error) {
         const defaultMessage = translate('upload.notifications.error')
         const message =
-          (error?.body && error.body.message) || error?.message || defaultMessage
+          (error?.body && error.body.message) ||
+          error?.message ||
+          defaultMessage
         setFeedbackMessage(message)
         notify(defaultMessage, 'warning')
         break
@@ -799,28 +802,35 @@ const UploadPage = () => {
             {files.length ? (
               <>
                 <Typography variant="subtitle1">
-                  {translate('upload.selectedCount', { smart_count: files.length })}
+                  {translate('upload.selectedCount', {
+                    smart_count: files.length,
+                  })}
                 </Typography>
                 <Typography variant="body2" color="textSecondary">
-                  {translate('upload.totalSize', { size: formatFileSize(totalSize) })}
+                  {translate('upload.totalSize', {
+                    size: formatFileSize(totalSize),
+                  })}
                 </Typography>
                 <List dense>
                   {files.map((file) => {
                     const fileKey = getFileKey(file)
                     const isCurrent =
-                      isUploading && currentProgress?.fileKeys?.includes(fileKey)
+                      isUploading &&
+                      currentProgress?.fileKeys?.includes(fileKey)
                     const progress = isCurrent ? currentProgress : null
                     const progressTotalBytes = progress?.lengthComputable
                       ? progress.total
                       : file.size
                     const progressPercent = progress?.lengthComputable
-                      ? (progress.loaded / Math.max(progressTotalBytes, 1)) * 100
+                      ? (progress.loaded / Math.max(progressTotalBytes, 1)) *
+                        100
                       : 0
-                    const speedText = progress && progress.speed > 0
-                      ? translate('upload.progress.speed', {
-                          value: formatMegabytes(progress.speed, 2),
-                        })
-                      : translate('upload.progress.calculating')
+                    const speedText =
+                      progress && progress.speed > 0
+                        ? translate('upload.progress.speed', {
+                            value: formatMegabytes(progress.speed, 2),
+                          })
+                        : translate('upload.progress.calculating')
                     const etaDuration = formatDuration(progress?.eta)
                     const etaText = etaDuration
                       ? translate('upload.progress.eta', { time: etaDuration })
@@ -946,14 +956,17 @@ const UploadPage = () => {
                 const itemKey =
                   job.id ||
                   job.musicName ||
-                  (job.enqueuedAt ? job.enqueuedAt.toISOString() : `job-${index}`)
+                  (job.enqueuedAt
+                    ? job.enqueuedAt.toISOString()
+                    : `job-${index}`)
                 return (
                   <ListItem key={itemKey} divider>
                     <ListItemText
                       primary={
                         <div className={classes.queueHeader}>
                           <Typography variant="subtitle1">
-                            {job.musicName || translate('upload.queue.columns.file')}
+                            {job.musicName ||
+                              translate('upload.queue.columns.file')}
                           </Typography>
                           <Chip
                             size="small"
@@ -966,21 +979,25 @@ const UploadPage = () => {
                       secondary={
                         <div className={classes.queueMeta}>
                           <Typography variant="caption" color="textSecondary">
-                            {translate('upload.queue.columns.queuedAt')}: {formatTimestamp(job.enqueuedAt) || '—'}
+                            {translate('upload.queue.columns.queuedAt')}:{' '}
+                            {formatTimestamp(job.enqueuedAt) || '—'}
                           </Typography>
                           {job.startedAt && (
                             <Typography variant="caption" color="textSecondary">
-                              {translate('upload.queue.columns.startedAt')}: {formatTimestamp(job.startedAt)}
+                              {translate('upload.queue.columns.startedAt')}:{' '}
+                              {formatTimestamp(job.startedAt)}
                             </Typography>
                           )}
                           {job.completedAt && (
                             <Typography variant="caption" color="textSecondary">
-                              {translate('upload.queue.columns.completedAt')}: {formatTimestamp(job.completedAt)}
+                              {translate('upload.queue.columns.completedAt')}:{' '}
+                              {formatTimestamp(job.completedAt)}
                             </Typography>
                           )}
                           {job.result?.duplicates?.length > 0 && (
                             <Typography variant="caption" color="textSecondary">
-                              {translate('upload.queue.columns.duplicates')}: {job.result.duplicates.join(', ')}
+                              {translate('upload.queue.columns.duplicates')}:{' '}
+                              {job.result.duplicates.join(', ')}
                             </Typography>
                           )}
                           {job.result?.copyConflict && (
@@ -993,12 +1010,14 @@ const UploadPage = () => {
                           )}
                           {job.result?.copyError && (
                             <Typography variant="caption" color="error">
-                              {translate('upload.queue.columns.copyError')}: {job.result.copyError}
+                              {translate('upload.queue.columns.copyError')}:{' '}
+                              {job.result.copyError}
                             </Typography>
                           )}
                           {job.error && (
                             <Typography variant="caption" color="error">
-                              {translate('upload.queue.columns.error')}: {job.error}
+                              {translate('upload.queue.columns.error')}:{' '}
+                              {job.error}
                             </Typography>
                           )}
                         </div>
@@ -1016,7 +1035,7 @@ const UploadPage = () => {
           id="upload-settings-tabpanel"
           aria-labelledby="upload-settings-tab"
           hidden={activeTab !== 2}
-        className={classes.tabPanel}
+          className={classes.tabPanel}
         >
           <div className={classes.settingsContainer}>
             <div className={classes.settingsGroup}>

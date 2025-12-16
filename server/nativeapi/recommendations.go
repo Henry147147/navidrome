@@ -142,7 +142,7 @@ func saveGPUSettings(cfg gpuSettings) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, payload, 0o644)
+	return os.WriteFile(path, payload, 0o600)
 }
 
 func estimateVRAM(cfg gpuSettings) float64 {
