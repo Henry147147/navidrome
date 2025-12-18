@@ -161,33 +161,23 @@ func (s *scannerImpl) scanAll(ctx context.Context, fullScan bool, progress chan<
 func (s *scannerImpl) scheduleEmbeddings(ctx context.Context, state *scanState) {
 	candidates := state.pendingEmbeds()
 	if len(candidates) == 0 {
-		return
-	}
-	if s.embedWorker == nil {
-		log.Debug(ctx, "Embedding service not configured; skipping embedding run", "count", len(candidates))
+		log.Info(ctx, "No embedding candidates collected during scan")
 		return
 	}
 
-	go func() {
-		missing := make([]embeddingCandidate, 0, len(candidates))
-		for _, candidate := range candidates {
-			status, err := s.embedWorker.client.CheckEmbedding(ctx, candidate)
-			if err != nil {
-				log.Error(ctx, "Embedding status check failed", err, "track", candidate.TrackPath)
-				continue
-			}
-			if status.Embedded && status.HasDescription {
-				continue
-			}
-			missing = append(missing, candidate)
-		}
-		if len(missing) == 0 {
-			log.Info(ctx, "No missing embeddings detected", "checked", len(candidates))
+	if s.embedWorker == nil {
+		if client := newPythonEmbeddingClient(); client != nil {
+			s.embedWorker = newEmbeddingWorker(client)
+			log.Info(ctx, "Initialized embedding worker")
+		} else {
+			log.Warn(ctx, "Embedding service not configured; skipping embedding run", "count", len(candidates))
 			return
 		}
-		s.embedWorker.Enqueue(missing)
-		log.Info(ctx, "Scheduled background embeddings", "count", len(missing))
-	}()
+	}
+
+	log.Info(ctx, "Scheduling embeddings", "count", len(candidates))
+	s.embedWorker.Enqueue(candidates)
+	log.Info(ctx, "Scheduled background embeddings", "count", len(candidates))
 }
 
 func (s *scannerImpl) runGC(ctx context.Context, state *scanState) func() error {

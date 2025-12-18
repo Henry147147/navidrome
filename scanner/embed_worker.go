@@ -66,13 +66,13 @@ func (w *embeddingWorker) loop() {
 
 func (w *embeddingWorker) process(ctx context.Context, candidate embeddingCandidate) {
 	status, err := w.client.CheckEmbedding(ctx, candidate)
-	if err != nil {
-		log.Error(ctx, "Embedding status check failed", err, "track", candidate.TrackPath)
-		return
-	}
-	if status.Embedded && status.HasDescription {
-		log.Debug(ctx, "Embedding already present, skipping", "track", candidate.TrackPath, "name", status.Name)
-		return
+	if err == nil {
+		if status.Embedded && status.HasDescription {
+			log.Debug(ctx, "Embedding already present, skipping", "track", candidate.TrackPath, "name", status.Name)
+			return
+		}
+	} else {
+		log.Warn(ctx, "Embedding status check failed; proceeding to embed", "track", candidate.TrackPath, "error", err)
 	}
 
 	if err := w.client.EmbedSong(ctx, candidate); err != nil {

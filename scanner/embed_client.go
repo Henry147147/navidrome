@@ -30,7 +30,23 @@ type pythonEmbeddingClient struct {
 }
 
 func newPythonEmbeddingClient() embeddingClient {
-	base := strings.TrimSuffix(strings.TrimSpace(conf.Server.Recommendations.BaseURL), "/")
+	resolveBase := func() string {
+		candidates := []string{
+			conf.Server.Recommendations.BaseURL,
+			conf.Server.Recommendations.TextBaseURL,
+			conf.Server.Recommendations.BatchBaseURL,
+			"http://127.0.0.1:9002",
+		}
+		for _, val := range candidates {
+			base := strings.TrimSuffix(strings.TrimSpace(val), "/")
+			if base != "" {
+				return base
+			}
+		}
+		return ""
+	}
+
+	base := resolveBase()
 	if base == "" {
 		return nil
 	}

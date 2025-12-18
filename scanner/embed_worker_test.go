@@ -121,13 +121,13 @@ func TestEmbeddingWorkerContinuesAfterErrors(t *testing.T) {
 	waitForCondition(t, time.Second, func() bool {
 		client.mu.Lock()
 		defer client.mu.Unlock()
-		return len(client.embedCalls) == 1
+		return len(client.embedCalls) == 2
 	})
 
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	if client.embedCalls[0] != second.key() {
-		t.Fatalf("expected second candidate to be embedded, got %v", client.embedCalls)
+	if !reflect.DeepEqual(client.embedCalls, []string{first.key(), second.key()}) {
+		t.Fatalf("expected both candidates embedded despite check error, got %v", client.embedCalls)
 	}
 }
 
