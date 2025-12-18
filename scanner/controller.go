@@ -52,6 +52,9 @@ func New(rootCtx context.Context, ds model.DataStore, cw artwork.CacheWarmer, br
 		pls:     pls,
 		metrics: m,
 	}
+	if client := newPythonEmbeddingClient(); client != nil {
+		c.embedWorker = newEmbeddingWorker(client)
+	}
 	if !conf.Server.DevExternalScanner {
 		c.limiter = P(rate.Sometimes{Interval: conf.Server.DevActivityPanelUpdateRate})
 	}
@@ -62,7 +65,7 @@ func (s *controller) getScanner() scanner {
 	if conf.Server.DevExternalScanner {
 		return &scannerExternal{}
 	}
-	return &scannerImpl{ds: s.ds, cw: s.cw, pls: s.pls}
+	return &scannerImpl{ds: s.ds, cw: s.cw, pls: s.pls, embedWorker: s.embedWorker}
 }
 
 // CallScan starts an in-process scan of the music library.
@@ -114,6 +117,7 @@ type controller struct {
 	count           atomic.Uint32
 	folderCount     atomic.Uint32
 	changesDetected bool
+	embedWorker     *embeddingWorker
 }
 
 // getLastScanTime returns the most recent scan time across all libraries

@@ -1,10 +1,11 @@
+import json
 import logging
 from typing import Any, Dict, List
 
 import pytest
 
 from cue_splitter import SplitTrack
-from models import SongEmbedding, UploadSettings
+from models import SongEmbedding
 from python_embed_server import EmbedSocketServer
 
 import base64
@@ -28,6 +29,7 @@ class StubEmbeddingModel:
             "music_file": music_file,
             "cue_file": cue_file,
             "model_id": "stub-model",
+            "track_name": music_name,
             "segments": list(self.segments),
         }
         self.embed_calls.append(payload)
@@ -39,6 +41,7 @@ class RecordingMilvusClient:
         self.loaded: List[str] = []
         self.upsert_calls: List[Dict[str, Any]] = []
         self.flush_calls: List[str] = []
+        self.query_calls: List[Dict[str, Any]] = []
 
     def load_collection(self, collection_name: str) -> None:
         self.loaded.append(collection_name)
@@ -49,10 +52,63 @@ class RecordingMilvusClient:
     def flush(self, collection_name: str) -> None:
         self.flush_calls.append(collection_name)
 
+    def query(
+        self,
+        collection_name: str,
+        filter: str | None = None,
+        filter_params: Dict[str, Any] | None = None,
+        output_fields: List[str] | None = None,
+    ):
+        self.query_calls.append(
+            {
+                "collection": collection_name,
+                "filter": filter,
+                "filter_params": filter_params,
+                "output_fields": output_fields,
+            }
+        )
+        names: List[str] = []
+        if filter_params and "names" in filter_params:
+            names = filter_params["names"]
+        elif filter:
+            try:
+                names = json.loads(filter.split("name in ", 1)[1])
+            except Exception:
+                names = []
+        matches = [name for name in names if name.startswith("present")]
+        return [{"name": name} for name in matches]
 
-class NoOpFeaturePipeline:
-    def scan_for_dups(self, embeddings, settings):
-        return []
+
+class PresenceMilvusClient(RecordingMilvusClient):
+    def __init__(self, present: set[str]) -> None:
+        super().__init__()
+        self.present = set(present)
+
+    def query(
+        self,
+        collection_name: str,
+        filter: str | None = None,
+        filter_params: Dict[str, Any] | None = None,
+        output_fields: List[str] | None = None,
+    ):
+        self.query_calls.append(
+            {
+                "collection": collection_name,
+                "filter": filter,
+                "filter_params": filter_params,
+                "output_fields": output_fields,
+            }
+        )
+        names: List[str] = []
+        if filter_params and "names" in filter_params:
+            names = filter_params["names"]
+        elif filter:
+            try:
+                names = json.loads(filter.split("name in ", 1)[1])
+            except Exception:
+                names = []
+        matches = [name for name in names if name in self.present]
+        return [{"name": name} for name in matches]
 
 
 @pytest.fixture()
@@ -85,6 +141,30 @@ def test_load_from_json_converts_segments():
     assert song.track_id  # generated hash identifier
 
 
+def test_process_payload_uses_canonical_name(tmp_path, logger: logging.Logger):
+    audio_path = tmp_path / "Song.flac"
+    audio_path.write_text("", encoding="utf-8")
+    model = StubEmbeddingModel()
+    server = EmbedSocketServer(
+        socket_path="/tmp/navidrome-test.sock",
+        milvus_client=RecordingMilvusClient(),
+        model=model,
+        enable_descriptions=False,
+    )
+    server.add_embedding_to_db = lambda *_args, **_kwargs: {}
+
+    payload = {
+        "music_file": str(audio_path),
+        "artist": "Artist One",
+        "title": "Track One",
+        "name": "original-name.flac",
+    }
+
+    server.process_payload(payload)
+    assert model.embed_calls, "embed_music should be invoked"
+    assert model.embed_calls[0]["track_name"] == "Artist One - Track One"
+
+
 def test_add_embedding_drops_track_id_before_upsert(logger: logging.Logger):
     milvus = RecordingMilvusClient()
     model = StubEmbeddingModel()
@@ -93,7 +173,6 @@ def test_add_embedding_drops_track_id_before_upsert(logger: logging.Logger):
         milvus_client=milvus,
         model=model,
     )
-    server.feature_pipeline = NoOpFeaturePipeline()
 
     sample_song = SongEmbedding(
         name="track.flac",
@@ -104,8 +183,7 @@ def test_add_embedding_drops_track_id_before_upsert(logger: logging.Logger):
     )
     server.load_from_json = lambda embedding: [sample_song]
 
-    settings = UploadSettings()
-    server.add_embedding_to_db("track.flac", {"music_file": "track.flac"}, settings)
+    server.add_embedding_to_db("track.flac", {"music_file": "track.flac"})
 
     assert milvus.loaded == ["embedding"]
     assert milvus.flush_calls == ["embedding"]
@@ -115,6 +193,29 @@ def test_add_embedding_drops_track_id_before_upsert(logger: logging.Logger):
     stored_payload = call["payload"][0]
     assert "track_id" not in stored_payload
     assert stored_payload["model_id"] == "stub-model"
+
+
+def test_check_embedding_status_detects_existing(monkeypatch, logger: logging.Logger):
+    monkeypatch.setenv("NAVIDROME_MILVUS_URI", "http://localhost:19530")
+    milvus = PresenceMilvusClient({"Artist - Track"})
+    server = EmbedSocketServer(
+        socket_path="/tmp/navidrome-test.sock",
+        milvus_client=milvus,
+        model=StubEmbeddingModel(),
+        enable_descriptions=False,
+    )
+
+    result = server.check_embedding_status(
+        track_id="1",
+        artist="Artist",
+        title="Track",
+        alternate_names=["extra.flac"],
+    )
+
+    assert result["embedded"] is True
+    assert result["hasDescription"] is True
+    assert result["name"] == "Artist - Track"
+    assert milvus.loaded == ["embedding", "description_embedding"]
 
 
 def test_process_embedding_request_with_split(

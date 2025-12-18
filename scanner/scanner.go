@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,9 +19,10 @@ import (
 )
 
 type scannerImpl struct {
-	ds  model.DataStore
-	cw  artwork.CacheWarmer
-	pls core.Playlists
+	ds          model.DataStore
+	cw          artwork.CacheWarmer
+	pls         core.Playlists
+	embedWorker *embeddingWorker
 }
 
 // scanState holds the state of an in-progress scan, to be passed to the various phases
@@ -29,6 +31,8 @@ type scanState struct {
 	fullScan        bool
 	changesDetected atomic.Bool
 	libraries       model.Libraries // Store libraries list for consistency across phases
+	embedMu         sync.Mutex
+	embedCandidates []embeddingCandidate
 }
 
 func (s *scanState) sendProgress(info *ProgressInfo) {
@@ -43,6 +47,24 @@ func (s *scanState) sendWarning(msg string) {
 
 func (s *scanState) sendError(err error) {
 	s.sendProgress(&ProgressInfo{Error: err.Error()})
+}
+
+func (s *scanState) addEmbedCandidates(candidates ...embeddingCandidate) {
+	if len(candidates) == 0 {
+		return
+	}
+	s.embedMu.Lock()
+	s.embedCandidates = append(s.embedCandidates, candidates...)
+	s.embedMu.Unlock()
+}
+
+func (s *scanState) pendingEmbeds() []embeddingCandidate {
+	s.embedMu.Lock()
+	defer s.embedMu.Unlock()
+	out := make([]embeddingCandidate, len(s.embedCandidates))
+	copy(out, s.embedCandidates)
+	s.embedCandidates = nil
+	return out
 }
 
 func (s *scannerImpl) scanAll(ctx context.Context, fullScan bool, progress chan<- *ProgressInfo) {
@@ -131,7 +153,41 @@ func (s *scannerImpl) scanAll(ctx context.Context, fullScan bool, progress chan<
 		state.sendProgress(&ProgressInfo{ChangesDetected: true})
 	}
 
+	s.scheduleEmbeddings(ctx, &state)
+
 	log.Info(ctx, "Scanner: Finished scanning all libraries", "duration", time.Since(startTime))
+}
+
+func (s *scannerImpl) scheduleEmbeddings(ctx context.Context, state *scanState) {
+	candidates := state.pendingEmbeds()
+	if len(candidates) == 0 {
+		return
+	}
+	if s.embedWorker == nil {
+		log.Debug(ctx, "Embedding service not configured; skipping embedding run", "count", len(candidates))
+		return
+	}
+
+	go func() {
+		missing := make([]embeddingCandidate, 0, len(candidates))
+		for _, candidate := range candidates {
+			status, err := s.embedWorker.client.CheckEmbedding(ctx, candidate)
+			if err != nil {
+				log.Error(ctx, "Embedding status check failed", err, "track", candidate.TrackPath)
+				continue
+			}
+			if status.Embedded && status.HasDescription {
+				continue
+			}
+			missing = append(missing, candidate)
+		}
+		if len(missing) == 0 {
+			log.Info(ctx, "No missing embeddings detected", "checked", len(candidates))
+			return
+		}
+		s.embedWorker.Enqueue(missing)
+		log.Info(ctx, "Scheduled background embeddings", "count", len(missing))
+	}()
 }
 
 func (s *scannerImpl) runGC(ctx context.Context, state *scanState) func() error {

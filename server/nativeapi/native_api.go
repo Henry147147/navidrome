@@ -30,7 +30,6 @@ type Router struct {
 	libs        core.Library
 	maintenance core.Maintenance
 	recommender subsonic.RecommendationClient
-	embedQueue  *embedQueue
 }
 
 func New(ds model.DataStore, share core.Share, playlists core.Playlists, insights metrics.Insights, libraryService core.Library, maintenance core.Maintenance, recommender subsonic.RecommendationClient) *Router {
@@ -42,7 +41,6 @@ func New(ds model.DataStore, share core.Share, playlists core.Playlists, insight
 		libs:        libraryService,
 		maintenance: maintenance,
 		recommender: recommender,
-		embedQueue:  newEmbedQueue(),
 	}
 	r.Handler = r.routes()
 	return r
@@ -79,8 +77,6 @@ func (api *Router) routes() http.Handler {
 		api.addMissingFilesRoute(r)
 		api.addKeepAliveRoute(r)
 		api.addInsightsRoute(r)
-		api.addUploadRoute(r)
-		api.addUploadStatusRoute(r)
 		api.addRecommendationRoutes(r)
 		api.addAutoPlayRoute(r)
 

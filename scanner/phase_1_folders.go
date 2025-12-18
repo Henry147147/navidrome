@@ -411,6 +411,21 @@ func (p *phaseFolders) persistChanges(entry *folderEntry) (*folderEntry, error) 
 	if err != nil {
 		log.Error(p.ctx, "Scanner: Error persisting changes to DB", "folder", entry.path, err)
 	}
+	if err == nil && len(entry.tracks) > 0 {
+		candidates := make([]embeddingCandidate, 0, len(entry.tracks))
+		for i := range entry.tracks {
+			mf := entry.tracks[i]
+			candidates = append(candidates, embeddingCandidate{
+				LibraryID:   entry.job.lib.ID,
+				LibraryPath: entry.job.lib.Path,
+				TrackPath:   mf.Path,
+				Artist:      mf.Artist,
+				Title:       mf.Title,
+				Album:       mf.Album,
+			})
+		}
+		p.state.addEmbedCandidates(candidates...)
+	}
 	return entry, err
 }
 

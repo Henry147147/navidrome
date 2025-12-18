@@ -26,8 +26,8 @@ from description_pipeline import (
 from gpu_settings import is_oom_error, load_gpu_settings
 from cue_splitter import SplitTrack, split_flac_with_cue
 from models import SongEmbedding
-from upload_features import UploadFeaturePipeline, UploadSettings
 from database_query import MilvusSimilaritySearcher
+from track_name_resolver import TrackNameResolver
 
 
 SOCKET_PATH = "/tmp/navidrome_embed.sock"
@@ -40,7 +40,6 @@ class EmbedAudioRequest(BaseModel):
     music_file: str = Field(..., description="Absolute path to the uploaded audio file")
     name: str = Field(..., description="Original filename for metadata")
     cue_file: Optional[str] = Field(None, description="Optional cuesheet path")
-    settings: Optional[dict] = Field(None, description="Upload settings payload")
     music_data_b64: Optional[str] = Field(
         None,
         description="Base64-encoded audio contents (used when the file path is not reachable)",
@@ -49,6 +48,11 @@ class EmbedAudioRequest(BaseModel):
         None,
         description="Base64-encoded cuesheet contents (used when the file path is not reachable)",
     )
+    track_id: Optional[str] = None
+    artist: Optional[str] = None
+    title: Optional[str] = None
+    album: Optional[str] = None
+    alternate_names: List[str] = Field(default_factory=list)
 
 
 class EmbedAudioResponse(BaseModel):
@@ -56,6 +60,20 @@ class EmbedAudioResponse(BaseModel):
     duplicates: List[str] = Field(default_factory=list)
     allDuplicates: bool = False
     splitFiles: Optional[List[dict]] = None
+
+
+class EmbedStatusRequest(BaseModel):
+    track_id: Optional[str] = None
+    artist: Optional[str] = None
+    title: Optional[str] = None
+    album: Optional[str] = None
+    alternate_names: List[str] = Field(default_factory=list)
+
+
+class EmbedStatusResponse(BaseModel):
+    embedded: bool
+    hasDescription: bool
+    name: str
 
 
 class EmbedSocketServer:
@@ -94,14 +112,90 @@ class EmbedSocketServer:
             self.milvus_client,
             logger=self.logger,
         )
-        self.feature_pipeline = UploadFeaturePipeline(
-            similarity_searcher=self.similarity_searcher,
-            logger=self.logger,
-        )
         self.logger.debug(
             "EmbedSocketServer initialized for %s",
             self.socket_path,
         )
+
+    @staticmethod
+    def _canonical_name_from_meta(artist: str, title: str, fallback: str) -> str:
+        artist = (artist or "").strip()
+        title = (title or "").strip()
+        if artist or title:
+            return TrackNameResolver.canonical_name(artist, title)
+        return (fallback or "").strip()
+
+    @staticmethod
+    def _using_milvus_lite() -> bool:
+        uri = os.getenv("NAVIDROME_MILVUS_URI", "")
+        return "://" not in uri or uri.startswith("file:")
+
+    def _milvus_name_exists(self, collection: str, names: List[str]) -> bool:
+        normalized = sorted({(name or "").strip() for name in names if name})
+        if not normalized:
+            return False
+
+        try:
+            self.milvus_client.load_collection(collection)
+        except Exception:
+            self.logger.exception("Failed to load collection %s", collection)
+            return False
+
+        try:
+            if self._using_milvus_lite():
+                filter_expr = f"name in {json.dumps(normalized)}"
+                rows = self.milvus_client.query(
+                    collection_name=collection,
+                    filter=filter_expr,
+                    output_fields=["name"],
+                )
+            else:
+                rows = self.milvus_client.query(
+                    collection_name=collection,
+                    filter="name in {names}",
+                    filter_params={"names": normalized},
+                    output_fields=["name"],
+                )
+        except Exception:
+            self.logger.exception("Milvus query failed for %s", collection)
+            return False
+
+        return bool(rows)
+
+    def check_embedding_status(
+        self,
+        *,
+        track_id: Optional[str],
+        artist: Optional[str],
+        title: Optional[str],
+        alternate_names: Optional[List[str]] = None,
+    ) -> Dict[str, object]:
+        canonical_name = self._canonical_name_from_meta(
+            artist or "", title or "", ""
+        )
+        names = {canonical_name} if canonical_name else set()
+        for alt in alternate_names or []:
+            alt_name = str(alt or "").strip()
+            if alt_name:
+                names.add(alt_name)
+
+        name_list = sorted(names)
+        if not name_list:
+            return {
+                "embedded": False,
+                "hasDescription": False,
+                "name": canonical_name,
+            }
+
+        embedded = self._milvus_name_exists("embedding", name_list)
+        has_description = self._milvus_name_exists(
+            DEFAULT_DESCRIPTION_COLLECTION, name_list
+        )
+        return {
+            "embedded": embedded,
+            "hasDescription": has_description,
+            "name": canonical_name,
+        }
 
     def _prepare_milvus(self) -> None:
         try:
@@ -154,14 +248,18 @@ class EmbedSocketServer:
         if not music_file:
             raise ValueError("music_file is required")
 
-        settings = UploadSettings.from_payload(payload.get("settings"))
         cue_file = payload.get("cue_file") or None
-        music_name = payload.get("name") or Path(str(music_file)).name
+        artist = str(payload.get("artist") or "")
+        title = str(payload.get("title") or "")
+        base_name = payload.get("name") or Path(str(music_file)).name
+        alt_names = payload.get("alternate_names") or []
 
         music_file = str(music_file)
-        music_name = str(music_name)
+        base_name = str(base_name)
         if cue_file:
             cue_file = str(cue_file)
+
+        music_name = self._canonical_name_from_meta(artist, title, base_name)
 
         self.logger.debug("Processing embed payload music=%s cue=%s", music_file, cue_file)
 
@@ -189,7 +287,7 @@ class EmbedSocketServer:
                 music_name,
                 cue_file,
             )
-            summary = self.add_embedding_to_db(music_name, result, settings)
+            summary = self.add_embedding_to_db(music_name, result)
         finally:
             for path in temp_paths:
                 try:
@@ -335,36 +433,30 @@ class EmbedSocketServer:
         return songs
 
     def add_embedding_to_db(
-        self, file_name: str, embedding: dict, settings: UploadSettings
+        self, file_name: str, embedding: dict
     ) -> Dict[str, object]:
         self.logger.info(
             "Uploading embedding for %s to Milvus", embedding.get("music_file")
         )
-        self.logger.debug("Received upload settings: %s", asdict(settings))
         songs = self.load_from_json(embedding)
         description_rows = self._load_descriptions(embedding)
         if not songs:
             raise RuntimeError("Embedding payload did not contain any segments.")
 
-        duplicates = self.feature_pipeline.scan_for_dups(songs, settings)
         songs_payload = [self._serialize_song(song) for song in songs]
 
-        should_upsert_audio = len(duplicates) != len(songs_payload)
-        if should_upsert_audio:
-            try:
-                self.milvus_client.load_collection("embedding")
-            except Exception:  # pragma: no cover - defensive logging
-                self.logger.exception("Failed to load Milvus collection embedding")
-            try:
-                if songs_payload:
-                    self.milvus_client.upsert("embedding", songs_payload)
-                    self.milvus_client.flush("embedding")
-            except Exception:
-                self.logger.exception("Failed to upsert embeddings to Milvus")
-        else:
-            self.logger.debug("Skipping upsert because all segments are duplicates")
+        try:
+            self.milvus_client.load_collection("embedding")
+        except Exception:  # pragma: no cover - defensive logging
+            self.logger.exception("Failed to load Milvus collection embedding")
+        try:
+            if songs_payload:
+                self.milvus_client.upsert("embedding", songs_payload)
+                self.milvus_client.flush("embedding")
+        except Exception:
+            self.logger.exception("Failed to upsert embeddings to Milvus")
 
-        if description_rows and should_upsert_audio:
+        if description_rows:
             try:
                 self.milvus_client.load_collection(DEFAULT_DESCRIPTION_COLLECTION)
             except Exception:
@@ -383,14 +475,12 @@ class EmbedSocketServer:
                 )
 
         self.logger.debug(
-            "Prepared embedding payload for Milvus. Songs=%d, duplicates=%d",
+            "Prepared embedding payload for Milvus. Songs=%d",
             len(songs),
-            len(duplicates),
         )
-        all_duplicates = bool(songs_payload) and len(duplicates) >= len(songs_payload)
         return {
-            "duplicates": duplicates,
-            "allDuplicates": all_duplicates,
+            "duplicates": [],
+            "allDuplicates": False,
         }
 
     def _serialize_song(self, song: SongEmbedding) -> Dict[str, object]:
@@ -440,10 +530,8 @@ class EmbedSocketServer:
                     return
 
                 music_file = payload.get("music_file")
-                settings = UploadSettings.from_payload(payload.get("settings"))
                 cue_file = payload.get("cue_file") or None
                 self.logger.debug("Payload: %s", payload)
-                self.logger.debug("Normalized upload settings: %s", asdict(settings))
                 self.logger.debug(
                     "Received embedding request for %s (cue=%s)", music_file, cue_file
                 )
@@ -536,6 +624,21 @@ def build_embed_router(server: Optional[EmbedSocketServer] = None) -> APIRouter:
         except Exception as exc:  # pragma: no cover - runtime safety
             embed_server.logger.exception(
                 "Embedding failed for %s", request.music_file
+            )
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @router.post("/embed/status", response_model=EmbedStatusResponse)
+    def embed_status(request: EmbedStatusRequest) -> Dict[str, object]:
+        try:
+            return embed_server.check_embedding_status(
+                track_id=request.track_id,
+                artist=request.artist,
+                title=request.title,
+                alternate_names=request.alternate_names,
+            )
+        except Exception as exc:  # pragma: no cover - runtime safety
+            embed_server.logger.exception(
+                "Embedding status check failed for %s", request.title
             )
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 

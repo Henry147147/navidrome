@@ -1,6 +1,6 @@
 # Navidrome Python Backend (Unified)
 
-This directory now runs **one** FastAPI service that handles text embeddings, playlist recommendations, and audio embedding uploads.
+This directory now runs **one** FastAPI service that handles text embeddings, playlist recommendations, and audio embeddings.
 
 ## Endpoints
 - `POST /embed_text` – text → embedding (muq or qwen3)
@@ -8,7 +8,8 @@ This directory now runs **one** FastAPI service that handles text embeddings, pl
 - `GET /health` – unified health report
 - `POST /playlist/{mode}` – recommendation engine
 - `POST /batch/start|/batch/progress|/batch/cancel` – batch re-embedding controls
-- `POST /embed/audio` – audio embedding/upload (replaces the old Unix socket server)
+- `POST /embed/audio` – audio embedding (replaces the old Unix socket server)
+- `POST /embed/status` – embedding presence check for a track (used by scanner)
 
 Default base URL: `http://127.0.0.1:9002` (configurable via `NAVIDROME_SERVICE_PORT`, `NAVIDROME_RECOMMENDER_PORT`, or `TEXT_EMBEDDING_PORT`).
 
@@ -53,4 +54,3 @@ pip install -r requirements.txt
 - Check the log file: `tail -f logs/navidrome_service.log`
 - Ensure the port is free: `netstat -ln | grep 9002`
 - Confirm Python deps: `pip install -r requirements.txt`
-

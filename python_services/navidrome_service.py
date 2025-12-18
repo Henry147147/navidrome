@@ -2,7 +2,7 @@
 Unified Navidrome Python service exposing:
 - Text embedding endpoints
 - Recommendation endpoints
-- Audio embedding/upload endpoint (formerly Unix socket)
+- Audio embedding endpoint (formerly Unix socket)
 
 Run with:
     python3 navidrome_service.py
@@ -60,7 +60,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Navidrome AI Service",
         version="2.0.0",
-        description="Combined service for embeddings, recommendations, and uploads.",
+        description="Combined service for embeddings and recommendations.",
     )
 
     milvus_uri = _resolve_milvus_uri()

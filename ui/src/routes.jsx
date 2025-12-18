@@ -2,7 +2,6 @@ import React from 'react'
 import { Route } from 'react-router-dom'
 import Personal from './personal/Personal'
 import ExploreSuggestions from './explore/ExploreSuggestions'
-import UploadPage from './upload/UploadPage'
 import AutoPlayPage from './autoplay/AutoPlayPage'
 
 const routes = [
@@ -12,7 +11,6 @@ const routes = [
     render={() => <AutoPlayPage />}
     key={'autoplay'}
   />,
-  <Route exact path="/upload" render={() => <UploadPage />} key={'upload'} />,
   <Route
     exact
     path="/explore"
