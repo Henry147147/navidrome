@@ -45,17 +45,35 @@ func (w *embeddingWorker) Enqueue(candidates []embeddingCandidate) {
 
 func (w *embeddingWorker) loop() {
 	ctx := context.Background()
+
+	// Ensure we always reset running state when the loop exits (including panics)
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error(ctx, "Embedding worker panicked", "error", r)
+		}
+		w.mu.Lock()
+		w.running = false
+		w.mu.Unlock()
+		log.Info(ctx, "Embedding worker loop finished")
+	}()
+
+	w.mu.Lock()
+	queueSize := len(w.queue)
+	w.mu.Unlock()
+	log.Info(ctx, "Embedding worker loop started", "queueSize", queueSize)
+
 	for {
 		w.mu.Lock()
 		if len(w.queue) == 0 {
-			w.running = false
 			w.mu.Unlock()
 			return
 		}
 		candidate := w.queue[0]
 		w.queue = w.queue[1:]
+		remaining := len(w.queue)
 		w.mu.Unlock()
 
+		log.Info(ctx, "Processing embedding candidate", "track", candidate.TrackPath, "artist", candidate.Artist, "title", candidate.Title, "remaining", remaining)
 		w.process(ctx, candidate)
 
 		w.mu.Lock()
@@ -68,13 +86,15 @@ func (w *embeddingWorker) process(ctx context.Context, candidate embeddingCandid
 	status, err := w.client.CheckEmbedding(ctx, candidate)
 	if err == nil {
 		if status.Embedded && status.HasDescription {
-			log.Debug(ctx, "Embedding already present, skipping", "track", candidate.TrackPath, "name", status.Name)
+			log.Info(ctx, "Embedding already present, skipping", "track", candidate.TrackPath, "name", status.Name)
 			return
 		}
+		log.Debug(ctx, "Embedding status check returned", "embedded", status.Embedded, "hasDescription", status.HasDescription, "name", status.Name)
 	} else {
 		log.Warn(ctx, "Embedding status check failed; proceeding to embed", "track", candidate.TrackPath, "error", err)
 	}
 
+	log.Info(ctx, "Sending track to embedding service", "track", candidate.TrackPath)
 	if err := w.client.EmbedSong(ctx, candidate); err != nil {
 		log.Error(ctx, "Embedding failed", err, "track", candidate.TrackPath)
 		return

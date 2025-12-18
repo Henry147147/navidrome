@@ -150,3 +150,104 @@ func TestEmbeddingWorkerEnqueueNonBlocking(t *testing.T) {
 		return len(client.embedCalls) == 1
 	})
 }
+
+// panicEmbeddingClient panics on the first embed call, then works normally
+type panicEmbeddingClient struct {
+	mu           sync.Mutex
+	panicOnFirst bool
+	checkCalls   []string
+	embedCalls   []string
+}
+
+func (c *panicEmbeddingClient) CheckEmbedding(_ context.Context, candidate embeddingCandidate) (embeddingStatus, error) {
+	c.mu.Lock()
+	c.checkCalls = append(c.checkCalls, candidate.key())
+	c.mu.Unlock()
+	return embeddingStatus{}, nil
+}
+
+func (c *panicEmbeddingClient) EmbedSong(_ context.Context, candidate embeddingCandidate) error {
+	c.mu.Lock()
+	shouldPanic := c.panicOnFirst
+	c.panicOnFirst = false
+	c.embedCalls = append(c.embedCalls, candidate.key())
+	c.mu.Unlock()
+	if shouldPanic {
+		panic("simulated panic in embedding")
+	}
+	return nil
+}
+
+func TestEmbeddingWorkerRecoverFromPanic(t *testing.T) {
+	client := &panicEmbeddingClient{panicOnFirst: true}
+	first := embeddingCandidate{LibraryID: 1, LibraryPath: "/lib", TrackPath: "panic.flac"}
+	second := embeddingCandidate{LibraryID: 1, LibraryPath: "/lib", TrackPath: "ok.flac"}
+
+	worker := newEmbeddingWorker(client)
+
+	// First enqueue will trigger a panic on the first candidate
+	worker.Enqueue([]embeddingCandidate{first})
+
+	// Wait for the panic to be caught and worker to reset
+	waitForCondition(t, time.Second, func() bool {
+		worker.mu.Lock()
+		defer worker.mu.Unlock()
+		return !worker.running
+	})
+
+	// Verify the worker can process new items after the panic
+	worker.Enqueue([]embeddingCandidate{second})
+
+	waitForCondition(t, time.Second, func() bool {
+		client.mu.Lock()
+		defer client.mu.Unlock()
+		return len(client.embedCalls) == 2
+	})
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	// Both should have been attempted (first one panicked but was still called)
+	if len(client.embedCalls) != 2 {
+		t.Fatalf("expected 2 embed calls after panic recovery, got %d: %v", len(client.embedCalls), client.embedCalls)
+	}
+}
+
+func TestEmbeddingWorkerProcessesItemsEnqueuedWhileRunning(t *testing.T) {
+	client := newStubEmbeddingClient()
+	client.embedBlock = make(chan struct{})
+
+	first := embeddingCandidate{LibraryID: 1, LibraryPath: "/lib", TrackPath: "first.flac"}
+	second := embeddingCandidate{LibraryID: 1, LibraryPath: "/lib", TrackPath: "second.flac"}
+	third := embeddingCandidate{LibraryID: 1, LibraryPath: "/lib", TrackPath: "third.flac"}
+
+	worker := newEmbeddingWorker(client)
+
+	// Enqueue first item - this will start the loop but block on embedBlock
+	worker.Enqueue([]embeddingCandidate{first})
+
+	// Wait for the first item to be picked up (loop is running)
+	waitForCondition(t, time.Second, func() bool {
+		client.mu.Lock()
+		defer client.mu.Unlock()
+		return len(client.checkCalls) == 1
+	})
+
+	// Enqueue more items while the loop is running
+	worker.Enqueue([]embeddingCandidate{second, third})
+
+	// Unblock the embed call
+	close(client.embedBlock)
+
+	// Wait for all items to be processed
+	waitForCondition(t, time.Second, func() bool {
+		client.mu.Lock()
+		defer client.mu.Unlock()
+		return len(client.embedCalls) == 3
+	})
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if !reflect.DeepEqual(client.embedCalls, []string{first.key(), second.key(), third.key()}) {
+		t.Fatalf("expected all 3 candidates to be embedded in order, got %v", client.embedCalls)
+	}
+}

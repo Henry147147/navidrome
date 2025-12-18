@@ -11,7 +11,12 @@ import (
 	"time"
 
 	"github.com/navidrome/navidrome/conf"
+	"github.com/navidrome/navidrome/log"
 )
+
+// statusCheckTimeout is the maximum time to wait for the /embed/status check.
+// This should be short since it's just a database lookup.
+const statusCheckTimeout = 30 * time.Second
 
 type embeddingStatus struct {
 	Embedded       bool   `json:"embedded"`
@@ -64,6 +69,10 @@ func newPythonEmbeddingClient() embeddingClient {
 }
 
 func (c *pythonEmbeddingClient) CheckEmbedding(ctx context.Context, candidate embeddingCandidate) (embeddingStatus, error) {
+	// Use a shorter timeout for status checks - they should be fast database lookups
+	ctx, cancel := context.WithTimeout(ctx, statusCheckTimeout)
+	defer cancel()
+
 	payload := map[string]any{
 		"track_id":        candidate.key(),
 		"artist":          candidate.Artist,
@@ -95,7 +104,11 @@ func (c *pythonEmbeddingClient) postJSON(ctx context.Context, path string, paylo
 	if err != nil {
 		return fmt.Errorf("encode payload: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
+
+	url := c.baseURL + path
+	log.Debug(ctx, "Calling embedding service", "url", url)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
@@ -103,13 +116,17 @@ func (c *pythonEmbeddingClient) postJSON(ctx context.Context, path string, paylo
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		log.Debug(ctx, "Embedding service call failed", "url", url, "error", err)
 		return fmt.Errorf("call %s: %w", path, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= http.StatusMultipleChoices {
+		log.Debug(ctx, "Embedding service returned error status", "url", url, "status", resp.Status)
 		return fmt.Errorf("%s returned %s", path, resp.Status)
 	}
+
+	log.Debug(ctx, "Embedding service call succeeded", "url", url, "status", resp.Status)
 
 	if decodeInto == nil {
 		return nil
