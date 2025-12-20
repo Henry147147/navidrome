@@ -1,10 +1,10 @@
 package scanner
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"net"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -48,6 +48,69 @@ func (r *embedRecorder) counts() (int, int) {
 	return len(r.statusCalls), len(r.embedCalls)
 }
 
+// createMockEmbedSocketServer creates a Unix socket server that records embedding calls.
+func createMockEmbedSocketServer(t *testing.T, recorder *embedRecorder) (string, func()) {
+	socketPath := filepath.Join(t.TempDir(), "embed.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("failed to create socket: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				select {
+				case <-done:
+					return
+				default:
+					continue
+				}
+			}
+			go handleMockConnection(conn, recorder)
+		}
+	}()
+
+	cleanup := func() {
+		close(done)
+		listener.Close()
+	}
+	return socketPath, cleanup
+}
+
+func handleMockConnection(conn net.Conn, recorder *embedRecorder) {
+	defer conn.Close()
+
+	reader := bufio.NewReader(conn)
+	line, err := reader.ReadBytes('\n')
+	if err != nil {
+		return
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(line, &payload); err != nil {
+		return
+	}
+
+	trackID, _ := payload["track_id"].(string)
+	action, _ := payload["action"].(string)
+
+	var response []byte
+	switch action {
+	case "status":
+		recorder.recordStatus(trackID)
+		response = []byte(`{"embedded": false, "hasDescription": false, "name": "stub"}` + "\n")
+	case "embed":
+		recorder.recordEmbed(trackID)
+		response = []byte(`{"status": "ok"}` + "\n")
+	default:
+		response = []byte(`{"status": "error", "message": "unknown action"}` + "\n")
+	}
+
+	conn.Write(response)
+}
+
 // This test exercises the full scan path and asserts that a newly discovered
 // song triggers calls into the Python embedding service (status + embed).
 func TestScanTriggersEmbeddingServiceForMissingTrack(t *testing.T) {
@@ -79,31 +142,29 @@ func TestScanTriggersEmbeddingServiceForMissingTrack(t *testing.T) {
 	}
 
 	recorder := &embedRecorder{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var payload map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&payload)
-		trackID, _ := payload["track_id"].(string)
+	socketPath, cleanup := createMockEmbedSocketServer(t, recorder)
+	defer cleanup()
 
-		switch r.URL.Path {
-		case "/embed/status":
-			recorder.recordStatus(trackID)
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"embedded": false, "hasDescription": false, "name": "stub"}`))
-		case "/embed/audio":
-			recorder.recordEmbed(trackID)
-			w.WriteHeader(http.StatusOK)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer srv.Close()
+	// Override the default socket path for testing
+	origSocketPath := defaultSocketPath
+	// We need to patch the socket path - create a custom client for this test
+	testClient := &socketEmbeddingClient{
+		socketPath:    socketPath,
+		statusTimeout: statusCheckTimeout,
+		embedTimeout:  10 * time.Minute,
+	}
 
-	conf.Server.Recommendations.BaseURL = srv.URL
-	conf.Server.Recommendations.TextBaseURL = srv.URL
-	conf.Server.Recommendations.BatchBaseURL = srv.URL
-
-	s := New(ctx, ds, artwork.NoopCacheWarmer(), events.NoopBroker(),
-		core.NewPlaylists(ds), metrics.NewNoopInstance())
+	// Create scanner with custom embed worker using our test client
+	s := &controller{
+		rootCtx:     ctx,
+		ds:          ds,
+		cw:          artwork.NoopCacheWarmer(),
+		broker:      events.NoopBroker(),
+		pls:         core.NewPlaylists(ds),
+		metrics:     metrics.NewNoopInstance(),
+		embedWorker: newEmbeddingWorker(testClient),
+	}
+	_ = origSocketPath // suppress unused warning
 
 	if _, err := s.ScanAll(ctx, true); err != nil {
 		t.Fatalf("scan failed: %v", err)

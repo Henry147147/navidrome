@@ -2,7 +2,7 @@
 Unified Navidrome Python service exposing:
 - Text embedding endpoints
 - Recommendation endpoints
-- Audio embedding endpoint (formerly Unix socket)
+- Audio embedding via Unix socket (primary) and HTTP (legacy)
 
 Run with:
     python3 navidrome_service.py
@@ -13,6 +13,7 @@ or via uvicorn:
 import argparse
 import logging
 import os
+import threading
 from fastapi import FastAPI
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -91,6 +92,16 @@ def create_app() -> FastAPI:
     app.include_router(build_text_embedding_router(text_service))
     app.include_router(build_recommender_router(recommender_engine))
     app.include_router(build_embed_router(embed_server))
+
+    # Start Unix socket server in background thread for Go client communication
+    logger = logging.getLogger("navidrome.service")
+    socket_thread = threading.Thread(
+        target=embed_server.serve_forever,
+        daemon=True,
+        name="embed-socket-server",
+    )
+    socket_thread.start()
+    logger.info("Started embedding socket server at %s", embed_server.socket_path)
 
     @app.get("/health")
     async def unified_health():

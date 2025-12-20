@@ -578,22 +578,28 @@ class EmbedSocketServer:
                     )
                     return
 
-                music_file = payload.get("music_file")
-                cue_file = payload.get("cue_file") or None
-                self.logger.debug("Payload: %s", payload)
-                self.logger.debug(
-                    "Received embedding request for %s (cue=%s)", music_file, cue_file
-                )
+                # Route based on action field
+                action = payload.get("action", "embed")
+                self.logger.debug("Received %s request via socket", action)
+
                 try:
-                    response_payload = self.process_payload(payload)
+                    if action == "status":
+                        response_payload = self.check_embedding_status(
+                            track_id=payload.get("track_id"),
+                            artist=payload.get("artist"),
+                            title=payload.get("title"),
+                            alternate_names=payload.get("alternate_names"),
+                        )
+                    else:  # action == "embed" (default)
+                        response_payload = self.process_payload(payload)
                 except ValueError as exc:
-                    self.logger.error("Invalid embed payload: %s", exc)
+                    self.logger.error("Invalid payload for %s: %s", action, exc)
                     self._write_response(
                         writer, {"status": "error", "message": str(exc)}
                     )
                     return
                 except Exception as exc:  # pragma: no cover - propagate to client
-                    self.logger.exception("Embedding failed for %s", music_file)
+                    self.logger.exception("Request failed for action=%s", action)
                     if is_oom_error(exc):
                         msg = (
                             "CUDA out of memory while generating embeddings; "
