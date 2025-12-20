@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -69,13 +68,11 @@ func newPythonEmbeddingClient() embeddingClient {
 	if conf.Server.Recommendations.Timeout > 0 && conf.Server.Recommendations.Timeout < statusTimeout {
 		statusTimeout = conf.Server.Recommendations.Timeout
 	}
-	statusTransport := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: statusTimeout}).DialContext,
-		ResponseHeaderTimeout: statusTimeout,
-		IdleConnTimeout:       statusTimeout,
-		DisableKeepAlives:     true,
-	}
+	// Use a simpler Transport based on DefaultTransport to avoid connection issues
+	statusTransport := http.DefaultTransport.(*http.Transport).Clone()
+	statusTransport.DisableKeepAlives = true
+	statusTransport.ResponseHeaderTimeout = statusTimeout
+	statusTransport.IdleConnTimeout = statusTimeout
 	return &pythonEmbeddingClient{
 		baseURL:      base,
 		statusClient: &http.Client{Timeout: statusTimeout, Transport: statusTransport},
@@ -159,7 +156,11 @@ func (c *pythonEmbeddingClient) postJSON(ctx context.Context, client *http.Clien
 	if client == nil {
 		client = http.DefaultClient
 	}
+	fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] About to call client.Do for %s\n", url)
+	os.Stderr.Sync()
 	resp, err := client.Do(req)
+	fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] client.Do returned for %s, err=%v\n", url, err)
+	os.Stderr.Sync()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] POST %s failed: %v\n", url, err)
 		log.Debug(ctx, "Embedding service call failed", "url", url, "error", err)
