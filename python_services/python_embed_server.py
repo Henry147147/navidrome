@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 import tempfile
 
 import numpy as np
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from pymilvus import MilvusClient
 
@@ -639,6 +639,33 @@ def build_embed_router(server: Optional[EmbedSocketServer] = None) -> APIRouter:
         except Exception as exc:  # pragma: no cover - runtime safety
             embed_server.logger.exception(
                 "Embedding status check failed for %s", request.title
+            )
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @router.get("/embed/status", response_model=EmbedStatusResponse)
+    def embed_status_get(
+        track_id: Optional[str] = None,
+        artist: Optional[str] = None,
+        title: Optional[str] = None,
+        album: Optional[str] = None,
+        alternate_names: Optional[str] = Query(
+            default=None,
+            description="Comma-separated alternate names",
+        ),
+    ) -> Dict[str, object]:
+        try:
+            names: List[str] = []
+            if alternate_names:
+                names = [name.strip() for name in alternate_names.split(",") if name.strip()]
+            return embed_server.check_embedding_status(
+                track_id=track_id,
+                artist=artist,
+                title=title,
+                alternate_names=names,
+            )
+        except Exception as exc:  # pragma: no cover - runtime safety
+            embed_server.logger.exception(
+                "Embedding status check failed for %s", title
             )
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -43,8 +45,7 @@ func newPythonEmbeddingClient() embeddingClient {
 			"http://127.0.0.1:9002",
 		}
 		for _, val := range candidates {
-			base := strings.TrimSuffix(strings.TrimSpace(val), "/")
-			if base != "" {
+			if base := normalizeBaseURL(val); base != "" {
 				return base
 			}
 		}
@@ -66,6 +67,26 @@ func newPythonEmbeddingClient() embeddingClient {
 		baseURL:    base,
 		httpClient: &http.Client{Timeout: timeout},
 	}
+}
+
+// normalizeBaseURL trims whitespace, removes a trailing slash, ensures a scheme is present,
+// and validates the URL. Returns an empty string when the value is unusable so callers can
+// fall back to the next candidate.
+func normalizeBaseURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	raw = strings.TrimSuffix(raw, "/")
+	if raw == "" {
+		return ""
+	}
+	// Assume http if the caller omitted a scheme (common in config/env)
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.String()
 }
 
 func (c *pythonEmbeddingClient) CheckEmbedding(ctx context.Context, candidate embeddingCandidate) (embeddingStatus, error) {
@@ -107,6 +128,7 @@ func (c *pythonEmbeddingClient) postJSON(ctx context.Context, path string, paylo
 
 	url := c.baseURL + path
 	log.Debug(ctx, "Calling embedding service", "url", url)
+	fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] POST %s payloadBytes=%d\n", url, len(body))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -116,10 +138,13 @@ func (c *pythonEmbeddingClient) postJSON(ctx context.Context, path string, paylo
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] POST %s failed: %v\n", url, err)
 		log.Debug(ctx, "Embedding service call failed", "url", url, "error", err)
 		return fmt.Errorf("call %s: %w", path, err)
 	}
 	defer resp.Body.Close()
+
+	fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] POST %s status=%s\n", url, resp.Status)
 
 	if resp.StatusCode >= http.StatusMultipleChoices {
 		log.Debug(ctx, "Embedding service returned error status", "url", url, "status", resp.Status)
