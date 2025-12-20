@@ -2,6 +2,7 @@
 Hosts the server that will create the embedding from the music file and push it to milvus client
 """
 
+import argparse
 import base64
 import json
 import logging
@@ -34,6 +35,15 @@ SOCKET_PATH = "/tmp/navidrome_embed.sock"
 
 
 logger = logging.getLogger("navidrome.embed_server")
+
+
+def _configure_logging(verbose: bool) -> str:
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    return "debug" if verbose else "info"
 
 
 class EmbedAudioRequest(BaseModel):
@@ -615,6 +625,13 @@ def build_embed_router(server: Optional[EmbedSocketServer] = None) -> APIRouter:
     @router.post("/embed/audio", response_model=EmbedAudioResponse)
     def embed_audio(request: EmbedAudioRequest) -> Dict[str, object]:
         try:
+            embed_server.logger.debug(
+                "HTTP embed audio request name=%s file=%s artist=%s title=%s",
+                request.name,
+                request.music_file,
+                request.artist,
+                request.title,
+            )
             payload = request.model_dump(by_alias=True, exclude_none=True)
             return embed_server.process_payload(payload)
         except ValueError as exc:
@@ -630,6 +647,12 @@ def build_embed_router(server: Optional[EmbedSocketServer] = None) -> APIRouter:
     @router.post("/embed/status", response_model=EmbedStatusResponse)
     def embed_status(request: EmbedStatusRequest) -> Dict[str, object]:
         try:
+            embed_server.logger.debug(
+                "HTTP embed status request track_id=%s artist=%s title=%s",
+                request.track_id,
+                request.artist,
+                request.title,
+            )
             return embed_server.check_embedding_status(
                 track_id=request.track_id,
                 artist=request.artist,
@@ -654,6 +677,12 @@ def build_embed_router(server: Optional[EmbedSocketServer] = None) -> APIRouter:
         ),
     ) -> Dict[str, object]:
         try:
+            embed_server.logger.debug(
+                "HTTP embed status GET track_id=%s artist=%s title=%s",
+                track_id,
+                artist,
+                title,
+            )
             names: List[str] = []
             if alternate_names:
                 names = [name.strip() for name in alternate_names.split(",") if name.strip()]
@@ -681,14 +710,22 @@ def build_embed_router(server: Optional[EmbedSocketServer] = None) -> APIRouter:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
+    parser = argparse.ArgumentParser(description="Navidrome Embedding Service")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable debug logging",
+    )
+    args, _unknown = parser.parse_known_args()
+    uvicorn_log_level = _configure_logging(args.verbose)
     app = FastAPI(title="Navidrome Embedding Service", version="2.0.0")
     app.include_router(build_embed_router())
 
     import uvicorn
 
     port = int(os.getenv("NAVIDROME_EMBED_PORT", "9004"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level=uvicorn_log_level)
 
 
 if __name__ == "__main__":

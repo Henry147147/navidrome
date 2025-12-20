@@ -27,6 +27,15 @@ from stub_text_embedders import (  # noqa: E402
 logger = logging.getLogger(__name__)
 
 
+def _configure_logging(verbose: bool) -> str:
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    return "debug" if verbose else "info"
+
+
 class TextEmbeddingRequest(BaseModel):
     """Request to embed text into audio space"""
 
@@ -289,17 +298,22 @@ app.include_router(build_text_embedding_router(text_service))
 
 # Development/testing entry point
 if __name__ == "__main__":
+    import argparse
     import uvicorn
 
     port = int(os.getenv("TEXT_EMBEDDING_PORT", "9003"))
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    parser = argparse.ArgumentParser(description="Navidrome Text Embedding Service")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable debug logging",
     )
+    args, _unknown = parser.parse_known_args()
+    uvicorn_log_level = _configure_logging(args.verbose)
 
     logger.info(f"Starting Text Embedding Service on port {port}")
     logger.info(f"Checkpoint directory: {checkpoint_dir}")
     logger.info(f"Using stubs: {use_stubs}")
 
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level=uvicorn_log_level)

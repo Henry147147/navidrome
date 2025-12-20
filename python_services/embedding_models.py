@@ -713,7 +713,21 @@ class MertModel(BaseEmbeddingModel):
 
     def _load_model(self) -> torch.nn.Module:
         """Load MERT model and processor."""
-        model = AutoModel.from_pretrained(self.model_id, trust_remote_code=True)
+        try:
+            model = AutoModel.from_pretrained(
+                self.model_id,
+                trust_remote_code=True,
+                use_safetensors=True,
+            )
+        except OSError as exc:
+            # Some checkpoints only provide PyTorch weights; fall back when safetensors are missing.
+            if "safetensors" not in str(exc).lower():
+                raise
+            model = AutoModel.from_pretrained(
+                self.model_id,
+                trust_remote_code=True,
+                use_safetensors=False,
+            )
         processor = Wav2Vec2FeatureExtractor.from_pretrained(
             self.model_id, trust_remote_code=True
         )

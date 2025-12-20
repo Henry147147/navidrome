@@ -21,6 +21,12 @@ Default base URL: `http://127.0.0.1:9002` (configurable via `NAVIDROME_SERVICE_P
 
 Logs: `logs/navidrome_service.log`
 
+Verbose logs:
+
+```bash
+python3 navidrome_service.py -v
+```
+
 Check status:
 
 ```bash

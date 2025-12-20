@@ -38,6 +38,15 @@ def _service_port() -> int:
     return 9002
 
 
+def _configure_logging(verbose: bool) -> str:
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    return "debug" if verbose else "info"
+
+
 def _resolve_milvus_uri() -> str:
     """
     Prefer a local Milvus Lite database file when NAVIDROME_MILVUS_DB_PATH is set.
@@ -108,7 +117,15 @@ if __name__ == "__main__":
             "copied Milvus database instead of a remote server."
         ),
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable debug logging",
+    )
     args, _unknown = parser.parse_known_args()
+
+    uvicorn_log_level = _configure_logging(args.verbose)
 
     if args.milvus_db_path:
         os.environ["NAVIDROME_MILVUS_DB_PATH"] = args.milvus_db_path
@@ -118,11 +135,10 @@ if __name__ == "__main__":
     # Recreate app to pick up CLI-provided environment overrides
     app = create_app()
 
-    logging.basicConfig(level=logging.INFO)
     import uvicorn
 
     port = _service_port()
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level=uvicorn_log_level)
 
 else:
     # When imported by uvicorn (`uvicorn navidrome_service:app`), build the app

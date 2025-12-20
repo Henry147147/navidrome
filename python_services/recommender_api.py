@@ -34,6 +34,15 @@ class BatchEmbeddingRequest(BaseModel):
 LOGGER = logging.getLogger("navidrome.recommender")
 
 
+def _configure_logging(verbose: bool) -> str:
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    return "debug" if verbose else "info"
+
+
 def _repo_root() -> Path:
     """Return repository root (one level above python_services)."""
     return Path(__file__).resolve().parents[1]
@@ -672,9 +681,21 @@ __all__ = ["app", "create_app", "RecommendationEngine"]
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Navidrome Recommender Service")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable debug logging",
+    )
+    args, _unknown = parser.parse_known_args()
+    uvicorn_log_level = _configure_logging(args.verbose)
+
     port_env = os.getenv("NAVIDROME_RECOMMENDER_PORT", "9002")
     try:
         port = int(port_env)
     except ValueError:
         port = 9002
-    uvicorn.run(app, host="127.0.0.1", port=port)
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level=uvicorn_log_level)
