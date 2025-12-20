@@ -109,6 +109,39 @@ func TestEmbeddingWorkerDedupeAndSequentialOrder(t *testing.T) {
 	}
 }
 
+func TestEmbeddingWorkerEmbedsAllPendingBatch(t *testing.T) {
+	client := newStubEmbeddingClient()
+	candidates := []embeddingCandidate{
+		{LibraryID: 1, LibraryPath: "/lib", TrackPath: "a.flac"},
+		{LibraryID: 1, LibraryPath: "/lib", TrackPath: "b.flac"},
+		{LibraryID: 1, LibraryPath: "/lib", TrackPath: "c.flac"},
+		{LibraryID: 1, LibraryPath: "/lib", TrackPath: "d.flac"},
+	}
+
+	for _, candidate := range candidates {
+		client.statuses[candidate.key()] = embeddingStatus{Embedded: false, HasDescription: false}
+	}
+
+	worker := newEmbeddingWorker(client)
+	worker.Enqueue(candidates)
+
+	waitForCondition(t, time.Second, func() bool {
+		client.mu.Lock()
+		defer client.mu.Unlock()
+		return len(client.embedCalls) == len(candidates)
+	})
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	expected := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		expected = append(expected, candidate.key())
+	}
+	if !reflect.DeepEqual(client.embedCalls, expected) {
+		t.Fatalf("expected all candidates to be embedded, got %v", client.embedCalls)
+	}
+}
+
 func TestEmbeddingWorkerContinuesAfterErrors(t *testing.T) {
 	client := newStubEmbeddingClient()
 	first := embeddingCandidate{LibraryID: 1, LibraryPath: "/lib", TrackPath: "err.flac"}
@@ -187,13 +220,6 @@ func TestEmbeddingWorkerRecoverFromPanic(t *testing.T) {
 
 	// First enqueue will trigger a panic on the first candidate
 	worker.Enqueue([]embeddingCandidate{first})
-
-	// Wait for the panic to be caught and worker to reset
-	waitForCondition(t, time.Second, func() bool {
-		worker.mu.Lock()
-		defer worker.mu.Unlock()
-		return !worker.running
-	})
 
 	// Verify the worker can process new items after the panic
 	worker.Enqueue([]embeddingCandidate{second})

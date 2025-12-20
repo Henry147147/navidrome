@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -32,8 +33,9 @@ type embeddingClient interface {
 }
 
 type pythonEmbeddingClient struct {
-	baseURL    string
-	httpClient *http.Client
+	baseURL      string
+	statusClient *http.Client
+	embedClient  *http.Client
 }
 
 func newPythonEmbeddingClient() embeddingClient {
@@ -63,9 +65,21 @@ func newPythonEmbeddingClient() embeddingClient {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
+	statusTimeout := statusCheckTimeout
+	if conf.Server.Recommendations.Timeout > 0 && conf.Server.Recommendations.Timeout < statusTimeout {
+		statusTimeout = conf.Server.Recommendations.Timeout
+	}
+	statusTransport := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: statusTimeout}).DialContext,
+		ResponseHeaderTimeout: statusTimeout,
+		IdleConnTimeout:       statusTimeout,
+		DisableKeepAlives:     true,
+	}
 	return &pythonEmbeddingClient{
-		baseURL:    base,
-		httpClient: &http.Client{Timeout: timeout},
+		baseURL:      base,
+		statusClient: &http.Client{Timeout: statusTimeout, Transport: statusTransport},
+		embedClient:  &http.Client{Timeout: timeout},
 	}
 }
 
@@ -93,6 +107,7 @@ func (c *pythonEmbeddingClient) CheckEmbedding(ctx context.Context, candidate em
 	// Use a shorter timeout for status checks - they should be fast database lookups
 	ctx, cancel := context.WithTimeout(ctx, statusCheckTimeout)
 	defer cancel()
+	start := time.Now()
 
 	payload := map[string]any{
 		"track_id":        candidate.key(),
@@ -102,9 +117,11 @@ func (c *pythonEmbeddingClient) CheckEmbedding(ctx context.Context, candidate em
 		"alternate_names": []string{filepath.Base(candidate.TrackPath)},
 	}
 	var resp embeddingStatus
-	if err := c.postJSON(ctx, "/embed/status", payload, &resp); err != nil {
+	if err := c.postJSON(ctx, c.statusClient, "/embed/status", payload, &resp, true); err != nil {
+		fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] CheckEmbedding error after %s: %v\n", time.Since(start), err)
 		return embeddingStatus{}, err
 	}
+	fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] CheckEmbedding finished in %s\n", time.Since(start))
 	return resp, nil
 }
 
@@ -117,10 +134,10 @@ func (c *pythonEmbeddingClient) EmbedSong(ctx context.Context, candidate embeddi
 		"album":      candidate.Album,
 		"track_id":   candidate.key(),
 	}
-	return c.postJSON(ctx, "/embed/audio", payload, nil)
+	return c.postJSON(ctx, c.embedClient, "/embed/audio", payload, nil, false)
 }
 
-func (c *pythonEmbeddingClient) postJSON(ctx context.Context, path string, payload any, decodeInto any) error {
+func (c *pythonEmbeddingClient) postJSON(ctx context.Context, client *http.Client, path string, payload any, decodeInto any, closeConn bool) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("encode payload: %w", err)
@@ -135,8 +152,14 @@ func (c *pythonEmbeddingClient) postJSON(ctx context.Context, path string, paylo
 		return fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if closeConn {
+		req.Close = true
+	}
 
-	resp, err := c.httpClient.Do(req)
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] POST %s failed: %v\n", url, err)
 		log.Debug(ctx, "Embedding service call failed", "url", url, "error", err)
@@ -156,8 +179,11 @@ func (c *pythonEmbeddingClient) postJSON(ctx context.Context, path string, paylo
 	if decodeInto == nil {
 		return nil
 	}
+	fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] Decoding response from %s\n", url)
 	if err := json.NewDecoder(resp.Body).Decode(decodeInto); err != nil {
+		fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] Decode failed for %s: %v\n", url, err)
 		return fmt.Errorf("decode response: %w", err)
 	}
+	fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] Decoded response from %s\n", url)
 	return nil
 }

@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import socket
+import time
 from dataclasses import asdict
 from hashlib import sha224
 from pathlib import Path
@@ -35,6 +36,16 @@ SOCKET_PATH = "/tmp/navidrome_embed.sock"
 
 
 logger = logging.getLogger("navidrome.embed_server")
+
+
+def _status_timeout_seconds() -> float:
+    raw = os.getenv("NAVIDROME_EMBED_STATUS_TIMEOUT", "")
+    if not raw:
+        return 5.0
+    try:
+        return max(0.5, float(raw))
+    except ValueError:
+        return 5.0
 
 
 def _configure_logging(verbose: bool) -> str:
@@ -122,6 +133,7 @@ class EmbedSocketServer:
             self.milvus_client,
             logger=self.logger,
         )
+        self.status_timeout = _status_timeout_seconds()
         self.logger.debug(
             "EmbedSocketServer initialized for %s",
             self.socket_path,
@@ -144,9 +156,16 @@ class EmbedSocketServer:
         normalized = sorted({(name or "").strip() for name in names if name})
         if not normalized:
             return False
+        start = time.monotonic()
+        self.logger.debug(
+            "Status check: loading collection=%s names=%d timeout=%.1fs",
+            collection,
+            len(normalized),
+            self.status_timeout,
+        )
 
         try:
-            self.milvus_client.load_collection(collection)
+            self.milvus_client.load_collection(collection, timeout=self.status_timeout)
         except Exception:
             self.logger.exception("Failed to load collection %s", collection)
             return False
@@ -158,6 +177,7 @@ class EmbedSocketServer:
                     collection_name=collection,
                     filter=filter_expr,
                     output_fields=["name"],
+                    timeout=self.status_timeout,
                 )
             else:
                 rows = self.milvus_client.query(
@@ -165,10 +185,18 @@ class EmbedSocketServer:
                     filter="name in {names}",
                     filter_params={"names": normalized},
                     output_fields=["name"],
+                    timeout=self.status_timeout,
                 )
         except Exception:
             self.logger.exception("Milvus query failed for %s", collection)
             return False
+        finally:
+            elapsed = time.monotonic() - start
+            self.logger.debug(
+                "Status check: collection=%s elapsed=%.3fs",
+                collection,
+                elapsed,
+            )
 
         return bool(rows)
 
@@ -197,9 +225,20 @@ class EmbedSocketServer:
                 "name": canonical_name,
             }
 
+        self.logger.debug(
+            "Checking embedding status track_id=%s names=%d",
+            track_id,
+            len(name_list),
+        )
         embedded = self._milvus_name_exists("embedding", name_list)
         has_description = self._milvus_name_exists(
             DEFAULT_DESCRIPTION_COLLECTION, name_list
+        )
+        self.logger.debug(
+            "Status result track_id=%s embedded=%s hasDescription=%s",
+            track_id,
+            embedded,
+            has_description,
         )
         return {
             "embedded": embedded,

@@ -48,35 +48,11 @@ func (w *embeddingWorker) Enqueue(candidates []embeddingCandidate) {
 func (w *embeddingWorker) loop() {
 	ctx := context.Background()
 
-	// Ensure we always reset running state when the loop exits (including panics)
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error(ctx, "Embedding worker panicked", "error", r)
-		}
-		w.mu.Lock()
-		w.running = false
-		w.mu.Unlock()
-		log.Info(ctx, "Embedding worker loop finished")
-	}()
-
-	w.mu.Lock()
-	queueSize := len(w.queue)
-	w.mu.Unlock()
-	fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] Worker loop started, queue size=%d\n", queueSize)
-	log.Info(ctx, "Embedding worker loop started", "queueSize", queueSize)
-
 	iteration := 0
 	for {
-		iteration++
-		// Write directly to stderr in case logging is misconfigured
-		fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] Loop iteration %d starting\n", iteration)
-		log.Info(ctx, "Embedding worker loop iteration", "iteration", iteration)
-
 		w.mu.Lock()
-		currentLen := len(w.queue)
-		fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] Acquired lock, queue len=%d\n", currentLen)
-		log.Info(ctx, "Embedding worker acquired lock", "queueLen", currentLen)
-		if currentLen == 0 {
+		if len(w.queue) == 0 {
+			w.running = false
 			w.mu.Unlock()
 			log.Info(ctx, "Embedding worker queue empty, exiting")
 			return
@@ -86,13 +62,33 @@ func (w *embeddingWorker) loop() {
 		remaining := len(w.queue)
 		w.mu.Unlock()
 
+		if iteration == 0 {
+			fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] Worker loop started, queue size=%d\n", remaining+1)
+			log.Info(ctx, "Embedding worker loop started", "queueSize", remaining+1)
+		}
+		iteration++
+		// Write directly to stderr in case logging is misconfigured
+		fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] Loop iteration %d starting\n", iteration)
+		log.Info(ctx, "Embedding worker loop iteration", "iteration", iteration)
+		fmt.Fprintf(os.Stderr, "[EMBED-DEBUG] Dequeued candidate, remaining=%d\n", remaining)
+		log.Info(ctx, "Embedding worker dequeued candidate", "remaining", remaining)
+
 		log.Info(ctx, "Processing embedding candidate", "track", candidate.TrackPath, "artist", candidate.Artist, "title", candidate.Title, "remaining", remaining)
-		w.process(ctx, candidate)
+		w.processWithRecovery(ctx, candidate)
 
 		w.mu.Lock()
 		delete(w.active, candidate.key())
 		w.mu.Unlock()
 	}
+}
+
+func (w *embeddingWorker) processWithRecovery(ctx context.Context, candidate embeddingCandidate) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error(ctx, "Embedding worker panicked while processing candidate", "track", candidate.TrackPath, "error", r)
+		}
+	}()
+	w.process(ctx, candidate)
 }
 
 func (w *embeddingWorker) process(ctx context.Context, candidate embeddingCandidate) {
