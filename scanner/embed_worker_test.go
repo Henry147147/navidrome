@@ -67,12 +67,19 @@ func waitForCondition(t *testing.T, timeout time.Duration, cond func() bool) {
 	t.Fatalf("condition not met within %s", timeout)
 }
 
+func newTestEmbeddingWorker(t *testing.T, client embeddingClient) *embeddingWorker {
+	t.Helper()
+	worker := newEmbeddingWorker(client)
+	t.Cleanup(worker.Close)
+	return worker
+}
+
 func TestEmbeddingWorkerSkipsAlreadyEmbedded(t *testing.T) {
 	client := newStubEmbeddingClient()
 	candidate := embeddingCandidate{LibraryID: 1, LibraryPath: "/music", TrackPath: "song.flac"}
 	client.statuses[candidate.key()] = embeddingStatus{Embedded: true, HasDescription: true}
 
-	worker := newEmbeddingWorker(client)
+	worker := newTestEmbeddingWorker(t, client)
 	worker.Enqueue([]embeddingCandidate{candidate})
 
 	waitForCondition(t, time.Second, func() bool {
@@ -93,7 +100,7 @@ func TestEmbeddingWorkerDedupeAndSequentialOrder(t *testing.T) {
 	first := embeddingCandidate{LibraryID: 1, LibraryPath: "/lib", TrackPath: "a.flac"}
 	second := embeddingCandidate{LibraryID: 1, LibraryPath: "/lib", TrackPath: "b.flac"}
 
-	worker := newEmbeddingWorker(client)
+	worker := newTestEmbeddingWorker(t, client)
 	worker.Enqueue([]embeddingCandidate{first, second, first})
 
 	waitForCondition(t, time.Second, func() bool {
@@ -122,7 +129,7 @@ func TestEmbeddingWorkerEmbedsAllPendingBatch(t *testing.T) {
 		client.statuses[candidate.key()] = embeddingStatus{Embedded: false, HasDescription: false}
 	}
 
-	worker := newEmbeddingWorker(client)
+	worker := newTestEmbeddingWorker(t, client)
 	worker.Enqueue(candidates)
 
 	waitForCondition(t, time.Second, func() bool {
@@ -148,7 +155,7 @@ func TestEmbeddingWorkerContinuesAfterErrors(t *testing.T) {
 	second := embeddingCandidate{LibraryID: 1, LibraryPath: "/lib", TrackPath: "ok.flac"}
 	client.checkErr[first.key()] = errors.New("check failed")
 
-	worker := newEmbeddingWorker(client)
+	worker := newTestEmbeddingWorker(t, client)
 	worker.Enqueue([]embeddingCandidate{first, second})
 
 	waitForCondition(t, time.Second, func() bool {
@@ -168,7 +175,7 @@ func TestEmbeddingWorkerEnqueueNonBlocking(t *testing.T) {
 	client := newStubEmbeddingClient()
 	client.embedBlock = make(chan struct{})
 	candidate := embeddingCandidate{LibraryID: 2, LibraryPath: "/music", TrackPath: "slow.flac"}
-	worker := newEmbeddingWorker(client)
+	worker := newTestEmbeddingWorker(t, client)
 
 	start := time.Now()
 	worker.Enqueue([]embeddingCandidate{candidate})
@@ -216,7 +223,7 @@ func TestEmbeddingWorkerRecoverFromPanic(t *testing.T) {
 	first := embeddingCandidate{LibraryID: 1, LibraryPath: "/lib", TrackPath: "panic.flac"}
 	second := embeddingCandidate{LibraryID: 1, LibraryPath: "/lib", TrackPath: "ok.flac"}
 
-	worker := newEmbeddingWorker(client)
+	worker := newTestEmbeddingWorker(t, client)
 
 	// First enqueue will trigger a panic on the first candidate
 	worker.Enqueue([]embeddingCandidate{first})
@@ -246,7 +253,7 @@ func TestEmbeddingWorkerProcessesItemsEnqueuedWhileRunning(t *testing.T) {
 	second := embeddingCandidate{LibraryID: 1, LibraryPath: "/lib", TrackPath: "second.flac"}
 	third := embeddingCandidate{LibraryID: 1, LibraryPath: "/lib", TrackPath: "third.flac"}
 
-	worker := newEmbeddingWorker(client)
+	worker := newTestEmbeddingWorker(t, client)
 
 	// Enqueue first item - this will start the loop but block on embedBlock
 	worker.Enqueue([]embeddingCandidate{first})

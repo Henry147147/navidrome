@@ -8,7 +8,7 @@ import (
 
 func TestScheduleEmbeddingsInvokesPythonClient(t *testing.T) {
 	client := newStubEmbeddingClient()
-	worker := newEmbeddingWorker(client)
+	worker := newTestEmbeddingWorker(t, client)
 	s := &scannerImpl{embedWorker: worker}
 
 	state := &scanState{}

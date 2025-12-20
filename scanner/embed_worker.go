@@ -15,6 +15,8 @@ type embeddingWorker struct {
 	queue   []embeddingCandidate
 	mu      sync.Mutex
 	running bool
+	closed  bool
+	wg      sync.WaitGroup
 }
 
 func newEmbeddingWorker(client embeddingClient) *embeddingWorker {
@@ -25,8 +27,22 @@ func newEmbeddingWorker(client embeddingClient) *embeddingWorker {
 	}
 }
 
+// Close stops the worker and waits for any in-flight processing to finish.
+func (w *embeddingWorker) Close() {
+	w.mu.Lock()
+	w.closed = true
+	w.queue = nil
+	w.active = make(map[string]struct{})
+	w.mu.Unlock()
+	w.wg.Wait()
+}
+
 func (w *embeddingWorker) Enqueue(candidates []embeddingCandidate) {
 	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return
+	}
 	for _, c := range candidates {
 		key := c.key()
 		if _, exists := w.active[key]; exists {
@@ -42,7 +58,11 @@ func (w *embeddingWorker) Enqueue(candidates []embeddingCandidate) {
 	w.running = true
 	w.mu.Unlock()
 
-	go w.loop()
+	w.wg.Add(1)
+	go func() {
+		defer w.wg.Done()
+		w.loop()
+	}()
 }
 
 func (w *embeddingWorker) loop() {
@@ -51,7 +71,7 @@ func (w *embeddingWorker) loop() {
 	iteration := 0
 	for {
 		w.mu.Lock()
-		if len(w.queue) == 0 {
+		if w.closed || len(w.queue) == 0 {
 			w.running = false
 			w.mu.Unlock()
 			log.Info(ctx, "Embedding worker queue empty, exiting")
