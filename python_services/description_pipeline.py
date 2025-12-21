@@ -102,7 +102,9 @@ class MusicFlamingoCaptioner:
             try:
                 self.model = self.model.to(self.device, dtype=self.dtype)
             except Exception:
-                self.logger.exception("Failed to move Music Flamingo back to GPU; rebuilding")
+                self.logger.exception(
+                    "Failed to move Music Flamingo back to GPU; rebuilding"
+                )
                 self.model = self._build_model()
         self.model.eval()
 
@@ -237,7 +239,9 @@ class Qwen3Embedder:
             try:
                 self.model = self.model.to(self.device)
             except Exception:
-                self.logger.exception("Failed to move Qwen3 embedder back to GPU; rebuilding")
+                self.logger.exception(
+                    "Failed to move Qwen3 embedder back to GPU; rebuilding"
+                )
                 self.model = self._build_model()
         self.model.eval()
 
@@ -285,7 +289,9 @@ class Qwen3Embedder:
 
         with torch.inference_mode():
             outputs = self.model(**inputs)
-            pooled = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
+            pooled = self._last_token_pool(
+                outputs.last_hidden_state, inputs["attention_mask"]
+            )
 
         # Normalize as cosine embedding and move to CPU for downstream storage
         normalized = F.normalize(pooled, p=2, dim=-1)
@@ -294,7 +300,9 @@ class Qwen3Embedder:
         return normalized.to("cpu")
 
     @staticmethod
-    def _last_token_pool(last_hidden_state: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+    def _last_token_pool(
+        last_hidden_state: torch.Tensor, attention_mask: torch.Tensor
+    ) -> torch.Tensor:
         """
         Pool by taking the hidden state of the last non-padding token.
         Mirrors the official Qwen3 embedding docs (handles left padding).
@@ -303,7 +311,9 @@ class Qwen3Embedder:
         if left_padding:
             return last_hidden_state[:, -1]
         seq_lengths = attention_mask.sum(dim=1) - 1  # last valid token index
-        batch_indices = torch.arange(last_hidden_state.size(0), device=last_hidden_state.device)
+        batch_indices = torch.arange(
+            last_hidden_state.size(0), device=last_hidden_state.device
+        )
         return last_hidden_state[batch_indices, seq_lengths]
 
 
@@ -446,7 +456,9 @@ class DescriptionEmbeddingPipeline:
             duration_seconds=None,
         )
 
-    def _persist_description(self, music_name: str, description: str, music_file: str) -> None:
+    def _persist_description(
+        self, music_name: str, description: str, music_file: str
+    ) -> None:
         """Append/replace description in song_descriptions.json."""
         try:
             existing: List[dict] = []

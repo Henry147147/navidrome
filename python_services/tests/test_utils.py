@@ -3,8 +3,6 @@ Test utilities and helper functions for embedding_models tests.
 """
 
 from typing import Sequence, Union
-from unittest.mock import Mock, MagicMock
-
 import numpy as np
 import torch
 
@@ -144,79 +142,6 @@ def assert_l2_normalized(
     ), f"Vector not L2 normalized: norm = {norm:.6f}, expected 1.0 ± {tolerance}"
 
 
-def create_mock_model_outputs(
-    num_layers: int = 25,
-    batch_size: int = 1,
-    time_steps: int = 100,
-    hidden_dim: int = 1024,
-) -> MagicMock:
-    """
-    Create mock transformer model outputs with hidden states.
-
-    Args:
-        num_layers: Number of hidden state layers
-        batch_size: Batch size
-        time_steps: Number of time steps
-        hidden_dim: Hidden state dimensionality
-
-    Returns:
-        Mock object with hidden_states attribute
-    """
-    outputs = MagicMock()
-    hidden_states = [
-        torch.randn(batch_size, time_steps, hidden_dim) for _ in range(num_layers)
-    ]
-    outputs.hidden_states = hidden_states
-    return outputs
-
-
-class MockProcessor:
-    """
-    Mock Wav2Vec2FeatureExtractor for testing.
-    Simulates preprocessing audio for MERT model.
-    """
-
-    def __init__(self, sampling_rate: int = 24000):
-        self.sampling_rate = sampling_rate
-
-    def __call__(
-        self,
-        audio: Union[np.ndarray, list],
-        sampling_rate: int = None,
-        return_tensors: str = None,
-    ) -> dict:
-        """
-        Mock audio preprocessing.
-
-        Args:
-            audio: Input audio array
-            sampling_rate: Sample rate (must match processor's)
-            return_tensors: "pt" for PyTorch tensors
-
-        Returns:
-            Dict with 'input_values' key containing preprocessed audio
-        """
-        if sampling_rate is not None and sampling_rate != self.sampling_rate:
-            raise ValueError(
-                f"Expected sample rate {self.sampling_rate}, got {sampling_rate}"
-            )
-
-        # Convert to numpy if needed
-        if isinstance(audio, list):
-            audio = np.array(audio, dtype=np.float32)
-
-        # Create mock input_values tensor
-        batch_size = 1
-        seq_length = len(audio) if isinstance(audio, np.ndarray) else 1000
-
-        if return_tensors == "pt":
-            input_values = torch.from_numpy(audio).unsqueeze(0)  # Add batch dimension
-        else:
-            input_values = audio
-
-        return {"input_values": input_values}
-
-
 class MockMuQModel:
     """
     Mock MuQ MuLan model for testing.
@@ -262,32 +187,6 @@ class MockMuQModel:
             return torch.randn(batch_size, self.embedding_dim)
         else:
             return torch.randn(1, self.embedding_dim)
-
-
-class MockLatentModel:
-    """
-    Mock Music2Latent EncoderDecoder for testing.
-    Simulates encoding audio to latent space.
-    """
-
-    def __init__(self, latent_dim: int = 64, time_steps: int = 100):
-        self.latent_dim = latent_dim
-        self.time_steps = time_steps
-
-    def encode(self, audio_path: str, max_waveform_length: int = None) -> torch.Tensor:
-        """
-        Mock encoding to complex latent space.
-
-        Args:
-            audio_path: Path to audio file (not used in mock)
-            max_waveform_length: Maximum waveform length (not used in mock)
-
-        Returns:
-            Complex latent tensor of shape [2, latent_dim, time_steps]
-            where dim 0 contains [real, imaginary] components
-        """
-        # Return complex latent: [2, 64, T]
-        return torch.randn(2, self.latent_dim, self.time_steps)
 
 
 def assert_tensors_close(

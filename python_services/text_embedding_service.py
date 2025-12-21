@@ -125,9 +125,7 @@ class TextEmbeddingService:
                             )
                         self.embedders[model_name] = self.description_pipeline
                     except Exception as exc:
-                        logger.warning(
-                            "Falling back to stub qwen3 embedder: %s", exc
-                        )
+                        logger.warning("Falling back to stub qwen3 embedder: %s", exc)
                         self.embedders[model_name] = get_stub_embedder("qwen3")
             else:
                 logger.info(f"Using stub embedder for {model_name}")

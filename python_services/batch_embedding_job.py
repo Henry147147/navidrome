@@ -388,7 +388,9 @@ class BatchEmbeddingJob:
 
                                 operations_completed += 1
                                 tracks_processed_this_model += 1
-                                self.progress.processed_operations = operations_completed
+                                self.progress.processed_operations = (
+                                    operations_completed
+                                )
                             except Exception as e:
                                 if is_oom_error(e):
                                     message = (
@@ -420,7 +422,10 @@ class BatchEmbeddingJob:
                                 self.progress.last_error = str(e)
 
                             # Update estimated completion every 10 operations
-                            if operations_completed > 0 and operations_completed % 10 == 0:
+                            if (
+                                operations_completed > 0
+                                and operations_completed % 10 == 0
+                            ):
                                 elapsed = time.time() - self.progress.started_at
                                 rate = elapsed / operations_completed
                                 remaining = total_operations - operations_completed
@@ -661,7 +666,9 @@ class BatchEmbeddingJob:
                 self.logger.warning(
                     "Caption failed for %s, using fallback: %s", canonical_name, e
                 )
-                description = f"Audio track titled '{canonical_name}' with mixed instrumentation."
+                description = (
+                    f"Audio track titled '{canonical_name}' with mixed instrumentation."
+                )
             caption_results.append((canonical_name, description))
 
         # Free Flamingo before embedding
@@ -737,7 +744,9 @@ class BatchEmbeddingJob:
                         existing.add(str(row["name"]))
             except Exception:
                 # Best-effort; if query fails, skip filtering for this batch
-                self.logger.exception("Failed to query existing names for %s", collection)
+                self.logger.exception(
+                    "Failed to query existing names for %s", collection
+                )
         return existing
 
     def cancel(self) -> None:

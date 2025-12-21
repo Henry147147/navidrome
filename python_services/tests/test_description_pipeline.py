@@ -114,4 +114,6 @@ def test_ensure_index_skips_when_present(monkeypatch, pipeline):
 
     pipeline.ensure_milvus_index(client)
 
-    assert client.created_indexes == [], "Existing indexes should short-circuit creation"
+    assert (
+        client.created_indexes == []
+    ), "Existing indexes should short-circuit creation"

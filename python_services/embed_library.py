@@ -32,9 +32,15 @@ from gpu_settings import load_gpu_settings  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Embed entire Navidrome library into Milvus Lite DB.")
-    parser.add_argument("--db-path", required=True, help="Path to navidrome.db (SQLite).")
-    parser.add_argument("--music-root", required=True, help="Path to the music library root directory.")
+    parser = argparse.ArgumentParser(
+        description="Embed entire Navidrome library into Milvus Lite DB."
+    )
+    parser.add_argument(
+        "--db-path", required=True, help="Path to navidrome.db (SQLite)."
+    )
+    parser.add_argument(
+        "--music-root", required=True, help="Path to the music library root directory."
+    )
     parser.add_argument(
         "--milvus-db-path",
         required=True,
@@ -76,7 +82,9 @@ def main() -> int:
     os.environ["TRANSFORMERS_OFFLINE"] = "0"
 
     args = parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     logger = logging.getLogger("embed_library")
 
     db_path = Path(args.db_path).expanduser().resolve()

@@ -7,7 +7,7 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Generator
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -19,27 +19,34 @@ os.environ.setdefault("TORCHAUDIO_USE_SOUNDFILE", "1")
 
 # Provide missing torchaudio.info/save shims when backend is minimal
 if not hasattr(torchaudio, "info"):
+
     def _dummy_info(path):
         class _Info:
             sample_rate = 44100
             num_channels = 2
             num_frames = 0
+
         return _Info()
+
     torchaudio.info = _dummy_info  # type: ignore[attr-defined]
 
 if not hasattr(torchaudio, "_original_save"):
     torchaudio._original_save = getattr(torchaudio, "save", None)
 
+
 def _sf_save(path, waveform, sample_rate, format=None, **kwargs):
     try:
         import soundfile as sf
     except Exception as exc:  # pragma: no cover - fallback
-        raise RuntimeError("soundfile backend required for torchaudio.save in tests") from exc
+        raise RuntimeError(
+            "soundfile backend required for torchaudio.save in tests"
+        ) from exc
     # waveform expected as torch.Tensor [channels, frames]
     data = waveform.detach().cpu().numpy()
     if data.ndim == 2:
         data = data.T  # soundfile expects frames x channels
     sf.write(path, data, sample_rate, format=format or "FLAC")
+
 
 # Replace torchaudio.save if it fails to import torchcodec
 try:
@@ -195,46 +202,6 @@ def mock_torch_device() -> str:
 
 
 @pytest.fixture
-def mock_mert_processor():
-    """
-    Mock Wav2Vec2FeatureExtractor for MERT testing.
-    Returns a processor that produces dummy outputs.
-    """
-    processor = Mock()
-    processor.sampling_rate = 24000
-
-    def process_audio(audio, sampling_rate=None, return_tensors=None):
-        """Mock processing that returns a dict with input_values."""
-        batch_size = 1
-        # MERT processor returns features, mock with random tensor
-        seq_length = len(audio) if isinstance(audio, np.ndarray) else 1000
-        return {
-            "input_values": torch.randn(batch_size, seq_length),
-        }
-
-    processor.side_effect = process_audio
-    processor.__call__ = process_audio
-    return processor
-
-
-@pytest.fixture
-def mock_mert_model_output():
-    """
-    Create mock MERT model output with 25 hidden state layers.
-    Returns a mock outputs object with hidden_states attribute.
-    """
-
-    def create_output(batch_size=1, time_steps=100):
-        outputs = MagicMock()
-        # MERT has 25 layers (1 input + 24 transformer layers)
-        hidden_states = [torch.randn(batch_size, time_steps, 1024) for _ in range(25)]
-        outputs.hidden_states = hidden_states
-        return outputs
-
-    return create_output
-
-
-@pytest.fixture
 def mock_muq_model():
     """
     Mock MuQ MuLan model for testing.
@@ -254,24 +221,6 @@ def mock_muq_model():
         return torch.randn(1, 512)
 
     model.__call__ = forward
-    return model
-
-
-@pytest.fixture
-def mock_latent_model():
-    """
-    Mock Music2Latent EncoderDecoder for testing.
-    Returns complex latent space of shape [2, 64, T].
-    """
-    model = Mock()
-
-    def encode(audio_path, max_waveform_length=None):
-        """Mock encoding that returns complex latent."""
-        # Music2Latent returns [2, 64, T] where 2 = (real, imaginary)
-        T = 100  # Time steps
-        return torch.randn(2, 64, T)
-
-    model.encode = encode
     return model
 
 

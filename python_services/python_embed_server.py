@@ -208,9 +208,7 @@ class EmbedSocketServer:
         title: Optional[str],
         alternate_names: Optional[List[str]] = None,
     ) -> Dict[str, object]:
-        canonical_name = self._canonical_name_from_meta(
-            artist or "", title or "", ""
-        )
+        canonical_name = self._canonical_name_from_meta(artist or "", title or "", "")
         names = {canonical_name} if canonical_name else set()
         for alt in alternate_names or []:
             alt_name = str(alt or "").strip()
@@ -352,13 +350,17 @@ class EmbedSocketServer:
                         path.parent.rmdir()
                 except Exception:
                     # Best-effort cleanup; don't fail the request because of cleanup issues
-                    self.logger.debug("Failed to clean up temp file %s", path, exc_info=True)
+                    self.logger.debug(
+                        "Failed to clean up temp file %s", path, exc_info=True
+                    )
 
         response_payload: Dict[str, object] = {"status": "ok"}
         if isinstance(summary, dict):
             response_payload.update(summary)
         if split_tracks:
-            response_payload["splitFiles"] = [track.to_response() for track in split_tracks]
+            response_payload["splitFiles"] = [
+                track.to_response() for track in split_tracks
+            ]
         return response_payload
 
     def _process_embedding_request(
@@ -423,7 +425,9 @@ class EmbedSocketServer:
             if self.description_pipeline
             else None
         )
-        payload["descriptions"] = desc_payload.get("descriptions", []) if desc_payload else []
+        payload["descriptions"] = (
+            desc_payload.get("descriptions", []) if desc_payload else []
+        )
         payload["cue_file"] = None
         return payload, []
 
@@ -487,9 +491,7 @@ class EmbedSocketServer:
             )
         return songs
 
-    def add_embedding_to_db(
-        self, file_name: str, embedding: dict
-    ) -> Dict[str, object]:
+    def add_embedding_to_db(self, file_name: str, embedding: dict) -> Dict[str, object]:
         self.logger.info(
             "Uploading embedding for %s to Milvus", embedding.get("music_file")
         )
@@ -625,9 +627,7 @@ class EmbedSocketServer:
                         )
                     else:
                         msg = str(exc)
-                    self._write_response(
-                        writer, {"status": "error", "message": msg}
-                    )
+                    self._write_response(writer, {"status": "error", "message": msg})
                     return
 
                 if request_id:
@@ -738,9 +738,7 @@ def build_embed_router(server: Optional[EmbedSocketServer] = None) -> APIRouter:
         except FileNotFoundError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:  # pragma: no cover - runtime safety
-            embed_server.logger.exception(
-                "Embedding failed for %s", request.music_file
-            )
+            embed_server.logger.exception("Embedding failed for %s", request.music_file)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @router.post("/embed/status", response_model=EmbedStatusResponse)
@@ -784,7 +782,9 @@ def build_embed_router(server: Optional[EmbedSocketServer] = None) -> APIRouter:
             )
             names: List[str] = []
             if alternate_names:
-                names = [name.strip() for name in alternate_names.split(",") if name.strip()]
+                names = [
+                    name.strip() for name in alternate_names.split(",") if name.strip()
+                ]
             return embed_server.check_embedding_status(
                 track_id=track_id,
                 artist=artist,
@@ -792,9 +792,7 @@ def build_embed_router(server: Optional[EmbedSocketServer] = None) -> APIRouter:
                 alternate_names=names,
             )
         except Exception as exc:  # pragma: no cover - runtime safety
-            embed_server.logger.exception(
-                "Embedding status check failed for %s", title
-            )
+            embed_server.logger.exception("Embedding status check failed for %s", title)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @router.get("/embed/health")

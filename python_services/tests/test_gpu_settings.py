@@ -12,7 +12,9 @@ def test_load_default_when_missing(tmp_path):
 
 def test_save_and_load_roundtrip(tmp_path):
     path = tmp_path / "gpu.conf"
-    settings = GPUSettings(max_gpu_memory_gb=7.5, precision="bf16", enable_cpu_offload=False, device="cpu")
+    settings = GPUSettings(
+        max_gpu_memory_gb=7.5, precision="bf16", enable_cpu_offload=False, device="cpu"
+    )
     save_gpu_settings(settings, path)
     loaded = load_gpu_settings(path)
     assert loaded.max_gpu_memory_gb == 7.5

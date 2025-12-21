@@ -111,13 +111,11 @@ class TestBatchEmbeddingJob:
         # Mock the models
         job.models = {}
         job.models["muq"] = MockModel("muq")
-        job.models["mert"] = MockModel("mert")
-        job.models["latent"] = MockModel("latent")
+        job.models["qwen3"] = MockModel("qwen3")
 
-        assert len(job.models) == 3
+        assert len(job.models) == 2
         assert "muq" in job.models
-        assert "mert" in job.models
-        assert "latent" in job.models
+        assert "qwen3" in job.models
 
     def test_progress_tracking(self, temp_paths):
         """Test that progress is tracked correctly"""
@@ -266,17 +264,12 @@ class TestBatchEmbeddingJob:
         # Test the collection mapping is correct
         collection_map = {
             "muq": "embedding",
-            "mert": "mert_embedding",
-            "latent": "latent_embedding",
+            "qwen3": "description_embedding",
         }
 
         # Verify the mapping is correct
         for model_name, collection_name in collection_map.items():
-            assert collection_name in [
-                "embedding",
-                "mert_embedding",
-                "latent_embedding",
-            ]
+            assert collection_name in ["embedding", "description_embedding"]
 
 
 class TestBatchJobAPI:

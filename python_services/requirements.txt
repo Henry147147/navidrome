@@ -12,7 +12,6 @@ scikit-learn
 mutagen
 cueparser
 muq
-music2latent
 matplotlib
 transformers
 h5py

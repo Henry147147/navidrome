@@ -106,29 +106,6 @@ class StubMuQTextEmbedder(StubTextEmbedder):
         super().__init__(dimension=1536, model_name="muq_stub")
 
 
-class StubMERTTextEmbedder(StubTextEmbedder):
-    """
-    Stub for MERT text embeddings (76,800D).
-
-    Matches the dimensionality of MertModel's enriched audio embeddings
-    (25 layers × 1024 dimensions × 3 enrichment features).
-    """
-
-    def __init__(self):
-        super().__init__(dimension=76_800, model_name="mert_stub")
-
-
-class StubLatentTextEmbedder(StubTextEmbedder):
-    """
-    Stub for Latent Space text embeddings (576D).
-
-    Matches the dimensionality of MusicLatentSpaceModel's enriched audio embeddings
-    (192 latent dimensions × 3 enrichment features).
-    """
-
-    def __init__(self):
-        super().__init__(dimension=576, model_name="latent_stub")
-
 class StubQwen3TextEmbedder(StubTextEmbedder):
     """
     Stub for Qwen3 text embeddings (4096D).
@@ -143,7 +120,7 @@ def get_stub_embedder(model: str) -> StubTextEmbedder:
     Factory function to get stub embedder by model name.
 
     Args:
-        model: Model name ("muq", "mert", or "latent")
+        model: Model name ("muq" or "qwen3")
 
     Returns:
         Appropriate stub embedder instance
@@ -153,8 +130,6 @@ def get_stub_embedder(model: str) -> StubTextEmbedder:
     """
     embedders = {
         "muq": StubMuQTextEmbedder,
-        "mert": StubMERTTextEmbedder,
-        "latent": StubLatentTextEmbedder,
         "qwen3": StubQwen3TextEmbedder,
     }
 
@@ -176,7 +151,7 @@ if __name__ == "__main__":
         "acoustic folk guitar",
     ]
 
-    for model_name in ["muq", "mert", "latent"]:
+    for model_name in ["muq", "qwen3"]:
         print(f"\n{'=' * 60}")
         print(f"Testing {model_name.upper()} stub embedder")
         print(f"{'=' * 60}")

@@ -51,13 +51,13 @@ class TestNegativePromptSchemas:
             mode="recent",
             negative_embeddings={
                 "muq": [[0.1] * 1536, [0.2] * 1536],
-                "mert": [[0.3] * 76800],
+                "qwen3": [[0.3] * 4096],
             },
         )
 
         assert "muq" in req.negative_embeddings
         assert len(req.negative_embeddings["muq"]) == 2
-        assert len(req.negative_embeddings["mert"]) == 1
+        assert len(req.negative_embeddings["qwen3"]) == 1
 
 
 class MockRecommender:

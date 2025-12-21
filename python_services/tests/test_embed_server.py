@@ -13,6 +13,7 @@ from python_embed_server import EmbedSocketServer
 import base64
 from pathlib import Path
 
+
 class StubEmbeddingModel:
     def __init__(self, segments: List[Dict[str, Any]] | None = None) -> None:
         self.segments = segments or []
@@ -331,9 +332,13 @@ def test_process_embedding_request_with_split(
     assert returned_tracks == split_tracks
 
 
-def test_process_payload_materializes_base64_when_missing(tmp_path, logger: logging.Logger):
+def test_process_payload_materializes_base64_when_missing(
+    tmp_path, logger: logging.Logger
+):
     class PathRecordingModel(StubEmbeddingModel):
-        def embed_music(self, music_file: str, music_name: str, cue_file: str | None = None):
+        def embed_music(
+            self, music_file: str, music_name: str, cue_file: str | None = None
+        ):
             assert Path(music_file).exists()
             return super().embed_music(music_file, music_name, cue_file)
 

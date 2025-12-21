@@ -327,7 +327,9 @@ def split_flac_with_cue(
         base_stem = _ILLEGAL_FILENAME_CHARS.sub("_", music_path.stem).strip(". ")
         if not base_stem:
             base_stem = "track"
-        safe_title = _ILLEGAL_FILENAME_CHARS.sub("_", title.strip() or f"Track {index:02d}")
+        safe_title = _ILLEGAL_FILENAME_CHARS.sub(
+            "_", title.strip() or f"Track {index:02d}"
+        )
         dest_name = f"{index:02d} - {base_stem} - {safe_title}.flac"
         track_path = output_root / dest_name
         try:

@@ -8,8 +8,7 @@ import pytest
 from stub_text_embedders import (
     StubTextEmbedder,
     StubMuQTextEmbedder,
-    StubMERTTextEmbedder,
-    StubLatentTextEmbedder,
+    StubQwen3TextEmbedder,
     get_stub_embedder,
 )
 
@@ -107,36 +106,20 @@ class TestStubMuQTextEmbedder:
         assert embedding.shape == (1536,)
 
 
-class TestStubMERTTextEmbedder:
-    """Tests for MERT stub embedder"""
+class TestStubQwen3TextEmbedder:
+    """Tests for Qwen3 stub embedder"""
 
     def test_dimension(self):
-        """Test that MERT embedder has correct dimension"""
-        embedder = StubMERTTextEmbedder()
-        assert embedder.dimension == 76_800
-        assert embedder.model_name == "mert_stub"
+        """Test that Qwen3 embedder has correct dimension"""
+        embedder = StubQwen3TextEmbedder()
+        assert embedder.dimension == 4096
+        assert embedder.model_name == "qwen3_stub"
 
     def test_embedding_shape(self):
         """Test embedding output shape"""
-        embedder = StubMERTTextEmbedder()
+        embedder = StubQwen3TextEmbedder()
         embedding = embedder.embed_text("test")
-        assert embedding.shape == (76_800,)
-
-
-class TestStubLatentTextEmbedder:
-    """Tests for Latent Space stub embedder"""
-
-    def test_dimension(self):
-        """Test that Latent embedder has correct dimension"""
-        embedder = StubLatentTextEmbedder()
-        assert embedder.dimension == 576
-        assert embedder.model_name == "latent_stub"
-
-    def test_embedding_shape(self):
-        """Test embedding output shape"""
-        embedder = StubLatentTextEmbedder()
-        embedding = embedder.embed_text("test")
-        assert embedding.shape == (576,)
+        assert embedding.shape == (4096,)
 
 
 class TestGetStubEmbedder:
@@ -148,17 +131,11 @@ class TestGetStubEmbedder:
         assert isinstance(embedder, StubMuQTextEmbedder)
         assert embedder.dimension == 1536
 
-    def test_get_mert_embedder(self):
-        """Test getting MERT embedder"""
-        embedder = get_stub_embedder("mert")
-        assert isinstance(embedder, StubMERTTextEmbedder)
-        assert embedder.dimension == 76_800
-
-    def test_get_latent_embedder(self):
-        """Test getting Latent embedder"""
-        embedder = get_stub_embedder("latent")
-        assert isinstance(embedder, StubLatentTextEmbedder)
-        assert embedder.dimension == 576
+    def test_get_qwen3_embedder(self):
+        """Test getting Qwen3 embedder"""
+        embedder = get_stub_embedder("qwen3")
+        assert isinstance(embedder, StubQwen3TextEmbedder)
+        assert embedder.dimension == 4096
 
     def test_invalid_model_raises_error(self):
         """Test that invalid model name raises ValueError"""
@@ -169,7 +146,7 @@ class TestGetStubEmbedder:
 class TestEmbeddingQuality:
     """Tests for embedding quality properties"""
 
-    @pytest.mark.parametrize("model", ["muq", "mert", "latent"])
+    @pytest.mark.parametrize("model", ["muq", "qwen3"])
     def test_embedding_diversity(self, model):
         """Test that embeddings for different texts are diverse"""
         embedder = get_stub_embedder(model)
@@ -196,7 +173,7 @@ class TestEmbeddingQuality:
         # (hash-based embeddings should be fairly random)
         assert mean_similarity < 0.5
 
-    @pytest.mark.parametrize("model", ["muq", "mert", "latent"])
+    @pytest.mark.parametrize("model", ["muq", "qwen3"])
     def test_consistent_across_instances(self, model):
         """Test that different embedder instances produce same embeddings"""
         embedder1 = get_stub_embedder(model)

@@ -48,7 +48,9 @@ class GPUModelCoordinator:
                 offload_prev()
             except Exception:  # pragma: no cover - defensive
                 if logger:
-                    logger.exception("Failed to offload previous GPU owner %s", self._current)
+                    logger.exception(
+                        "Failed to offload previous GPU owner %s", self._current
+                    )
 
     def current_owner(self) -> Optional[str]:
         with self._lock:
@@ -56,4 +58,3 @@ class GPUModelCoordinator:
 
 
 GPU_COORDINATOR = GPUModelCoordinator()
-

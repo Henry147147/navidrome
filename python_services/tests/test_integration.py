@@ -81,21 +81,6 @@ class TestRecommendationEngineIntegration:
                         },
                     ]
                 ]
-            elif collection_name == "mert_embedding":  # mert
-                return [
-                    [
-                        {
-                            "name": "Track B",
-                            "distance": 0.88,
-                            "entity": {"id": "track_b"},
-                        },
-                        {
-                            "name": "Track C",
-                            "distance": 0.82,
-                            "entity": {"id": "track_c"},
-                        },
-                    ]
-                ]
             if collection_name == "description_embedding":  # qwen3
                 return [
                     [

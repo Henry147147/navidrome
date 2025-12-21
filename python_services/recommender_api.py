@@ -673,6 +673,7 @@ if os.getenv("NAVIDROME_SKIP_RECOMMENDER_APP_INIT") or "pytest" in sys.modules:
     @app.get("/healthz")
     def health_stub():
         return {"status": "ok", "stub": True}
+
 else:
     app = create_app()
 

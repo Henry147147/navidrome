@@ -29,7 +29,11 @@ if TYPE_CHECKING:
 def _service_port() -> int:
     """Resolve the port for the unified service with backwards compatibility."""
 
-    for key in ("NAVIDROME_SERVICE_PORT", "NAVIDROME_RECOMMENDER_PORT", "TEXT_EMBEDDING_PORT"):
+    for key in (
+        "NAVIDROME_SERVICE_PORT",
+        "NAVIDROME_RECOMMENDER_PORT",
+        "TEXT_EMBEDDING_PORT",
+    ):
         val = os.getenv(key)
         if val:
             try:
@@ -83,11 +87,14 @@ def create_app() -> FastAPI:
     from python_embed_server import EmbedSocketServer, build_embed_router
     from recommender_api import build_engine, build_recommender_router
     from text_embedding_service import build_text_embedding_router, text_service
+
     milvus_client = MilvusClient(uri=milvus_uri)
 
     # Shared engines instantiated once
     embed_server = EmbedSocketServer(milvus_client=milvus_client)
-    recommender_engine = build_engine(milvus_client=milvus_client, milvus_uri=milvus_uri)
+    recommender_engine = build_engine(
+        milvus_client=milvus_client, milvus_uri=milvus_uri
+    )
 
     app.include_router(build_text_embedding_router(text_service))
     app.include_router(build_recommender_router(recommender_engine))

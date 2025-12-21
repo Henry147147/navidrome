@@ -64,9 +64,7 @@ class GPUSettings:
         if not torch.cuda.is_available():
             return
         try:
-            total_gb = torch.cuda.get_device_properties(0).total_memory / (
-                1024**3
-            )
+            total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
             fraction = min(self.max_gpu_memory_gb / total_gb, 0.97)
             fraction = max(fraction, 0.1)
             torch.cuda.set_per_process_memory_fraction(fraction, 0)
@@ -79,9 +77,7 @@ class GPUSettings:
         if not torch.cuda.is_available():
             return 0.0
         try:
-            total_gb = torch.cuda.get_device_properties(0).total_memory / (
-                1024**3
-            )
+            total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
             return round(min(total_gb, self.max_gpu_memory_gb), 2)
         except Exception:
             return round(self.max_gpu_memory_gb, 2)
