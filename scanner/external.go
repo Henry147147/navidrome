@@ -11,7 +11,6 @@ import (
 
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/log"
-	. "github.com/navidrome/navidrome/utils/gg"
 )
 
 // scannerExternal is a scanner that runs an external process to do the scanning. It is used to avoid
@@ -30,12 +29,25 @@ func (s *scannerExternal) scanAll(ctx context.Context, fullScan bool, progress c
 		return
 	}
 	log.Debug(ctx, "Spawning external scanner process", "fullScan", fullScan, "path", exe)
-	cmd := exec.CommandContext(ctx, exe, "scan",
-		"--nobanner", "--subprocess",
+	args := []string{
+		"scan",
+		"--nobanner",
+		"--subprocess",
 		"--configfile", conf.Server.ConfigFile,
 		"--datafolder", conf.Server.DataFolder,
 		"--cachefolder", conf.Server.CacheFolder,
-		If(fullScan, "--full", ""))
+	}
+	if conf.Server.LogLevel != "" {
+		args = append(args, "--loglevel", conf.Server.LogLevel)
+	}
+	if conf.Server.LogFile != "" {
+		args = append(args, "--logfile", conf.Server.LogFile)
+	}
+	if fullScan {
+		args = append(args, "--full")
+	}
+
+	cmd := exec.CommandContext(ctx, exe, args...)
 
 	in, out := io.Pipe()
 	defer in.Close()

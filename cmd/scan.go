@@ -68,6 +68,10 @@ func runScanner(ctx context.Context) {
 	ds := persistence.New(sqlDB)
 	pls := core.NewPlaylists(ds)
 
+	if subprocess {
+		ctx = scanner.WithEmbeddingWait(ctx)
+	}
+
 	progress, err := scanner.CallScan(ctx, ds, pls, fullScan)
 	if err != nil {
 		log.Fatal(ctx, "Failed to scan", err)

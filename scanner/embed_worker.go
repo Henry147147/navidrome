@@ -25,6 +25,11 @@ func newEmbeddingWorker(client embeddingClient) *embeddingWorker {
 	}
 }
 
+// Wait blocks until the current queue finishes processing.
+func (w *embeddingWorker) Wait() {
+	w.wg.Wait()
+}
+
 // Close stops the worker and waits for any in-flight processing to finish.
 func (w *embeddingWorker) Close() {
 	w.mu.Lock()

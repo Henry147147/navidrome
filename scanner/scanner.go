@@ -178,6 +178,12 @@ func (s *scannerImpl) scheduleEmbeddings(ctx context.Context, state *scanState) 
 	log.Info(ctx, "Scheduling embeddings", "count", len(candidates))
 	s.embedWorker.Enqueue(candidates)
 	log.Info(ctx, "Scheduled background embeddings", "count", len(candidates))
+
+	if embeddingWaitEnabled(ctx) {
+		log.Info(ctx, "Waiting for embedding worker to finish", "count", len(candidates))
+		s.embedWorker.Wait()
+		log.Info(ctx, "Embedding worker finished", "count", len(candidates))
+	}
 }
 
 func (s *scannerImpl) runGC(ctx context.Context, state *scanState) func() error {
