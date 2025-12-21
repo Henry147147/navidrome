@@ -79,6 +79,39 @@ def test_enrich_embedding_single_time():
     assert enriched.shape == (3 * D,)
 
 
+def test_enrich_embedding_handles_1d():
+    """Test enrich_embedding handles 1D tensors (single vector)."""
+    D = 512
+    embedding = torch.randn(D)
+    enriched = enrich_embedding(embedding)
+    # Should be [3*D]
+    assert enriched.shape == (3 * D,)
+    # Should be L2 normalized
+    assert torch.allclose(enriched.norm(), torch.tensor(1.0))
+
+
+def test_enrich_embedding_handles_3d():
+    """Test enrich_embedding handles 3D tensors (batch, seq, dim)."""
+    batch, seq, D = 4, 8, 512
+    embedding = torch.randn(batch, seq, D)
+    enriched = enrich_embedding(embedding)
+    # Should reduce to [3*D] by averaging over seq and treating batch as time
+    # Shape: [batch, seq, D] -> mean(dim=1) -> [batch, D] -> transpose -> [D, batch]
+    # Then enrich -> [3*D]
+    assert enriched.shape == (3 * D,)
+    # Should be L2 normalized
+    assert torch.allclose(enriched.norm(), torch.tensor(1.0))
+
+
+def test_enrich_embedding_preserves_device():
+    """Test enrich_embedding preserves tensor device."""
+    D, T = 64, 10
+    embedding = torch.randn(D, T)
+    enriched = enrich_embedding(embedding)
+    # Result should be on CPU as per implementation
+    assert enriched.device.type == "cpu"
+
+
 def test_segment_embedding_fields():
     """Test SegmentEmbedding has correct fields."""
     embedding = SegmentEmbedding(
@@ -103,21 +136,22 @@ def test_segment_embedding_fields():
 
 @pytest.fixture
 def mock_muq_components():
-    """Create mocked MuQ MuLan model."""
-    with patch("embedding_models.MuQMuLan") as mock_muq_class:
+    """Create mocked MuQ audio model."""
+    with patch("embedding_models.MuQ") as mock_muq_class:
         # Setup mock model
         mock_model = Mock()
         mock_model.to = Mock(return_value=mock_model)
         mock_model.eval = Mock(return_value=mock_model)
 
         # Mock forward pass for audio
-        def mock_forward(wavs=None, texts=None):
-            if wavs is not None:
-                batch_size = wavs.shape[0] if isinstance(wavs, torch.Tensor) else 1
-                return torch.randn(batch_size, 512)
-            if texts is not None:
-                return torch.randn(1, 512)
-            return torch.randn(1, 512)
+        def mock_forward(audio_tensor):
+            batch_size = (
+                audio_tensor.shape[0] if isinstance(audio_tensor, torch.Tensor) else 1
+            )
+            # Return object with last_hidden_state attribute
+            mock_output = Mock()
+            mock_output.last_hidden_state = torch.randn(batch_size, 512)
+            return mock_output
 
         mock_model.__call__ = mock_forward
         mock_muq_class.from_pretrained = Mock(return_value=mock_model)
@@ -165,7 +199,7 @@ def test_muq_load_model(mock_muq_components):
     model = MuQEmbeddingModel(device="cpu")
     _loaded_model = model._load_model()
 
-    # Verify MuQMuLan.from_pretrained was called
+    # Verify MuQ.from_pretrained was called
     mock_muq_components["muq_class"].from_pretrained.assert_called_once()
 
     # Verify model methods called

@@ -7,11 +7,23 @@ from glob import glob
 import torch
 from optimum.quanto import quantize, qfloat8, Calibration, freeze
 
-model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
-    "nvidia/music-flamingo-hf", device_map="cuda"
-)
+include = [
+    # Attention projections
+    "language_model.model.layers.*.self_attn.q_proj",
+    "language_model.model.layers.*.self_attn.k_proj",
+    "language_model.model.layers.*.self_attn.v_proj",
+    "language_model.model.layers.*.self_attn.o_proj",
+    # MLP projections
+    "language_model.model.layers.*.mlp.gate_proj",
+    "language_model.model.layers.*.mlp.up_proj",
+    "language_model.model.layers.*.mlp.down_proj",
+]
 
-quantize(model, weights=qfloat8, activations=qfloat8)
+model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
+    "nvidia/music-flamingo-hf", device_map="auto", torch_dtype=torch.bfloat16
+)
+print(model.dtype)
+quantize(model, weights=qfloat8, activations=qfloat8, include=include)
 
 flacs = list(glob("/mnt/z/music/**/*.flac"))
 mp3s = list(glob("/mnt/z/music/**/*.mp3"))
@@ -58,5 +70,17 @@ with Calibration():
         prepared = prepare(processor, song)
         for k, v in list(prepared.items()):
             if isinstance(v, torch.Tensor):
-                prepared[k] = v.to("cuda")
+                if torch.is_floating_point(v):
+                    prepared[k] = v.to(torch.bfloat16).to(model.device)
+                else:
+                    prepared[k] = v.to(model.device)
+
         model.generate(**prepared, max_new_tokens=8192)
+
+print("done calibrating")
+
+freeze(model)
+
+from safetensors.torch import save_file
+
+save_file(model.state_dict(), "nvidia-music-flamingo-hf-fp8.safetensor")

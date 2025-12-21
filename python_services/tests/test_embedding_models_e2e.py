@@ -54,7 +54,7 @@ def test_enrichment_produces_normalized_output():
 
 
 @pytest.mark.unit
-@patch("embedding_models.MuQMuLan")
+@patch("embedding_models.MuQ")
 def test_muq_milvus_schema_matches_output(_mock_muq):
     """Test MuQ Milvus schema dimension matches actual output."""
     # MuQ should produce 1,536-D embeddings (512 * 3)
