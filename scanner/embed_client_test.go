@@ -154,3 +154,21 @@ func TestSocketEmbeddingClientConnectionError(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "connect to socket")
 }
+
+func TestSocketEmbeddingClientInvalidResponse(t *testing.T) {
+	socketPath := createMockSocketServer(t, func(conn net.Conn) {
+		reader := bufio.NewReader(conn)
+		_, _ = reader.ReadBytes('\n')
+		_, _ = conn.Write([]byte("not-json\n"))
+	})
+
+	client := &socketEmbeddingClient{
+		socketPath:    socketPath,
+		statusTimeout: statusCheckTimeout,
+		embedTimeout:  statusCheckTimeout,
+	}
+
+	_, err := client.CheckEmbedding(context.Background(), embeddingCandidate{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "decode response")
+}

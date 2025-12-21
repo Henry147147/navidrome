@@ -32,6 +32,10 @@ def _install_dummy_modules(monkeypatch, milvus_uri_target: str):
         def __init__(self, milvus_client=None):
             self.milvus_client = milvus_client
             self.enable_descriptions = True
+            self.socket_path = "/tmp/navidrome-test.sock"
+
+        def serve_forever(self):
+            return None
 
     def build_embed_router(_server):
         router = APIRouter()

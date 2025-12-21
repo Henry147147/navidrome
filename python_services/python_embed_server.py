@@ -297,6 +297,7 @@ class EmbedSocketServer:
         if not music_file:
             raise ValueError("music_file is required")
 
+        track_id = payload.get("track_id")
         cue_file = payload.get("cue_file") or None
         artist = str(payload.get("artist") or "")
         title = str(payload.get("title") or "")
@@ -310,7 +311,12 @@ class EmbedSocketServer:
 
         music_name = self._canonical_name_from_meta(artist, title, base_name)
 
-        self.logger.debug("Processing embed payload music=%s cue=%s", music_file, cue_file)
+        self.logger.debug(
+            "Processing embed payload track_id=%s music=%s cue=%s",
+            track_id,
+            music_file,
+            cue_file,
+        )
 
         summary: Optional[dict] = None
         split_tracks: List[SplitTrack] = []
@@ -562,7 +568,9 @@ class EmbedSocketServer:
     def handle_connection(self, conn: socket.socket) -> None:
         with conn:
             reader = conn.makefile("r", encoding="utf-8")
-            writer = conn.makefile("w", encoding="utf-8")
+            # Line-buffered writer to flush response promptly.
+            writer = conn.makefile("w", encoding="utf-8", buffering=1)
+            request_id: Optional[str] = None
             try:
                 line = reader.readline()
                 if not line:
@@ -580,8 +588,18 @@ class EmbedSocketServer:
 
                 # Route based on action field
                 action = payload.get("action", "embed")
-                self.logger.debug("Received %s request via socket", action)
+                request_id = payload.get("request_id")
+                track_id = payload.get("track_id")
+                payload_bytes = len(line.encode("utf-8"))
+                self.logger.debug(
+                    "Received %s request via socket request_id=%s track_id=%s bytes=%d",
+                    action,
+                    request_id,
+                    track_id,
+                    payload_bytes,
+                )
 
+                start = time.monotonic()
                 try:
                     if action == "status":
                         response_payload = self.check_embedding_status(
@@ -612,17 +630,53 @@ class EmbedSocketServer:
                     )
                     return
 
+                if request_id:
+                    response_payload = dict(response_payload)
+                    response_payload["request_id"] = request_id
                 self._write_response(writer, response_payload)
+                elapsed = time.monotonic() - start
+                self.logger.debug(
+                    "Completed %s request request_id=%s track_id=%s elapsed=%.3fs",
+                    action,
+                    request_id,
+                    track_id,
+                    elapsed,
+                )
             finally:
                 self.logger.debug("Closing connection")
-                writer.close()
-                reader.close()
+                try:
+                    writer.close()
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    self.logger.debug(
+                        "Socket writer already closed request_id=%s",
+                        request_id,
+                    )
+                try:
+                    reader.close()
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    self.logger.debug(
+                        "Socket reader already closed request_id=%s",
+                        request_id,
+                    )
 
     def _write_response(self, writer, payload) -> None:
-        self.logger.debug("Sending response: %s", payload)
-        writer.write(json.dumps(payload))
-        writer.write("\n")
-        writer.flush()
+        response_text = json.dumps(payload)
+        request_id = payload.get("request_id") if isinstance(payload, dict) else None
+        self.logger.debug(
+            "Sending response request_id=%s bytes=%d",
+            request_id,
+            len(response_text),
+        )
+        try:
+            writer.write(response_text)
+            writer.write("\n")
+            writer.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError) as exc:
+            self.logger.debug(
+                "Client disconnected before response could be sent request_id=%s error=%s",
+                request_id,
+                exc,
+            )
 
     def _ensure_local_file(
         self,

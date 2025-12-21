@@ -2,11 +2,13 @@ package scanner
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/navidrome/navidrome/conf"
@@ -36,6 +38,8 @@ type socketEmbeddingClient struct {
 	statusTimeout time.Duration
 	embedTimeout  time.Duration
 }
+
+var embedRequestSeq uint64
 
 func newPythonEmbeddingClient() embeddingClient {
 	return newSocketEmbeddingClient()
@@ -101,14 +105,29 @@ func (c *socketEmbeddingClient) EmbedSong(ctx context.Context, candidate embeddi
 }
 
 func (c *socketEmbeddingClient) sendRequest(ctx context.Context, timeout time.Duration, payload any, response any) error {
-	log.Debug(ctx, "Connecting to embedding socket", "path", c.socketPath)
+	requestID := fmt.Sprintf("embed-%d", atomic.AddUint64(&embedRequestSeq, 1))
+	action := "unknown"
+	trackID := ""
+	if payloadMap, ok := payload.(map[string]any); ok {
+		payloadMap["request_id"] = requestID
+		if value, ok := payloadMap["action"].(string); ok && value != "" {
+			action = value
+		}
+		if value, ok := payloadMap["track_id"].(string); ok {
+			trackID = value
+		}
+	}
+
+	log.Debug(ctx, "Connecting to embedding socket", "path", c.socketPath, "requestId", requestID, "action", action, "trackId", trackID)
 
 	// Connect with timeout
+	connectStart := time.Now()
 	conn, err := net.DialTimeout("unix", c.socketPath, timeout)
 	if err != nil {
 		return fmt.Errorf("connect to socket %s: %w", c.socketPath, err)
 	}
 	defer conn.Close()
+	log.Debug(ctx, "Connected to embedding socket", "requestId", requestID, "elapsed", time.Since(connectStart))
 
 	// Set deadline for the entire operation
 	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
@@ -116,15 +135,25 @@ func (c *socketEmbeddingClient) sendRequest(ctx context.Context, timeout time.Du
 	}
 
 	// Encode and send JSON payload with newline
-	encoder := json.NewEncoder(conn)
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
 	if err := encoder.Encode(payload); err != nil {
+		return fmt.Errorf("encode request: %w", err)
+	}
+	writeStart := time.Now()
+	if _, err := conn.Write(buf.Bytes()); err != nil {
 		return fmt.Errorf("send request: %w", err)
 	}
+	if unixConn, ok := conn.(*net.UnixConn); ok {
+		// Signal that we're done writing to avoid half-open ambiguity on the server.
+		_ = unixConn.CloseWrite()
+	}
 
-	log.Debug(ctx, "Sent request to embedding socket", "action", payload.(map[string]any)["action"])
+	log.Debug(ctx, "Sent request to embedding socket", "requestId", requestID, "action", action, "trackId", trackID, "payloadBytes", buf.Len(), "elapsed", time.Since(writeStart))
 
 	// Read response line
 	reader := bufio.NewReader(conn)
+	readStart := time.Now()
 	line, err := reader.ReadBytes('\n')
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
@@ -135,6 +164,6 @@ func (c *socketEmbeddingClient) sendRequest(ctx context.Context, timeout time.Du
 		return fmt.Errorf("decode response: %w", err)
 	}
 
-	log.Debug(ctx, "Received response from embedding socket")
+	log.Debug(ctx, "Received response from embedding socket", "requestId", requestID, "action", action, "trackId", trackID, "payloadBytes", len(line), "elapsed", time.Since(readStart))
 	return nil
 }

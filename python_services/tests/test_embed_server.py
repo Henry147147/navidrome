@@ -1,5 +1,7 @@
 import json
 import logging
+import socket
+import threading
 from typing import Any, Dict, List
 
 import pytest
@@ -43,7 +45,7 @@ class RecordingMilvusClient:
         self.flush_calls: List[str] = []
         self.query_calls: List[Dict[str, Any]] = []
 
-    def load_collection(self, collection_name: str) -> None:
+    def load_collection(self, collection_name: str, *_, **__) -> None:
         self.loaded.append(collection_name)
 
     def upsert(self, collection_name: str, payload: List[Dict[str, Any]]) -> None:
@@ -58,6 +60,7 @@ class RecordingMilvusClient:
         filter: str | None = None,
         filter_params: Dict[str, Any] | None = None,
         output_fields: List[str] | None = None,
+        **__,
     ):
         self.query_calls.append(
             {
@@ -90,6 +93,7 @@ class PresenceMilvusClient(RecordingMilvusClient):
         filter: str | None = None,
         filter_params: Dict[str, Any] | None = None,
         output_fields: List[str] | None = None,
+        **__,
     ):
         self.query_calls.append(
             {
@@ -114,6 +118,39 @@ class PresenceMilvusClient(RecordingMilvusClient):
 @pytest.fixture()
 def logger() -> logging.Logger:
     return logging.getLogger("navidrome.tests")
+
+
+def _socket_roundtrip(server: EmbedSocketServer, payload: dict | str) -> dict:
+    client_sock, server_sock = socket.socketpair()
+    thread = threading.Thread(
+        target=server.handle_connection,
+        args=(server_sock,),
+        daemon=True,
+    )
+    thread.start()
+
+    try:
+        if isinstance(payload, str):
+            message = payload
+            if not message.endswith("\n"):
+                message += "\n"
+        else:
+            message = json.dumps(payload) + "\n"
+        client_sock.sendall(message.encode("utf-8"))
+
+        data = b""
+        while not data.endswith(b"\n"):
+            chunk = client_sock.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+    finally:
+        client_sock.close()
+        thread.join(timeout=1)
+
+    if not data:
+        return {}
+    return json.loads(data.decode("utf-8"))
 
 
 def test_load_from_json_converts_segments():
@@ -325,3 +362,76 @@ def test_process_payload_materializes_base64_when_missing(tmp_path, logger: logg
     materialized_path = model.embed_calls[0]["music_file"]
     assert materialized_path != original_path
     assert not Path(materialized_path).exists()  # cleaned up after processing
+
+
+def test_socket_status_roundtrip(logger: logging.Logger):
+    milvus = PresenceMilvusClient({"Artist - Track"})
+    server = EmbedSocketServer(
+        socket_path="/tmp/navidrome-test.sock",
+        milvus_client=milvus,
+        model=StubEmbeddingModel(),
+        enable_descriptions=False,
+    )
+    payload = {
+        "action": "status",
+        "track_id": "track-1",
+        "artist": "Artist",
+        "title": "Track",
+        "alternate_names": ["extra.flac"],
+        "request_id": "req-1",
+    }
+
+    response = _socket_roundtrip(server, payload)
+
+    assert response["embedded"] is True
+    assert response["hasDescription"] is True
+    assert response["name"] == "Artist - Track"
+    assert response["request_id"] == "req-1"
+
+
+def test_socket_embed_roundtrip(tmp_path, logger: logging.Logger):
+    audio_path = tmp_path / "song.mp3"
+    audio_path.write_text("", encoding="utf-8")
+
+    server = EmbedSocketServer(
+        socket_path="/tmp/navidrome-test.sock",
+        milvus_client=RecordingMilvusClient(),
+        model=StubEmbeddingModel(
+            segments=[
+                {
+                    "index": 1,
+                    "title": "song.mp3",
+                    "offset_seconds": 0.0,
+                    "duration_seconds": 1.0,
+                    "embedding": [0.1, 0.2],
+                }
+            ]
+        ),
+        enable_descriptions=False,
+    )
+    server.add_embedding_to_db = lambda *_args, **_kwargs: {}
+
+    payload = {
+        "action": "embed",
+        "music_file": str(audio_path),
+        "name": "song.mp3",
+        "request_id": "req-2",
+    }
+    response = _socket_roundtrip(server, payload)
+
+    assert response["status"] == "ok"
+    assert response["request_id"] == "req-2"
+
+
+def test_socket_invalid_json_returns_error(logger: logging.Logger):
+    server = EmbedSocketServer(
+        socket_path="/tmp/navidrome-test.sock",
+        milvus_client=RecordingMilvusClient(),
+        model=StubEmbeddingModel(),
+        enable_descriptions=False,
+    )
+
+    response = _socket_roundtrip(server, "{not-json}")
+
+    assert response["status"] == "error"
+    assert "invalid json" in response["message"]
