@@ -108,7 +108,9 @@ func handleMockConnection(conn net.Conn, recorder *embedRecorder) {
 		response = []byte(`{"status": "error", "message": "unknown action"}` + "\n")
 	}
 
-	conn.Write(response)
+	if _, err := conn.Write(response); err != nil {
+		return
+	}
 }
 
 // This test exercises the full scan path and asserts that a newly discovered
