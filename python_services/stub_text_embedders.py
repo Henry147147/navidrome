@@ -95,17 +95,6 @@ class StubTextEmbedder:
         return similarities
 
 
-class StubMuQTextEmbedder(StubTextEmbedder):
-    """
-    Stub for MuQ text embeddings (1536D).
-
-    Matches the dimensionality of MuQEmbeddingModel's enriched audio embeddings.
-    """
-
-    def __init__(self):
-        super().__init__(dimension=1536, model_name="muq_stub")
-
-
 class StubQwen3TextEmbedder(StubTextEmbedder):
     """
     Stub for Qwen3 text embeddings (4096D).
@@ -120,7 +109,7 @@ def get_stub_embedder(model: str) -> StubTextEmbedder:
     Factory function to get stub embedder by model name.
 
     Args:
-        model: Model name ("muq" or "qwen3")
+        model: Model name ("qwen3")
 
     Returns:
         Appropriate stub embedder instance
@@ -129,7 +118,6 @@ def get_stub_embedder(model: str) -> StubTextEmbedder:
         ValueError: If model name is not recognized
     """
     embedders = {
-        "muq": StubMuQTextEmbedder,
         "qwen3": StubQwen3TextEmbedder,
     }
 
@@ -151,7 +139,7 @@ if __name__ == "__main__":
         "acoustic folk guitar",
     ]
 
-    for model_name in ["muq", "qwen3"]:
+    for model_name in ["qwen3"]:
         print(f"\n{'=' * 60}")
         print(f"Testing {model_name.upper()} stub embedder")
         print(f"{'=' * 60}")

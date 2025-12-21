@@ -96,11 +96,6 @@ const MODEL_OPTIONS = [
     label: 'Qwen3 (Text)',
     description: 'Caption + text embeddings (4096-dim)',
   },
-  {
-    value: 'muq',
-    label: 'MuQ (Audio)',
-    description: 'Balanced MuQ audio embeddings (1536-dim)',
-  },
 ]
 
 const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {

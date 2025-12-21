@@ -175,12 +175,12 @@ class TestTextEmbeddingIntegration:
 
         # Test embedding
         text = "upbeat rock music"
-        model = "muq"
+        model = "qwen3"
         embedding = service.embed_text(text, model)
 
         # Verify output
         assert isinstance(embedding, np.ndarray)
-        assert len(embedding) == 1536  # MuQ dimension
+        assert len(embedding) == 4096  # Qwen3 dimension
         assert np.abs(np.linalg.norm(embedding) - 1.0) < 0.01  # Should be normalized
 
     def test_text_embedding_api_endpoint(self):
@@ -188,7 +188,7 @@ class TestTextEmbeddingIntegration:
         client = TestClient(text_app)
 
         response = client.post(
-            "/embed_text", json={"text": "chill jazz for studying", "model": "muq"}
+            "/embed_text", json={"text": "chill jazz for studying", "model": "qwen3"}
         )
 
         assert response.status_code == 200
@@ -197,14 +197,14 @@ class TestTextEmbeddingIntegration:
         assert "model" in data
         assert "dimension" in data
         assert "is_stub" in data
-        assert data["dimension"] == 1536
-        assert len(data["embedding"]) == 1536
+        assert data["dimension"] == 4096
+        assert len(data["embedding"]) == 4096
 
     def test_text_to_recommendation_flow(self):
         """Test complete flow: text → embedding → recommendation"""
         # Step 1: Get text embedding
         text_service = TextEmbeddingService(use_stubs=True)
-        embedding = text_service.embed_text("energetic dance music", "muq")
+        embedding = text_service.embed_text("energetic dance music", "qwen3")
 
         # Step 2: Use embedding for search
         mock_client = Mock()
@@ -217,7 +217,7 @@ class TestTextEmbeddingIntegration:
 
         searcher = MultiModelSimilaritySearcher(mock_client)
         results = searcher.search_multi_model(
-            embeddings={"muq": embedding.tolist()}, top_k=5, merge_strategy="union"
+            embeddings={"qwen3": embedding.tolist()}, top_k=5, merge_strategy="union"
         )
 
         # Verify results
@@ -235,8 +235,8 @@ class TestNegativePromptIntegration:
         text_service = TextEmbeddingService(use_stubs=True)
 
         # Get embeddings for positive and negative prompts
-        positive_emb = text_service.embed_text("upbeat music", "muq")
-        negative_emb = text_service.embed_text("slow ballads", "muq")
+        positive_emb = text_service.embed_text("upbeat music", "qwen3")
+        negative_emb = text_service.embed_text("slow ballads", "qwen3")
 
         # Create mock candidates
         candidates = {
@@ -247,9 +247,9 @@ class TestNegativePromptIntegration:
 
         # Mock track embeddings (track2 is similar to negative prompt)
         track_embeddings = {
-            "track1": np.random.randn(1536),
+            "track1": np.random.randn(4096),
             "track2": negative_emb * 0.9,  # Very similar to negative
-            "track3": np.random.randn(1536),
+            "track3": np.random.randn(4096),
         }
 
         # Normalize
@@ -372,9 +372,8 @@ class TestAPIEndpointIntegration:
         data = response.json()
         # Response is a list of models
         assert isinstance(data, list)
-        assert len(data) == 2
+        assert len(data) == 1
         model_names = [m["name"] for m in data]
-        assert "muq" in model_names
         assert "qwen3" in model_names
 
 

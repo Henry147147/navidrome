@@ -132,7 +132,7 @@ def mock_muq_components():
 def test_muq_model_init_defaults(mock_muq_components):
     """Test MuQEmbeddingModel initializes with correct defaults."""
     model = MuQEmbeddingModel()
-    assert model.model_id == "OpenMuQ/MuQ-MuLan-large"
+    assert model.model_id == "OpenMuQ/MuQ-large-msd-iter"
     assert model.device == "cuda"
     assert model.sample_rate == 24_000
     assert model.window_seconds == 120
@@ -485,22 +485,6 @@ def test_muq_model_normalization(mock_muq_components):
     for i in range(batch_size):
         norm = normalized[i].norm().item()
         assert abs(norm - 1.0) < 1e-5
-
-
-@pytest.mark.unit
-@patch("embedding_models.librosa.load")
-def test_muq_embed_string(mock_load, mock_muq_components, logger):
-    """Test MuQ text embedding."""
-    model = MuQEmbeddingModel(device="cpu", logger=logger)
-    model._load_model()
-
-    with model.model_session() as loaded_model:
-        # Mock the model to return text embeddings
-        result = model.embed_string("rock music with guitar")
-
-    # Should return embedding (mocked to 512-D)
-    assert result is not None
-    model.shutdown()
 
 
 @pytest.mark.unit

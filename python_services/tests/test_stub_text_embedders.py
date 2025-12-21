@@ -7,7 +7,6 @@ import pytest
 
 from stub_text_embedders import (
     StubTextEmbedder,
-    StubMuQTextEmbedder,
     StubQwen3TextEmbedder,
     get_stub_embedder,
 )
@@ -90,22 +89,6 @@ class TestStubTextEmbedder:
         assert np.all(similarities <= 1.0)
 
 
-class TestStubMuQTextEmbedder:
-    """Tests for MuQ stub embedder"""
-
-    def test_dimension(self):
-        """Test that MuQ embedder has correct dimension"""
-        embedder = StubMuQTextEmbedder()
-        assert embedder.dimension == 1536
-        assert embedder.model_name == "muq_stub"
-
-    def test_embedding_shape(self):
-        """Test embedding output shape"""
-        embedder = StubMuQTextEmbedder()
-        embedding = embedder.embed_text("test")
-        assert embedding.shape == (1536,)
-
-
 class TestStubQwen3TextEmbedder:
     """Tests for Qwen3 stub embedder"""
 
@@ -125,12 +108,6 @@ class TestStubQwen3TextEmbedder:
 class TestGetStubEmbedder:
     """Tests for get_stub_embedder factory function"""
 
-    def test_get_muq_embedder(self):
-        """Test getting MuQ embedder"""
-        embedder = get_stub_embedder("muq")
-        assert isinstance(embedder, StubMuQTextEmbedder)
-        assert embedder.dimension == 1536
-
     def test_get_qwen3_embedder(self):
         """Test getting Qwen3 embedder"""
         embedder = get_stub_embedder("qwen3")
@@ -146,7 +123,7 @@ class TestGetStubEmbedder:
 class TestEmbeddingQuality:
     """Tests for embedding quality properties"""
 
-    @pytest.mark.parametrize("model", ["muq", "qwen3"])
+    @pytest.mark.parametrize("model", ["qwen3"])
     def test_embedding_diversity(self, model):
         """Test that embeddings for different texts are diverse"""
         embedder = get_stub_embedder(model)
@@ -173,7 +150,7 @@ class TestEmbeddingQuality:
         # (hash-based embeddings should be fairly random)
         assert mean_similarity < 0.5
 
-    @pytest.mark.parametrize("model", ["muq", "qwen3"])
+    @pytest.mark.parametrize("model", ["qwen3"])
     def test_consistent_across_instances(self, model):
         """Test that different embedder instances produce same embeddings"""
         embedder1 = get_stub_embedder(model)

@@ -3,7 +3,6 @@ Text Embedding Service
 
 Provides REST API for embedding text queries into embedding spaces.
 Supported models:
-- muq   : MuQ text projection (stub-backed unless checkpoint provided)
 - qwen3 : Qwen3-Embedding-8B text embeddings (real model)
 """
 
@@ -43,7 +42,7 @@ class TextEmbeddingRequest(BaseModel):
     model: str = Field(
         default="qwen3",
         description="Embedding model to use",
-        pattern="^(muq|qwen3)$",
+        pattern="^(qwen3)$",
     )
 
 
@@ -105,31 +104,27 @@ class TextEmbeddingService:
         Get or create embedder for specified model.
 
         Args:
-            model_name: Model name ("muq" or "qwen3")
+            model_name: Model name ("qwen3")
 
         Returns:
             Embedder instance
         """
         if model_name not in self.embedders:
-            if model_name == "qwen3":
-                if self.use_stubs:
-                    logger.info("Using stub embedder for qwen3 (stubs enabled)")
-                    self.embedders[model_name] = get_stub_embedder("qwen3")
-                else:
-                    try:
-                        if self.description_pipeline is None:
-                            self.description_pipeline = DescriptionEmbeddingPipeline(
-                                device=self.device,
-                                logger=logger,
-                                gpu_settings=self.gpu_settings,
-                            )
-                        self.embedders[model_name] = self.description_pipeline
-                    except Exception as exc:
-                        logger.warning("Falling back to stub qwen3 embedder: %s", exc)
-                        self.embedders[model_name] = get_stub_embedder("qwen3")
+            if self.use_stubs:
+                logger.info("Using stub embedder for qwen3 (stubs enabled)")
+                self.embedders[model_name] = get_stub_embedder("qwen3")
             else:
-                logger.info(f"Using stub embedder for {model_name}")
-                self.embedders[model_name] = get_stub_embedder(model_name)
+                try:
+                    if self.description_pipeline is None:
+                        self.description_pipeline = DescriptionEmbeddingPipeline(
+                            device=self.device,
+                            logger=logger,
+                            gpu_settings=self.gpu_settings,
+                        )
+                    self.embedders[model_name] = self.description_pipeline
+                except Exception as exc:
+                    logger.warning("Falling back to stub qwen3 embedder: %s", exc)
+                    self.embedders[model_name] = get_stub_embedder("qwen3")
 
         return self.embedders[model_name]
 
@@ -138,13 +133,13 @@ class TextEmbeddingService:
         embedder = self.embedders.get(model_name)
         return isinstance(embedder, StubTextEmbedder)
 
-    def embed_text(self, text: str, model: str = "muq") -> np.ndarray:
+    def embed_text(self, text: str, model: str = "qwen3") -> np.ndarray:
         """
         Embed text query into an embedding space.
 
         Args:
             text: Text query
-            model: Model name ("muq" or "qwen3")
+            model: Model name ("qwen3")
 
         Returns:
             Embedding vector as numpy array
@@ -153,7 +148,7 @@ class TextEmbeddingService:
             ValueError: If model name is invalid
             RuntimeError: If embedding fails
         """
-        if model not in ["muq", "qwen3"]:
+        if model not in ["qwen3"]:
             raise ValueError(f"Invalid model: {model}")
 
         try:
@@ -181,22 +176,13 @@ class TextEmbeddingService:
         """Get information about all available models"""
         models = []
 
+        qwen3_status = "stub" if self.use_stubs else "available"
         models.append(
             ModelInfo(
                 name="qwen3",
                 dimension=4096,
-                status="available",
+                status=qwen3_status,
                 description="Qwen3-Embedding-8B text embeddings for caption search",
-            )
-        )
-
-        muq_status = "stub" if self.use_stubs else "available"
-        models.append(
-            ModelInfo(
-                name="muq",
-                dimension=1536,
-                status=muq_status,
-                description="MuQ-MuLan model (default, balanced performance)",
             )
         )
 

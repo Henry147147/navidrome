@@ -3,7 +3,7 @@
 This directory now runs **one** FastAPI service that handles text embeddings, playlist recommendations, and audio embeddings.
 
 ## Endpoints
-- `POST /embed_text` – text → embedding (muq or qwen3)
+- `POST /embed_text` – text → embedding (qwen3)
 - `GET /models` – available text models
 - `GET /health` – unified health report
 - `POST /playlist/{mode}` – recommendation engine

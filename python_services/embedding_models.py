@@ -237,7 +237,7 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
     def __init__(
         self,
         *,
-        model_id: str = "OpenMuQ/MuQ-MuLan-large",
+        model_id: str = "OpenMuQ/MuQ-large-msd-iter",
         device: str = "cuda",
         storage_dtype: torch.dtype = torch.float32,
         sample_rate: int = 24_000,
@@ -485,9 +485,9 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         return results
 
     def embed_string(self, value: str) -> Sequence[float]:
-        with self.model_session() as model:
-            text_embeds = model(texts=value)
-        return text_embeds
+        raise NotImplementedError(
+            "MuQ text embeddings are disabled; use the description pipeline instead."
+        )
 
     def ensure_milvus_schemas(self, client: MilvusClient) -> None:
         existing = client.list_collections()

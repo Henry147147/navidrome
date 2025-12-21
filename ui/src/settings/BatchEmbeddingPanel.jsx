@@ -106,7 +106,7 @@ const MODEL_OPTIONS = [
   {
     value: 'muq',
     label: 'MuQ (1536-dim)',
-    description: 'MuQ-MuLan audio embedding model',
+    description: 'MuQ-large-msd-iter audio embedding model',
   },
   {
     value: 'qwen3',
