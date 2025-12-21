@@ -69,6 +69,7 @@ func (w *embeddingWorker) Close() {
 	w.queue = nil
 	w.active = make(map[string]struct{})
 	w.mu.Unlock()
+	w.stopProgressReporter()
 	w.wg.Wait()
 }
 
@@ -116,6 +117,7 @@ func (w *embeddingWorker) loop(ctx context.Context) {
 			w.mu.Lock()
 			w.running = false
 			w.mu.Unlock()
+			w.stopProgressReporter()
 			log.Info(ctx, "Embedding worker context cancelled, exiting gracefully")
 			return
 		default:
@@ -125,6 +127,7 @@ func (w *embeddingWorker) loop(ctx context.Context) {
 		if w.closed || len(w.queue) == 0 {
 			w.running = false
 			w.mu.Unlock()
+			w.stopProgressReporter()
 			log.Info(ctx, "Embedding worker queue empty, exiting")
 			return
 		}
@@ -155,6 +158,8 @@ func (w *embeddingWorker) startProgressReporter(ctx context.Context) {
 	}
 	w.progressTicker = time.NewTicker(30 * time.Second)
 	w.progressDone = make(chan struct{})
+	ticker := w.progressTicker
+	progressDone := w.progressDone
 	w.mu.Unlock()
 
 	go func() {
@@ -173,15 +178,24 @@ func (w *embeddingWorker) startProgressReporter(ctx context.Context) {
 
 		for {
 			select {
-			case <-w.progressTicker.C:
+			case <-ticker.C:
 				w.logProgress(ctx)
 			case <-ctx.Done():
 				return
-			case <-w.progressDone:
+			case <-progressDone:
 				return
 			}
 		}
 	}()
+}
+
+func (w *embeddingWorker) stopProgressReporter() {
+	w.mu.Lock()
+	if w.progressDone != nil {
+		close(w.progressDone)
+		w.progressDone = nil
+	}
+	w.mu.Unlock()
 }
 
 func (w *embeddingWorker) logProgress(ctx context.Context) {
