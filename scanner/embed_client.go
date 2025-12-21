@@ -29,6 +29,7 @@ type embeddingStatus struct {
 }
 
 type embeddingClient interface {
+	HealthCheck(ctx context.Context) error
 	CheckEmbedding(ctx context.Context, candidate embeddingCandidate) (embeddingStatus, error)
 	EmbedSong(ctx context.Context, candidate embeddingCandidate) error
 }
@@ -58,6 +59,27 @@ func newSocketEmbeddingClient() embeddingClient {
 		statusTimeout: statusCheckTimeout,
 		embedTimeout:  embedTimeout,
 	}
+}
+
+func (c *socketEmbeddingClient) HealthCheck(ctx context.Context) error {
+	payload := map[string]any{
+		"action": "health",
+	}
+
+	var resp struct {
+		Status          string `json:"status"`
+		MilvusConnected bool   `json:"milvus_connected"`
+	}
+
+	if err := c.sendRequest(ctx, 10*time.Second, payload, &resp); err != nil {
+		return fmt.Errorf("health check request failed: %w", err)
+	}
+
+	if resp.Status != "ok" {
+		return fmt.Errorf("service unhealthy: status=%s milvus_connected=%v", resp.Status, resp.MilvusConnected)
+	}
+
+	return nil
 }
 
 func (c *socketEmbeddingClient) CheckEmbedding(ctx context.Context, candidate embeddingCandidate) (embeddingStatus, error) {

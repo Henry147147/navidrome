@@ -3,11 +3,14 @@ Hosts the server that will create the embedding from the music file and push it 
 """
 
 import argparse
+import atexit
 import base64
 import json
 import logging
 import os
+import signal
 import socket
+import threading
 import time
 from dataclasses import asdict
 from hashlib import sha224
@@ -134,6 +137,13 @@ class EmbedSocketServer:
             logger=self.logger,
         )
         self.status_timeout = _status_timeout_seconds()
+        self._shutdown_event = threading.Event()
+
+        # Register cleanup and signal handlers
+        atexit.register(self._cleanup_socket)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGINT, self._signal_handler)
+
         self.logger.debug(
             "EmbedSocketServer initialized for %s",
             self.socket_path,
@@ -431,6 +441,38 @@ class EmbedSocketServer:
         payload["cue_file"] = None
         return payload, []
 
+    def _signal_handler(self, signum, frame):
+        """Handle shutdown signals gracefully"""
+        self.logger.info("Received signal %d, shutting down embedding server", signum)
+        self._shutdown_event.set()
+
+    def _cleanup_socket(self):
+        """Clean up socket file"""
+        try:
+            if os.path.exists(self.socket_path):
+                os.unlink(self.socket_path)
+                self.logger.debug("Cleaned up socket %s", self.socket_path)
+        except Exception as e:
+            self.logger.debug("Error during socket cleanup: %s", e)
+
+    def _health_check(self) -> Dict[str, object]:
+        """Perform health check on embedding service"""
+        milvus_ok = False
+        try:
+            # Ping Milvus to verify connection
+            self.milvus_client.list_collections()
+            milvus_ok = True
+        except Exception as e:
+            self.logger.debug("Milvus connection check failed: %s", e)
+
+        return {
+            "status": "ok" if milvus_ok else "degraded",
+            "milvus_connected": milvus_ok,
+            "descriptions_enabled": self.enable_descriptions,
+            "socket_path": self.socket_path,
+            "model_loaded": self.model is not None,
+        }
+
     def serve_forever(self) -> None:
         if os.path.exists(self.socket_path):
             self.logger.debug("Removing existing socket at %s", self.socket_path)
@@ -441,23 +483,29 @@ class EmbedSocketServer:
             server_sock.bind(self.socket_path)
             os.chmod(self.socket_path, 0o600)
             server_sock.listen(1)
+            server_sock.settimeout(1.0)  # Allow checking shutdown event
             self.logger.info("Embedding server listening on %s", self.socket_path)
 
-            while True:
-                self.logger.debug("Waiting for incoming connection")
-                conn, _ = server_sock.accept()
-                self.logger.debug("Accepted new connection")
+            while not self._shutdown_event.is_set():
                 try:
-                    self.handle_connection(conn)
-                except Exception:  # pragma: no cover - defensive logging
-                    self.logger.exception("Unexpected error handling connection")
+                    self.logger.debug("Waiting for incoming connection")
+                    conn, _ = server_sock.accept()
+                    self.logger.debug("Accepted new connection")
+                    try:
+                        self.handle_connection(conn)
+                    except Exception:  # pragma: no cover - defensive logging
+                        self.logger.exception("Unexpected error handling connection")
+                except socket.timeout:
+                    # Timeout is expected, allows checking shutdown event
+                    continue
+                except Exception as e:
+                    if self._shutdown_event.is_set():
+                        break
+                    self.logger.error("Error accepting connection: %s", e)
         finally:
             server_sock.close()
-            self.logger.debug("Server socket closed")
-            try:
-                os.unlink(self.socket_path)
-            except FileNotFoundError:
-                pass
+            self.logger.info("Embedding server shutdown complete")
+            self._cleanup_socket()
 
     @staticmethod
     def load_from_json(data: dict) -> List[SongEmbedding]:
@@ -603,7 +651,9 @@ class EmbedSocketServer:
 
                 start = time.monotonic()
                 try:
-                    if action == "status":
+                    if action == "health":
+                        response_payload = self._health_check()
+                    elif action == "status":
                         response_payload = self.check_embedding_status(
                             track_id=payload.get("track_id"),
                             artist=payload.get("artist"),

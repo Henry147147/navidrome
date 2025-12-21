@@ -534,8 +534,6 @@ def build_engine(
     uri = milvus_uri or os.getenv("NAVIDROME_MILVUS_URI", "http://localhost:19530")
     client = milvus_client or MilvusClient(uri=uri)
     debug_logging = _env_flag("NAVIDROME_RECOMMENDER_DEBUG")
-    # TODO: remove this line
-    debug_logging = True
     if debug_logging:
         LOGGER.setLevel(logging.DEBUG)
         LOGGER.debug("Debug logging enabled for recommender engine")

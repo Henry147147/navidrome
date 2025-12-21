@@ -48,6 +48,7 @@ class SongEmbedding:
     offset: float
     model_id: str = ""
 
+
 def remove_directory_tree(start_directory: Path):
     for path in start_directory.iterdir():
         if path.is_file():
@@ -55,6 +56,7 @@ def remove_directory_tree(start_directory: Path):
         else:
             remove_directory_tree(path)
     start_directory.rmdir()
+
 
 # for chunk in tqdm(list(EMBEDS.rglob("**chunks.json"))):
 def load_from_json(chunk: Path) -> SongEmbedding:
@@ -69,6 +71,7 @@ def load_from_json(chunk: Path) -> SongEmbedding:
         model_id=data.get("model_id", ""),
     )
     return song_embed
+
 
 def insert_all(client: MilvusClient, root_embeds: Path):
     all_embeds = []

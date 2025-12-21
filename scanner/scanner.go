@@ -167,8 +167,15 @@ func (s *scannerImpl) scheduleEmbeddings(ctx context.Context, state *scanState) 
 
 	if s.embedWorker == nil {
 		if client := newPythonEmbeddingClient(); client != nil {
+			// Health check before initializing worker
+			healthCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			if err := client.HealthCheck(healthCtx); err != nil {
+				log.Warn(ctx, "Embedding service health check failed; skipping embeddings", err, "count", len(candidates))
+				return
+			}
 			s.embedWorker = newEmbeddingWorker(client)
-			log.Info(ctx, "Initialized embedding worker")
+			log.Info(ctx, "Initialized embedding worker after successful health check")
 		} else {
 			log.Warn(ctx, "Embedding service not configured; skipping embedding run", "count", len(candidates))
 			return
@@ -176,7 +183,7 @@ func (s *scannerImpl) scheduleEmbeddings(ctx context.Context, state *scanState) 
 	}
 
 	log.Info(ctx, "Scheduling embeddings", "count", len(candidates))
-	s.embedWorker.Enqueue(candidates)
+	s.embedWorker.Enqueue(ctx, candidates)
 	log.Info(ctx, "Scheduled background embeddings", "count", len(candidates))
 
 	if embeddingWaitEnabled(ctx) {

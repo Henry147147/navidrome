@@ -46,7 +46,7 @@ except ImportError:
     _spec.loader.exec_module(_ps_models)
     TrackSegment = _ps_models.TrackSegment
 
-from muq import MuQMuLan
+from muq import MuQ
 
 
 class BaseEmbeddingModel(ABC):
@@ -258,7 +258,8 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
 
     def _load_model(self) -> torch.nn.Module:
         GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
-        model = MuQMuLan.from_pretrained(self.model_id)
+        # Use MuQ class for audio-only embeddings (not MuQMuLan which is for music-text joint embeddings)
+        model = MuQ.from_pretrained(self.model_id)
         model = model.to(self.device).to(self.storage_dtype).eval()
         return model
 
@@ -375,15 +376,36 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         # Run inference
         with self.model_session() as model:
             with torch.inference_mode():
-                outputs = model(wavs=chunk_tensor)
+                # MuQ returns an object with last_hidden_state attribute
+                model_output = model(chunk_tensor)
+                # Extract embeddings
+                if hasattr(model_output, "last_hidden_state"):
+                    outputs = model_output.last_hidden_state
+                else:
+                    outputs = model_output
+
+                # Handle different output shapes
+                if outputs.dim() == 3:
+                    # Shape: [batch, seq_len, hidden_dim] -> take mean over seq_len
+                    outputs = outputs.mean(dim=1)
+                elif outputs.dim() == 1:
+                    # Shape: [hidden_dim] -> add batch dimension
+                    outputs = outputs.unsqueeze(0)
 
         # outputs.T is shape [D, T] where T is number of chunks
         raw_embedding = outputs.T
 
         if apply_enrichment:
-            return enrich_embedding(raw_embedding)
+            result = enrich_embedding(raw_embedding)
         else:
-            return raw_embedding
+            result = raw_embedding
+
+        # Clear GPU cache to prevent memory issues
+        if self.device.startswith("cuda") and torch.cuda.is_available():
+            del chunk_tensor, model_output, outputs, raw_embedding
+            torch.cuda.empty_cache()
+
+        return result
 
     def embed_audio_tensor_batch(
         self,
@@ -454,7 +476,21 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
 
         with self.model_session() as model:
             with torch.inference_mode():
-                outputs = model(wavs=chunk_tensor)  # [num_total_chunks, D]
+                # MuQ returns an object with last_hidden_state attribute
+                model_output = model(chunk_tensor)
+                # Extract embeddings
+                if hasattr(model_output, "last_hidden_state"):
+                    outputs = model_output.last_hidden_state
+                else:
+                    outputs = model_output
+
+                # Handle different output shapes
+                if outputs.dim() == 3:
+                    # Shape: [batch, seq_len, hidden_dim] -> take mean over seq_len
+                    outputs = outputs.mean(dim=1)
+                elif outputs.dim() == 1:
+                    # Shape: [hidden_dim] -> add batch dimension
+                    outputs = outputs.unsqueeze(0)
 
         # Group outputs by track
         num_tracks = len(waveforms)
@@ -580,11 +616,33 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         )
 
         with torch.inference_mode():
-            outputs = model(wavs=chunk_tensor)
+            # MuQ returns an object with last_hidden_state attribute
+            model_output = model(chunk_tensor)
+            # Extract embeddings
+            if hasattr(model_output, "last_hidden_state"):
+                outputs = model_output.last_hidden_state
+            else:
+                outputs = model_output
+
+            # Handle different output shapes
+            # Expected: [num_chunks, D] -> transpose to [D, num_chunks]
+            # But MuQ might return [num_chunks, seq_len, D] or just [num_chunks, D]
+            if outputs.dim() == 3:
+                # Shape: [batch, seq_len, hidden_dim] -> take mean over seq_len
+                outputs = outputs.mean(dim=1)  # Now [batch, hidden_dim]
+            elif outputs.dim() == 1:
+                # Shape: [hidden_dim] -> add batch dimension
+                outputs = outputs.unsqueeze(0)
+            # Now outputs should be [num_chunks, D]
 
         enriched = enrich_embedding(outputs.T)
 
         enriched_cpu = enriched.to("cpu", dtype=self.storage_dtype)
+
+        # Clear GPU cache to prevent memory issues
+        if self.device.startswith("cuda") and torch.cuda.is_available():
+            del chunk_tensor, model_output, outputs, enriched
+            torch.cuda.empty_cache()
 
         computed_duration: Optional[float]
         if duration is not None:
@@ -695,7 +753,18 @@ def enrich_embedding(embedding: torch.Tensor) -> torch.Tensor:
     returns: [3*D] L2-normalized vector
       [mean, robust_sigma_iqr, dmean]
     """
-    assert embedding.dim() == 2, "Expected [D, T]"
+    # Robustly handle different tensor shapes
+    if embedding.dim() == 1:
+        # Single vector [D] -> treat as [D, 1]
+        embedding = embedding.unsqueeze(1)
+    elif embedding.dim() == 3:
+        # [batch, seq, D] -> mean over seq -> [batch, D] -> transpose to [D, batch]
+        embedding = embedding.mean(dim=1).T
+    elif embedding.dim() != 2:
+        raise ValueError(
+            f"Unexpected embedding shape: {embedding.shape}, expected 1D, 2D, or 3D"
+        )
+
     D, T = embedding.shape
     # Use the device of the input tensor instead of hardcoding CUDA
     device = embedding.device
