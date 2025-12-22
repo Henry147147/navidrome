@@ -2,7 +2,7 @@
 Description generation and text embedding pipeline for Navidrome uploads.
 
 This module wires together NVIDIA's Music Flamingo captioning model with
-Qwen3-Embedding-8B to produce rich text descriptions and cosine-normalized
+Qwen3-Embedding-4B to produce rich text descriptions and cosine-normalized
 embeddings for each uploaded track. The resulting vectors are stored in a
 separate Milvus collection so they can be queried alongside the existing
 MuQ audio embeddings.
@@ -185,12 +185,12 @@ class MusicFlamingoCaptioner:
 
 
 class Qwen3Embedder:
-    """Embedding helper around Qwen3-Embedding-8B."""
+    """Embedding helper around Qwen3-Embedding-4B."""
 
     def __init__(
         self,
         *,
-        model_id: str = "Qwen/Qwen3-Embedding-8B",
+        model_id: str = "Qwen/Qwen3-Embedding-4B",
         device: Optional[str] = None,
         torch_dtype: Optional[torch.dtype] = None,
         logger: Optional[logging.Logger] = None,
@@ -324,7 +324,7 @@ class DescriptionEmbeddingPipeline:
         self,
         *,
         caption_model_id: str = "nvidia/music-flamingo-hf",
-        text_model_id: str = "Qwen/Qwen3-Embedding-8B",
+        text_model_id: str = "Qwen/Qwen3-Embedding-4B",
         device: Optional[str] = None,
         logger: Optional[logging.Logger] = None,
         gpu_settings: Optional[GPUSettings] = None,
@@ -373,7 +373,7 @@ class DescriptionEmbeddingPipeline:
         schema = MilvusClient.create_schema(auto_id=False, enable_dynamic_field=False)
         schema.add_field("name", DataType.VARCHAR, is_primary=True, max_length=512)
         schema.add_field("description", DataType.VARCHAR, max_length=2048)
-        schema.add_field("embedding", DataType.FLOAT_VECTOR, dim=4096)
+        schema.add_field("embedding", DataType.FLOAT_VECTOR, dim=2560)
         schema.add_field("offset", DataType.FLOAT)
         schema.add_field("model_id", DataType.VARCHAR, max_length=256)
         client.create_collection(DEFAULT_DESCRIPTION_COLLECTION, schema=schema)

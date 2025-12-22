@@ -51,7 +51,7 @@ class TestNegativePromptSchemas:
             mode="recent",
             negative_embeddings={
                 "muq": [[0.1] * 1536, [0.2] * 1536],
-                "qwen3": [[0.3] * 4096],
+                "qwen3": [[0.3] * 2560],
             },
         )
 

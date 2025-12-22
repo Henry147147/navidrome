@@ -24,7 +24,7 @@ model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
     "nvidia/music-flamingo-hf", device_map="auto", torch_dtype=torch.bfloat16
 )
 print(model.dtype)
-quantize(model, weights=qfloat8, activations=qfloat8, include=include)
+quantize(model, weights=qfloat8, activations=qfloat(torch.bfloat16), include=include)
 
 flacs = list(glob("/mnt/z/music/**/*.flac"))
 mp3s = list(glob("/mnt/z/music/**/*.mp3"))

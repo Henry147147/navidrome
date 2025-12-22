@@ -97,11 +97,11 @@ class StubTextEmbedder:
 
 class StubQwen3TextEmbedder(StubTextEmbedder):
     """
-    Stub for Qwen3 text embeddings (4096D).
+    Stub for Qwen3 text embeddings (2560D).
     """
 
     def __init__(self):
-        super().__init__(dimension=4096, model_name="qwen3_stub")
+        super().__init__(dimension=2560, model_name="qwen3_stub")
 
 
 def get_stub_embedder(model: str) -> StubTextEmbedder:

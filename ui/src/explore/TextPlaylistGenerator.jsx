@@ -94,7 +94,7 @@ const MODEL_OPTIONS = [
   {
     value: 'qwen3',
     label: 'Qwen3 (Text)',
-    description: 'Caption + text embeddings (4096-dim)',
+    description: 'Caption + text embeddings (2560-dim)',
   },
 ]
 

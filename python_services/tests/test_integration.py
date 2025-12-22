@@ -105,7 +105,7 @@ class TestRecommendationEngineIntegration:
         # Multi-model search
         embeddings = {
             "muq": np.random.randn(1536).tolist(),
-            "qwen3": np.random.randn(4096).tolist(),
+            "qwen3": np.random.randn(2560).tolist(),
         }
         results = searcher.search_multi_model(
             embeddings=embeddings, top_k=10, merge_strategy="union"
@@ -153,7 +153,7 @@ class TestRecommendationEngineIntegration:
 
         embeddings = {
             "muq": np.random.randn(1536).tolist(),
-            "qwen3": np.random.randn(4096).tolist(),
+            "qwen3": np.random.randn(2560).tolist(),
         }
         results = searcher.search_multi_model(
             embeddings=embeddings, top_k=10, merge_strategy="intersection"
@@ -180,7 +180,7 @@ class TestTextEmbeddingIntegration:
 
         # Verify output
         assert isinstance(embedding, np.ndarray)
-        assert len(embedding) == 4096  # Qwen3 dimension
+        assert len(embedding) == 2560  # Qwen3 dimension
         assert np.abs(np.linalg.norm(embedding) - 1.0) < 0.01  # Should be normalized
 
     def test_text_embedding_api_endpoint(self):
@@ -197,8 +197,8 @@ class TestTextEmbeddingIntegration:
         assert "model" in data
         assert "dimension" in data
         assert "is_stub" in data
-        assert data["dimension"] == 4096
-        assert len(data["embedding"]) == 4096
+        assert data["dimension"] == 2560
+        assert len(data["embedding"]) == 2560
 
     def test_text_to_recommendation_flow(self):
         """Test complete flow: text → embedding → recommendation"""
@@ -247,9 +247,9 @@ class TestNegativePromptIntegration:
 
         # Mock track embeddings (track2 is similar to negative prompt)
         track_embeddings = {
-            "track1": np.random.randn(4096),
+            "track1": np.random.randn(2560),
             "track2": negative_emb * 0.9,  # Very similar to negative
-            "track3": np.random.randn(4096),
+            "track3": np.random.randn(2560),
         }
 
         # Normalize
@@ -321,7 +321,7 @@ class TestMultiModelAgreementIntegration:
 
         embeddings = {
             "muq": np.random.randn(1536).tolist(),
-            "qwen3": np.random.randn(4096).tolist(),
+            "qwen3": np.random.randn(2560).tolist(),
         }
 
         # Test with min_model_agreement = 2

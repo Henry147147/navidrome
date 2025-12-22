@@ -110,7 +110,7 @@ const MODEL_OPTIONS = [
   },
   {
     value: 'qwen3',
-    label: 'Qwen3 (4096-dim)',
+    label: 'Qwen3 (2560-dim)',
     description: 'Music Flamingo captions + Qwen3 text embeddings',
   },
 ]

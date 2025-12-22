@@ -64,7 +64,7 @@ class TestMultiModelSimilaritySearcher:
         client.set_mock_results("description_embedding", qwen_results)
 
         # Search with union strategy
-        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 4096}
+        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 2560}
 
         results = searcher.search_multi_model(
             embeddings=embeddings, top_k=10, merge_strategy="union"
@@ -96,7 +96,7 @@ class TestMultiModelSimilaritySearcher:
         client.set_mock_results("embedding", muq_results)
         client.set_mock_results("description_embedding", qwen_results)
 
-        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 4096}
+        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 2560}
 
         results = searcher.search_multi_model(
             embeddings=embeddings, top_k=10, merge_strategy="intersection"
@@ -125,7 +125,7 @@ class TestMultiModelSimilaritySearcher:
         client.set_mock_results("embedding", muq_results)
         client.set_mock_results("description_embedding", qwen_results)
 
-        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 4096}
+        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 2560}
 
         # muq has priority 1 (higher), qwen3 has priority 2 (lower)
         results = searcher.search_multi_model(
@@ -159,7 +159,7 @@ class TestMultiModelSimilaritySearcher:
         client.set_mock_results("embedding", muq_results)
         client.set_mock_results("description_embedding", qwen_results)
 
-        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 4096}
+        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 2560}
 
         # Require at least 2 models to agree
         results = searcher.search_multi_model(
@@ -208,7 +208,7 @@ class TestMultiModelSimilaritySearcher:
         client.set_mock_results("embedding", muq_results)
         client.set_mock_results("description_embedding", qwen_results)
 
-        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 4096}
+        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 2560}
 
         results = searcher.search_multi_model(
             embeddings=embeddings, top_k=10, merge_strategy="union"
@@ -260,7 +260,7 @@ class TestMultiModelSimilaritySearcher:
         client.set_mock_results("embedding", muq_results)
         client.set_mock_results("description_embedding", qwen_results)
 
-        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 4096}
+        embeddings = {"muq": [0.1] * 1536, "qwen3": [0.2] * 2560}
 
         results = searcher.search_multi_model(
             embeddings=embeddings, top_k=10, merge_strategy="union"

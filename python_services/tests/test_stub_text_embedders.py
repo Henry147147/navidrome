@@ -95,14 +95,14 @@ class TestStubQwen3TextEmbedder:
     def test_dimension(self):
         """Test that Qwen3 embedder has correct dimension"""
         embedder = StubQwen3TextEmbedder()
-        assert embedder.dimension == 4096
+        assert embedder.dimension == 2560
         assert embedder.model_name == "qwen3_stub"
 
     def test_embedding_shape(self):
         """Test embedding output shape"""
         embedder = StubQwen3TextEmbedder()
         embedding = embedder.embed_text("test")
-        assert embedding.shape == (4096,)
+        assert embedding.shape == (2560,)
 
 
 class TestGetStubEmbedder:
@@ -112,7 +112,7 @@ class TestGetStubEmbedder:
         """Test getting Qwen3 embedder"""
         embedder = get_stub_embedder("qwen3")
         assert isinstance(embedder, StubQwen3TextEmbedder)
-        assert embedder.dimension == 4096
+        assert embedder.dimension == 2560
 
     def test_invalid_model_raises_error(self):
         """Test that invalid model name raises ValueError"""
