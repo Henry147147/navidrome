@@ -56,9 +56,9 @@ export const AddToPlaylistDialog = () => {
       .then((res) => {
         addToPlaylist(res.data.id)
       })
-      .catch((error) =>
-        notify(`Error: ${error.message}`, { type: 'warning' }),
-      )
+      .catch((error) => {
+        notify(`Error: ${error.message}`, { type: 'warning' })
+      })
   }
 
   const addToPlaylist = (playlistId, distinctIds) => {
