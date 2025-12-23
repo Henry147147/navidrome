@@ -198,7 +198,7 @@ const BatchEmbeddingPanel = () => {
                 _: `Batch embedding completed: ${data.processed_tracks} tracks processed`,
                 count: data.processed_tracks,
               }),
-              'success',
+              { type: 'success' },
             )
           } else if (data.status === 'completed_with_errors') {
             notify(
@@ -206,21 +206,21 @@ const BatchEmbeddingPanel = () => {
                 _: `Batch embedding completed with ${data.failed_tracks} errors`,
                 count: data.failed_tracks,
               }),
-              'warning',
+              { type: 'warning' },
             )
           } else if (data.status === 'cancelled') {
             notify(
               translate('pages.settings.batchEmbedding.cancelled', {
                 _: 'Batch embedding was cancelled',
               }),
-              'info',
+              { type: 'info' },
             )
           } else if (data.status === 'failed') {
             notify(
               translate('pages.settings.batchEmbedding.failed', {
                 _: 'Batch embedding failed',
               }),
-              'error',
+              { type: 'error' },
             )
           }
         }
@@ -240,7 +240,7 @@ const BatchEmbeddingPanel = () => {
         translate('pages.settings.batchEmbedding.noModelsSelected', {
           _: 'Please select at least one model',
         }),
-        'warning',
+        { type: 'warning' },
       )
       return
     }
@@ -259,7 +259,7 @@ const BatchEmbeddingPanel = () => {
           translate('pages.settings.batchEmbedding.started', {
             _: 'Batch embedding job started',
           }),
-          'info',
+          { type: 'info' },
         )
       } else {
         throw new Error('Unexpected response from server')
@@ -272,7 +272,7 @@ const BatchEmbeddingPanel = () => {
           _: 'Failed to start batch embedding job',
         })
       setError(message)
-      notify(message, 'error')
+      notify(message, { type: 'error' })
     }
   }, [selectedModels, clearExisting, dataProvider, notify, translate])
 
@@ -283,14 +283,14 @@ const BatchEmbeddingPanel = () => {
         translate('pages.settings.batchEmbedding.cancelling', {
           _: 'Cancelling batch embedding job...',
         }),
-        'info',
+        { type: 'info' },
       )
     } catch (err) {
       notify(
         translate('pages.settings.batchEmbedding.cancelError', {
           _: 'Failed to cancel batch embedding job',
         }),
-        'error',
+        { type: 'error' },
       )
     }
   }, [dataProvider, notify, translate])
@@ -315,7 +315,7 @@ const BatchEmbeddingPanel = () => {
         translate('pages.settings.batchEmbedding.gpu.restarting', {
           _: 'GPU settings applied. Restarting Python services...',
         }),
-        'info',
+        { type: 'info' },
       )
     } catch (err) {
       const message =
@@ -324,7 +324,7 @@ const BatchEmbeddingPanel = () => {
           _: 'Failed to update GPU settings',
         })
       setError(message)
-      notify(message, 'error')
+      notify(message, { type: 'error' })
     } finally {
       setIsRestarting(false)
     }

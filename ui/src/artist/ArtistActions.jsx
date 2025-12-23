@@ -59,7 +59,7 @@ const ArtistActions = ({ className, record, ...rest }) => {
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('Error fetching top songs for artist:', e)
-      notify('ra.page.error', 'warning')
+      notify('ra.page.error', { type: 'warning' })
     }
   }, [dispatch, notify, record])
 
@@ -69,7 +69,7 @@ const ArtistActions = ({ className, record, ...rest }) => {
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('Error fetching songs for shuffle:', e)
-      notify('ra.page.error', 'warning')
+      notify('ra.page.error', { type: 'warning' })
     }
   }, [dataProvider, dispatch, record, notify])
 
@@ -79,7 +79,7 @@ const ArtistActions = ({ className, record, ...rest }) => {
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('Error starting radio for artist:', e)
-      notify('ra.page.error', 'warning')
+      notify('ra.page.error', { type: 'warning' })
     }
   }, [dispatch, notify, record])
 

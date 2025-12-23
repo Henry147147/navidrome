@@ -129,7 +129,7 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
 
   const handleGenerate = async () => {
     if (!textQuery.trim()) {
-      notify('Please enter a text description', 'warning')
+      notify('Please enter a text description', { type: 'warning' })
       return
     }
 
@@ -158,7 +158,7 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
             _: `Generated ${data.tracks.length} tracks`,
             count: data.tracks.length,
           }),
-          'success',
+          { type: 'success' },
         )
       } else {
         throw new Error('No tracks returned')
@@ -171,7 +171,7 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
           _: 'Failed to generate playlist from text query',
         })
       setError(message)
-      notify(message, 'error')
+      notify(message, { type: 'error' })
     } finally {
       setLoading(false)
     }

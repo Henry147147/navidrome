@@ -1091,7 +1091,7 @@ const ExploreSuggestions = () => {
           translate('pages.explore.rerollFailed', {
             _: 'Unable to reroll this song. Please try again.',
           })
-        notify(message, 'warning')
+        notify(message, { type: 'warning' })
         setGenerators((prev) => ({
           ...prev,
           [mode]: {
@@ -1214,7 +1214,7 @@ const ExploreSuggestions = () => {
           translate('pages.explore.rerollFailed', {
             _: 'Unable to reroll this song. Please try again.',
           })
-        notify(message, 'warning')
+        notify(message, { type: 'warning' })
       })
       .finally(() => {
         setCustomUpdatingTrackId(null)
