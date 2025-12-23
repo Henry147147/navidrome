@@ -41,3 +41,5 @@ python_services/checkpoints
 pyhton_services/__pycache__/
 **/__pycache__/
 *.py[cod]
+benchmarks
+mf_benchmark_results

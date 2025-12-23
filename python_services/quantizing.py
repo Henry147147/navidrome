@@ -24,7 +24,7 @@ model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
     "nvidia/music-flamingo-hf", device_map="auto", torch_dtype=torch.bfloat16
 )
 print(model.dtype)
-quantize(model, weights=qfloat8, activations=qfloat(torch.bfloat16), include=include)
+quantize(model, weights=qfloat8, activations=qfloat8, include=include)
 
 flacs = list(glob("/mnt/z/music/**/*.flac"))
 mp3s = list(glob("/mnt/z/music/**/*.mp3"))
@@ -36,6 +36,7 @@ all_songs.extend(mp3s)
 processor = FlamingoProcessor.from_pretrained("nvidia/music-flamingo-hf")
 
 import random
+import signal
 from typing import Sequence
 
 _MUSIC_FLAMINGO_PROMPTS: Sequence[str] = [
@@ -110,9 +111,25 @@ def prepare(processor, audio_path: str) -> dict:
     return inputs
 
 print("starting calibration")
+all_songs = random.sample(all_songs, 50)
+
+stop_requested = False
+
+
+def _handle_sigint(signum, frame):
+    global stop_requested
+    if not stop_requested:
+        print("\nCtrl-C received: will stop after current calibration step and save results...")
+    stop_requested = True
+
+
+signal.signal(signal.SIGINT, _handle_sigint)
 
 with Calibration():
-    for song in tqdm.tqdm(all_songs):
+    for idx, song in enumerate(tqdm.tqdm(all_songs), start=1):
+        if stop_requested:
+            print(f"Stopping calibration early at step {idx - 1}/{len(all_songs)}.")
+            break
         prepared = prepare(processor, song)
         for k, v in list(prepared.items()):
             if isinstance(v, torch.Tensor):
@@ -121,9 +138,17 @@ with Calibration():
                 else:
                     prepared[k] = v.to(model.device)
 
-        model.generate(**prepared, max_new_tokens=8192)
+        try:
+            model.generate(**prepared, max_new_tokens=8192)
+        except KeyboardInterrupt:
+            stop_requested = True
+            print("\nCtrl-C received during generation: stopping after this step and saving results...")
+            break
 
-print("done calibrating")
+if stop_requested:
+    print("calibration interrupted, saving results to disk")
+else:
+    print("done calibrating")
 
 freeze(model)
 
