@@ -82,7 +82,7 @@ var (
 func SetLevel(l Level) {
 	loggerMu.Lock()
 	currentLevel = l
-	defaultLogger.Level = logrus.TraceLevel
+	defaultLogger.SetLevel(logrus.TraceLevel)
 	loggerMu.Unlock()
 	logrus.SetLevel(logrus.Level(l))
 }
@@ -174,6 +174,8 @@ func SetDefaultLogger(l *logrus.Logger) {
 }
 
 func CurrentLevel() Level {
+	loggerMu.RLock()
+	defer loggerMu.RUnlock()
 	return currentLevel
 }
 
