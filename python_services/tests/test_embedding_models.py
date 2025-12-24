@@ -153,7 +153,7 @@ def mock_muq_components():
             mock_output.last_hidden_state = torch.randn(batch_size, 512)
             return mock_output
 
-        mock_model.__call__ = mock_forward
+        mock_model.side_effect = mock_forward
         mock_muq_class.from_pretrained = Mock(return_value=mock_model)
 
         yield {
@@ -326,6 +326,36 @@ def test_muq_empty_audio_handling(mock_load, mock_muq_components, sample_track_s
 
     # Should return None for empty audio
     assert result is None
+    model.shutdown()
+
+
+@pytest.mark.unit
+def test_muq_chunk_batching_uses_multiple_calls(mock_muq_components, sample_track_segment):
+    """Ensure long audio is split into multiple inference batches."""
+    model = MuQEmbeddingModel(
+        device="cpu",
+        sample_rate=1,
+        window_seconds=4,
+        hop_seconds=2,
+        chunk_batch_size=2,
+    )
+    model._load_model()
+
+    audio = np.arange(9, dtype=np.float32)
+    expected_chunks = len(list(model._iter_audio_chunks(audio)))
+    expected_batches = (expected_chunks + model.chunk_batch_size - 1) // model.chunk_batch_size
+
+    with patch.object(model, "_load_audio_segment", return_value=audio):
+        with model.model_session() as loaded_model:
+            result = model._embed_single_segment(
+                model=loaded_model,
+                music_file="test.wav",
+                track_segment=sample_track_segment,
+            )
+
+    assert result is not None
+    assert len(result.embedding) == 1536
+    assert mock_muq_components["model"].call_count == expected_batches
     model.shutdown()
 
 
@@ -628,8 +658,8 @@ def test_base_model_session_updates_timestamp(dummy_model):
     with dummy_model.model_session():
         pass
 
-    # Timestamp should be updated
-    assert dummy_model._last_used > initial_time
+    # Timestamp should be updated (allowing for clock adjustments)
+    assert dummy_model._last_used != initial_time
 
 
 @pytest.mark.unit

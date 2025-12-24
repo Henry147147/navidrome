@@ -243,6 +243,7 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         sample_rate: int = 24_000,
         window_seconds: int = 120,
         hop_seconds: int = 15,
+        chunk_batch_size: Optional[int] = None,
         timeout_seconds: int = 360,
         logger: Optional[logging.Logger] = None,
     ) -> None:
@@ -253,8 +254,81 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         self.sample_rate = sample_rate
         self.window_seconds = window_seconds
         self.hop_seconds = hop_seconds
+        env_batch = os.getenv("NAVIDROME_MUQ_CHUNK_BATCH", "").strip()
+        if chunk_batch_size is None:
+            try:
+                chunk_batch_size = int(env_batch) if env_batch else 4
+            except ValueError:
+                chunk_batch_size = 4
+        self.chunk_batch_size = max(int(chunk_batch_size), 1)
         self._gpu_owner = f"{self.__class__.__name__}"
         GPU_COORDINATOR.register(self._gpu_owner, self.offload_to_cpu)
+
+    def _iter_audio_chunks(self, audio: np.ndarray) -> Generator[np.ndarray, None, None]:
+        chunk_size = int(self.window_seconds * self.sample_rate)
+        hop_size = int(self.hop_seconds * self.sample_rate)
+        if chunk_size <= 0 or hop_size <= 0:
+            raise ValueError("window_seconds and hop_seconds must be positive")
+        total_samples = int(audio.shape[0])
+        if total_samples <= 0:
+            return
+        last_start = max(total_samples - chunk_size, 0)
+        for start_sample in range(0, last_start + 1, hop_size):
+            end_sample = min(start_sample + chunk_size, total_samples)
+            chunk = audio[start_sample:end_sample]
+            observed = int(chunk.shape[0])
+            if observed == 0:
+                continue
+            if observed < chunk_size:
+                chunk = np.pad(chunk, (0, chunk_size - observed))
+            yield chunk.astype("float32", copy=False)
+        if last_start % hop_size != 0:
+            start_sample = last_start
+            end_sample = min(start_sample + chunk_size, total_samples)
+            chunk = audio[start_sample:end_sample]
+            observed = int(chunk.shape[0])
+            if observed == 0:
+                return
+            if observed < chunk_size:
+                chunk = np.pad(chunk, (0, chunk_size - observed))
+            yield chunk.astype("float32", copy=False)
+
+    def _run_chunk_batch(
+        self,
+        *,
+        model: torch.nn.Module,
+        chunk_batch: List[np.ndarray],
+    ) -> torch.Tensor:
+        chunk_matrix = np.stack(chunk_batch, axis=0)
+        chunk_tensor = (
+            torch.from_numpy(chunk_matrix).to(self.device).to(self.storage_dtype)
+        )
+        model_output: Optional[torch.Tensor] = None
+        outputs: Optional[torch.Tensor] = None
+        outputs_cpu: Optional[torch.Tensor] = None
+        try:
+            with torch.inference_mode():
+                model_output = model(chunk_tensor)
+                if hasattr(model_output, "last_hidden_state"):
+                    outputs = model_output.last_hidden_state
+                else:
+                    outputs = model_output
+                if outputs.dim() == 3:
+                    outputs = outputs.mean(dim=1)
+                elif outputs.dim() == 1:
+                    outputs = outputs.unsqueeze(0)
+                outputs_cpu = outputs.detach().to("cpu")
+        finally:
+            if self.device.startswith("cuda") and torch.cuda.is_available():
+                del chunk_tensor
+                if model_output is not None:
+                    del model_output
+                if outputs is not None:
+                    del outputs
+                torch.cuda.empty_cache()
+        if outputs_cpu is None:
+            raise RuntimeError("Model produced no outputs for audio batch")
+        return outputs_cpu
 
     def _load_model(self) -> torch.nn.Module:
         GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
@@ -346,51 +420,24 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         # Convert to numpy for chunking
         audio = waveform.contiguous().cpu().numpy()
 
-        # Chunk the audio (same logic as _embed_single_segment)
-        chunk_size = int(self.window_seconds * self.sample_rate)
-        hop_size = int(self.hop_seconds * self.sample_rate)
-        total_samples = audio.shape[0]
-        starts = list(range(0, max(total_samples - chunk_size, 0) + 1, hop_size))
-        if not starts or (starts[-1] + chunk_size < total_samples):
-            starts.append(max(total_samples - chunk_size, 0))
+        outputs_cpu: List[torch.Tensor] = []
 
-        chunk_arrays = []
-        for start_sample in starts:
-            end_sample = min(start_sample + chunk_size, total_samples)
-            chunk = audio[start_sample:end_sample]
-            observed = int(chunk.shape[0])
-            if observed == 0:
-                continue
-            if observed < chunk_size:
-                chunk = np.pad(chunk, (0, chunk_size - observed))
-            chunk_arrays.append(chunk.astype("float32", copy=False))
+        with self.model_session() as model:
+            batch: List[np.ndarray] = []
+            for chunk in self._iter_audio_chunks(audio):
+                batch.append(chunk)
+                if len(batch) >= self.chunk_batch_size:
+                    outputs_cpu.append(
+                        self._run_chunk_batch(model=model, chunk_batch=batch)
+                    )
+                    batch = []
+            if batch:
+                outputs_cpu.append(self._run_chunk_batch(model=model, chunk_batch=batch))
 
-        if not chunk_arrays:
+        if not outputs_cpu:
             raise RuntimeError("No audio chunks produced")
 
-        chunk_matrix = np.stack(chunk_arrays, axis=0)
-        chunk_tensor = (
-            torch.from_numpy(chunk_matrix).to(self.device).to(self.storage_dtype)
-        )
-
-        # Run inference
-        with self.model_session() as model:
-            with torch.inference_mode():
-                # MuQ returns an object with last_hidden_state attribute
-                model_output = model(chunk_tensor)
-                # Extract embeddings
-                if hasattr(model_output, "last_hidden_state"):
-                    outputs = model_output.last_hidden_state
-                else:
-                    outputs = model_output
-
-                # Handle different output shapes
-                if outputs.dim() == 3:
-                    # Shape: [batch, seq_len, hidden_dim] -> take mean over seq_len
-                    outputs = outputs.mean(dim=1)
-                elif outputs.dim() == 1:
-                    # Shape: [hidden_dim] -> add batch dimension
-                    outputs = outputs.unsqueeze(0)
+        outputs = torch.cat(outputs_cpu, dim=0)
 
         # outputs.T is shape [D, T] where T is number of chunks
         raw_embedding = outputs.T
@@ -399,11 +446,6 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
             result = enrich_embedding(raw_embedding)
         else:
             result = raw_embedding
-
-        # Clear GPU cache to prevent memory issues
-        if self.device.startswith("cuda") and torch.cuda.is_available():
-            del chunk_tensor, model_output, outputs, raw_embedding
-            torch.cuda.empty_cache()
 
         return result
 
@@ -424,79 +466,49 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         Returns:
             List of embedding tensors, each either [3*D] or [D, T] depending on apply_enrichment
         """
-        # Collect all chunks from all waveforms
-        all_chunks = []
-        chunk_to_track = []  # Maps chunk index to track index
-
-        for track_idx, (waveform, sample_rate) in enumerate(
-            zip(waveforms, sample_rates)
-        ):
-            # Ensure mono audio
-            if waveform.dim() > 1 and waveform.shape[0] > 1:
-                waveform = waveform.mean(dim=0)
-            else:
-                waveform = waveform.squeeze(0) if waveform.dim() > 1 else waveform
-
-            # Resample if necessary
-            if sample_rate != self.sample_rate:
-                waveform = torchaudio.functional.resample(
-                    waveform, sample_rate, self.sample_rate
-                )
-
-            # Convert to numpy for chunking
-            audio = waveform.contiguous().cpu().numpy()
-
-            # Chunk the audio (same logic as single track)
-            chunk_size = int(self.window_seconds * self.sample_rate)
-            hop_size = int(self.hop_seconds * self.sample_rate)
-            total_samples = audio.shape[0]
-            starts = list(range(0, max(total_samples - chunk_size, 0) + 1, hop_size))
-            if not starts or (starts[-1] + chunk_size < total_samples):
-                starts.append(max(total_samples - chunk_size, 0))
-
-            for start_sample in starts:
-                end_sample = min(start_sample + chunk_size, total_samples)
-                chunk = audio[start_sample:end_sample]
-                observed = int(chunk.shape[0])
-                if observed == 0:
-                    continue
-                if observed < chunk_size:
-                    chunk = np.pad(chunk, (0, chunk_size - observed))
-                all_chunks.append(chunk.astype("float32", copy=False))
-                chunk_to_track.append(track_idx)
-
-        if not all_chunks:
-            raise RuntimeError("No audio chunks produced from batch")
-
-        # Stack all chunks and run inference in a single batch
-        chunk_matrix = np.stack(all_chunks, axis=0)
-        chunk_tensor = (
-            torch.from_numpy(chunk_matrix).to(self.device).to(self.storage_dtype)
-        )
+        num_tracks = len(waveforms)
+        track_embeddings: List[List[torch.Tensor]] = [[] for _ in range(num_tracks)]
 
         with self.model_session() as model:
-            with torch.inference_mode():
-                # MuQ returns an object with last_hidden_state attribute
-                model_output = model(chunk_tensor)
-                # Extract embeddings
-                if hasattr(model_output, "last_hidden_state"):
-                    outputs = model_output.last_hidden_state
+            batch_chunks: List[np.ndarray] = []
+            batch_track_indices: List[int] = []
+
+            for track_idx, (waveform, sample_rate) in enumerate(
+                zip(waveforms, sample_rates)
+            ):
+                # Ensure mono audio
+                if waveform.dim() > 1 and waveform.shape[0] > 1:
+                    waveform = waveform.mean(dim=0)
                 else:
-                    outputs = model_output
+                    waveform = waveform.squeeze(0) if waveform.dim() > 1 else waveform
 
-                # Handle different output shapes
-                if outputs.dim() == 3:
-                    # Shape: [batch, seq_len, hidden_dim] -> take mean over seq_len
-                    outputs = outputs.mean(dim=1)
-                elif outputs.dim() == 1:
-                    # Shape: [hidden_dim] -> add batch dimension
-                    outputs = outputs.unsqueeze(0)
+                # Resample if necessary
+                if sample_rate != self.sample_rate:
+                    waveform = torchaudio.functional.resample(
+                        waveform, sample_rate, self.sample_rate
+                    )
 
-        # Group outputs by track
-        num_tracks = len(waveforms)
-        track_embeddings = [[] for _ in range(num_tracks)]
-        for chunk_idx, track_idx in enumerate(chunk_to_track):
-            track_embeddings[track_idx].append(outputs[chunk_idx])
+                # Convert to numpy for chunking
+                audio = waveform.contiguous().cpu().numpy()
+
+                for chunk in self._iter_audio_chunks(audio):
+                    batch_chunks.append(chunk)
+                    batch_track_indices.append(track_idx)
+                    if len(batch_chunks) >= self.chunk_batch_size:
+                        outputs = self._run_chunk_batch(
+                            model=model, chunk_batch=batch_chunks
+                        )
+                        for output, mapped_track in zip(
+                            outputs, batch_track_indices
+                        ):
+                            track_embeddings[mapped_track].append(output)
+                        batch_chunks = []
+                        batch_track_indices = []
+
+            if batch_chunks:
+                outputs = self._run_chunk_batch(model=model, chunk_batch=batch_chunks)
+                for output, mapped_track in zip(outputs, batch_track_indices):
+                    track_embeddings[mapped_track].append(output)
 
         # Process each track's chunks
         results = []
@@ -585,64 +597,34 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
             )
             return None
 
-        chunk_size = int(self.window_seconds * self.sample_rate)
-        hop_size = int(self.hop_seconds * self.sample_rate)
         total_samples = audio.shape[0]
-        starts = list(range(0, max(total_samples - chunk_size, 0) + 1, hop_size))
-        if not starts or (starts[-1] + chunk_size < total_samples):
-            starts.append(max(total_samples - chunk_size, 0))
-
-        chunk_arrays = []
-        for start_sample in starts:
-            end_sample = min(start_sample + chunk_size, total_samples)
-            chunk = audio[start_sample:end_sample]
-            observed = int(chunk.shape[0])
-            if observed == 0:
-                continue
-            if observed < chunk_size:
-                chunk = np.pad(chunk, (0, chunk_size - observed))
-            chunk_arrays.append(chunk.astype("float32", copy=False))
-
-        if not chunk_arrays:
+        if total_samples == 0:
             self.logger.warning(
                 "No audio chunks produced for segment %s",
                 track_segment.index,
             )
             return None
 
-        chunk_matrix = np.stack(chunk_arrays, axis=0)
-        chunk_tensor = (
-            torch.from_numpy(chunk_matrix).to(self.device).to(self.storage_dtype)
-        )
+        outputs_cpu: List[torch.Tensor] = []
+        batch: List[np.ndarray] = []
+        for chunk in self._iter_audio_chunks(audio):
+            batch.append(chunk)
+            if len(batch) >= self.chunk_batch_size:
+                outputs_cpu.append(self._run_chunk_batch(model=model, chunk_batch=batch))
+                batch = []
+        if batch:
+            outputs_cpu.append(self._run_chunk_batch(model=model, chunk_batch=batch))
 
-        with torch.inference_mode():
-            # MuQ returns an object with last_hidden_state attribute
-            model_output = model(chunk_tensor)
-            # Extract embeddings
-            if hasattr(model_output, "last_hidden_state"):
-                outputs = model_output.last_hidden_state
-            else:
-                outputs = model_output
+        if not outputs_cpu:
+            self.logger.warning(
+                "No audio chunks produced for segment %s",
+                track_segment.index,
+            )
+            return None
 
-            # Handle different output shapes
-            # Expected: [num_chunks, D] -> transpose to [D, num_chunks]
-            # But MuQ might return [num_chunks, seq_len, D] or just [num_chunks, D]
-            if outputs.dim() == 3:
-                # Shape: [batch, seq_len, hidden_dim] -> take mean over seq_len
-                outputs = outputs.mean(dim=1)  # Now [batch, hidden_dim]
-            elif outputs.dim() == 1:
-                # Shape: [hidden_dim] -> add batch dimension
-                outputs = outputs.unsqueeze(0)
-            # Now outputs should be [num_chunks, D]
-
+        outputs = torch.cat(outputs_cpu, dim=0)
         enriched = enrich_embedding(outputs.T)
-
         enriched_cpu = enriched.to("cpu", dtype=self.storage_dtype)
-
-        # Clear GPU cache to prevent memory issues
-        if self.device.startswith("cuda") and torch.cuda.is_available():
-            del chunk_tensor, model_output, outputs, enriched
-            torch.cuda.empty_cache()
 
         computed_duration: Optional[float]
         if duration is not None:
