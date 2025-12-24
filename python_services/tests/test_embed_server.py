@@ -252,8 +252,13 @@ def test_check_embedding_status_detects_existing(monkeypatch, logger: logging.Lo
 
     assert result["embedded"] is True
     assert result["hasDescription"] is True
+    assert result["hasAudioEmbedding"] is True
     assert result["name"] == "Artist - Track"
-    assert milvus.loaded == ["embedding", "description_embedding"]
+    assert milvus.loaded == [
+        "embedding",
+        "description_embedding",
+        "flamingo_audio_embedding",
+    ]
 
 
 def test_process_embedding_request_with_split(
@@ -390,6 +395,7 @@ def test_socket_status_roundtrip(logger: logging.Logger):
 
     assert response["embedded"] is True
     assert response["hasDescription"] is True
+    assert response["hasAudioEmbedding"] is True
     assert response["name"] == "Artist - Track"
     assert response["request_id"] == "req-1"
 

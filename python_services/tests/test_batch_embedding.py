@@ -259,17 +259,26 @@ class TestBatchEmbeddingJob:
                 # This would be a checkpoint
                 assert i % job.checkpoint_interval == 0
 
-    def test_collection_mapping(self):
+    def test_collection_mapping(self, temp_paths):
         """Test collection name mapping"""
-        # Test the collection mapping is correct
-        collection_map = {
-            "muq": "embedding",
-            "qwen3": "description_embedding",
-        }
+        db_path, music_root = temp_paths
+        job = BatchEmbeddingJob(
+            db_path=db_path,
+            music_root=music_root,
+            milvus_uri="http://localhost:19530",
+        )
 
         # Verify the mapping is correct
-        for model_name, collection_name in collection_map.items():
-            assert collection_name in ["embedding", "description_embedding"]
+        for model_name, collection_name in job.collection_map.items():
+            assert collection_name in [
+                "embedding",
+                "description_embedding",
+                "flamingo_audio_embedding",
+            ]
+
+        assert (
+            job.audio_collection == "flamingo_audio_embedding"
+        ), "Audio embedding collection should be available"
 
 
 class TestBatchJobAPI:

@@ -25,6 +25,7 @@ from pymilvus import MilvusClient
 
 from embedding_models import BaseEmbeddingModel, MuQEmbeddingModel
 from description_pipeline import (
+    DEFAULT_AUDIO_COLLECTION,
     DEFAULT_DESCRIPTION_COLLECTION,
     DescriptionEmbeddingPipeline,
 )
@@ -97,6 +98,7 @@ class EmbedStatusRequest(BaseModel):
 class EmbedStatusResponse(BaseModel):
     embedded: bool
     hasDescription: bool
+    hasAudioEmbedding: bool
     name: str
 
 
@@ -230,6 +232,7 @@ class EmbedSocketServer:
             return {
                 "embedded": False,
                 "hasDescription": False,
+                "hasAudioEmbedding": False,
                 "name": canonical_name,
             }
 
@@ -242,15 +245,20 @@ class EmbedSocketServer:
         has_description = self._milvus_name_exists(
             DEFAULT_DESCRIPTION_COLLECTION, name_list
         )
+        has_audio_embedding = self._milvus_name_exists(
+            DEFAULT_AUDIO_COLLECTION, name_list
+        )
         self.logger.debug(
-            "Status result track_id=%s embedded=%s hasDescription=%s",
+            "Status result track_id=%s embedded=%s hasDescription=%s hasAudio=%s",
             track_id,
             embedded,
             has_description,
+            has_audio_embedding,
         )
         return {
             "embedded": embedded,
             "hasDescription": has_description,
+            "hasAudioEmbedding": has_audio_embedding,
             "name": canonical_name,
         }
 
@@ -545,6 +553,7 @@ class EmbedSocketServer:
         )
         songs = self.load_from_json(embedding)
         description_rows = self._load_descriptions(embedding)
+        audio_rows = self._load_audio_embeddings(embedding)
         if not songs:
             raise RuntimeError("Embedding payload did not contain any segments.")
 
@@ -579,6 +588,32 @@ class EmbedSocketServer:
                     "Failed to upsert description embeddings to Milvus"
                 )
 
+        if audio_rows:
+            if self.description_pipeline:
+                try:
+                    audio_dim = len(audio_rows[0]["embedding"])
+                    self.description_pipeline.ensure_milvus_schemas(
+                        self.milvus_client, audio_dim=audio_dim
+                    )
+                    self.description_pipeline.ensure_milvus_index(self.milvus_client)
+                except Exception:
+                    self.logger.warning(
+                        "Failed to ensure audio embedding schema/index before upsert",
+                        exc_info=True,
+                    )
+            try:
+                self.milvus_client.load_collection(DEFAULT_AUDIO_COLLECTION)
+            except Exception:
+                self.logger.exception(
+                    "Failed to load Milvus collection %s",
+                    DEFAULT_AUDIO_COLLECTION,
+                )
+            try:
+                self.milvus_client.upsert(DEFAULT_AUDIO_COLLECTION, audio_rows)
+                self.milvus_client.flush(DEFAULT_AUDIO_COLLECTION)
+            except Exception:
+                self.logger.exception("Failed to upsert audio embeddings to Milvus")
+
         self.logger.debug(
             "Prepared embedding payload for Milvus. Songs=%d",
             len(songs),
@@ -596,7 +631,11 @@ class EmbedSocketServer:
     def _load_descriptions(self, embedding: dict) -> List[Dict[str, object]]:
         rows: List[Dict[str, object]] = []
         for desc in embedding.get("descriptions") or []:
-            vector = desc.get("embedding")
+            vector = (
+                desc.get("embedding")
+                or desc.get("description_embedding")
+                or desc.get("descriptionEmbedding")
+            )
             if not vector:
                 continue
             title = desc.get("title") or desc.get("index") or ""
@@ -611,6 +650,28 @@ class EmbedSocketServer:
                     "embedding": vector,
                     "offset": float(desc.get("offset_seconds") or 0.0),
                     "model_id": desc.get("model_id") or embedding.get("model_id") or "",
+                }
+            )
+        return rows
+
+    def _load_audio_embeddings(self, embedding: dict) -> List[Dict[str, object]]:
+        rows: List[Dict[str, object]] = []
+        for desc in embedding.get("descriptions") or []:
+            vector = desc.get("audio_embedding") or desc.get("audioEmbedding")
+            if not vector:
+                continue
+            title = desc.get("title") or desc.get("index") or ""
+            title = str(title).strip()
+            if not title:
+                continue
+            rows.append(
+                {
+                    "name": title,
+                    "embedding": vector,
+                    "offset": float(desc.get("offset_seconds") or 0.0),
+                    "model_id": desc.get("audio_model_id")
+                    or embedding.get("caption_model_id")
+                    or "",
                 }
             )
         return rows

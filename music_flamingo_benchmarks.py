@@ -85,12 +85,15 @@ class BenchmarkSpec:
     reference_field: Optional[str] = None
 
 
+MCQ_PROMPT_TEMPLATE = "Question: {question} Options: {options} The correct answer is:"
+
+
 DEFAULT_SPECS: Dict[str, BenchmarkSpec] = {
     "mmau_music_full": BenchmarkSpec(
         name="mmau_music_full",
         kind="mcq",
         loader="mmau",
-        prompt="Answer the multiple-choice question about the music. Respond with only the option letter.",
+        prompt=MCQ_PROMPT_TEMPLATE,
         dataset_id="pbcong/mmau",
         split="test",
     ),
@@ -98,7 +101,7 @@ DEFAULT_SPECS: Dict[str, BenchmarkSpec] = {
         name="mmau_music_test_mini",
         kind="mcq",
         loader="mmau",
-        prompt="Answer the multiple-choice question about the music. Respond with only the option letter.",
+        prompt=MCQ_PROMPT_TEMPLATE,
         dataset_id="pbcong/mmau",
         split="test",
     ),
@@ -106,7 +109,7 @@ DEFAULT_SPECS: Dict[str, BenchmarkSpec] = {
         name="mmau_pro_music",
         kind="mcq",
         loader="mmau_pro",
-        prompt="Answer the multiple-choice question about the music. Respond with only the option letter.",
+        prompt=MCQ_PROMPT_TEMPLATE,
         dataset_id="gamma-lab-umd/MMAU-Pro",
         split="test",
     ),
@@ -114,7 +117,7 @@ DEFAULT_SPECS: Dict[str, BenchmarkSpec] = {
         name="muchomusic",
         kind="mcq",
         loader="muchomusic",
-        prompt="Answer the multiple-choice question about the music. Respond with only the option letter.",
+        prompt=MCQ_PROMPT_TEMPLATE,
         dataset_id="AudioLLMs/mu_chomusic_test",
         split="test",
         audio_field="context",
@@ -123,7 +126,7 @@ DEFAULT_SPECS: Dict[str, BenchmarkSpec] = {
         name="mmar_music",
         kind="mcq",
         loader="mmar",
-        prompt="Answer the multiple-choice question about the music. Respond with only the option letter.",
+        prompt=MCQ_PROMPT_TEMPLATE,
         dataset_id="BoJack/MMAR",
         split="test",
     ),
@@ -146,7 +149,7 @@ DEFAULT_SPECS: Dict[str, BenchmarkSpec] = {
         name="songcaps",
         kind="caption",
         loader="songcaps",
-        prompt="Write a rich, detailed caption describing the music.",
+        prompt="Write a caption describing the music.",
     ),
     "nsynth_source": BenchmarkSpec(
         name="nsynth_source",
@@ -189,7 +192,7 @@ DEFAULT_SPECS: Dict[str, BenchmarkSpec] = {
         name="musiccaps",
         kind="caption",
         loader="musiccaps",
-        prompt="Write a concise caption describing the music.",
+        prompt="Write a caption describing the music.",
         dataset_id="CLAPv2/MusicCaps",
         split="train",
     ),
@@ -508,6 +511,69 @@ def normalize_text(text: str) -> str:
     return text
 
 
+def format_prompt(template: str, **kwargs: Any) -> str:
+    if not template:
+        return ""
+    try:
+        class _SafeDict(dict):
+            def __missing__(self, key: str) -> str:
+                return "{" + key + "}"
+
+        return template.format_map(_SafeDict(**kwargs))
+    except Exception:
+        return template
+
+
+def format_mcq_options(choices: List[str]) -> str:
+    parts = []
+    for i, choice in enumerate(choices):
+        label = chr(65 + i)
+        text = str(choice).strip()
+        text = re.sub(r"^\([A-Da-d]\)\s*", "", text)
+        text = strip_choice_prefix(text)
+        if text and text[-1] not in ".?!":
+            text = text + "."
+        parts.append(f"({label}) {text}")
+    return " ".join(parts)
+
+
+def extract_choice_index(text: Optional[str], n_choices: int) -> Optional[int]:
+    if not text:
+        return None
+    m = re.search(r"\b([A-Z])\b", text.upper())
+    if m:
+        idx = ord(m.group(1)) - ord("A")
+        if 0 <= idx < n_choices:
+            return idx
+    m = re.search(r"\b(\d+)\b", text)
+    if m:
+        idx = int(m.group(1)) - 1
+        if 0 <= idx < n_choices:
+            return idx
+    return None
+
+
+def choice_index_for_gold(gold: Optional[str], choices: List[str]) -> Optional[int]:
+    if gold is None:
+        return None
+    text = str(gold).strip()
+    if not text:
+        return None
+    if re.fullmatch(r"[A-Da-d]", text):
+        idx = ord(text.upper()) - ord("A")
+        if 0 <= idx < len(choices):
+            return idx
+    if re.fullmatch(r"\d+", text):
+        idx = int(text)
+        if 1 <= idx <= len(choices):
+            return idx - 1
+    gold_norm = normalize_text(text)
+    for i, choice in enumerate(choices):
+        if normalize_text(choice) == gold_norm:
+            return i
+    return None
+
+
 def parse_mcq_answer(output: str, choices: List[str]) -> Optional[str]:
     if not output:
         return None
@@ -540,6 +606,19 @@ def parse_label(output: str, labels: List[str]) -> Optional[str]:
     if labels:
         return parse_mcq_answer(output, labels)
     return output.strip() if output else None
+
+
+def mcq_is_correct(output: str, pred: Optional[str], gold: Optional[str], choices: List[str]) -> bool:
+    if gold is None:
+        return False
+    gold_norm = normalize_text(gold)
+    if pred and normalize_text(pred) == gold_norm:
+        return True
+    if output and normalize_text(output) == gold_norm:
+        return True
+    pred_idx = extract_choice_index(output, len(choices))
+    gold_idx = choice_index_for_gold(gold, choices)
+    return pred_idx is not None and gold_idx is not None and pred_idx == gold_idx
 
 
 def is_cjk(text: str) -> bool:
@@ -1686,9 +1765,15 @@ def run_mcq(
                 choices = parse_choices(ex.get("choices"))
                 if not choices:
                     raise ValueError(f"MCQ sample missing choices in {spec.name}")
-                options = "\n".join([f"{chr(65+i)}. {c}" for i, c in enumerate(choices)])
+                options = format_mcq_options(choices)
                 question = ex.get("question", "")
-                prompt = ex.get("prompt") or f"{question}\nOptions:\n{options}\nAnswer with the option letter only."
+                prompt = ex.get("prompt")
+                if not prompt:
+                    template = spec.prompt or MCQ_PROMPT_TEMPLATE
+                    if "{question}" in template or "{options}" in template:
+                        prompt = format_prompt(template, question=question, options=options)
+                    else:
+                        prompt = f"{template}\nQuestion: {question} Options: {options} The correct answer is:"
                 prompts.append(prompt)
                 audio_paths.append(ex["audio"])
                 choices_list.append(choices)
@@ -1697,7 +1782,7 @@ def run_mcq(
             outputs = runner.generate_batch(audio_paths, prompts, args.max_new_tokens, args.temperature)
             for ex, output, choices, question, gold in zip(batch, outputs, choices_list, questions, golds):
                 pred = parse_mcq_answer(output, choices)
-                is_correct = pred is not None and gold is not None and normalize_text(pred) == normalize_text(gold)
+                is_correct = mcq_is_correct(output or "", pred, gold, choices)
                 correct += int(is_correct)
                 total += 1
                 records.append(

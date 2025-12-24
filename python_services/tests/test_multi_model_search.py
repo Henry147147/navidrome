@@ -41,6 +41,7 @@ class TestMultiModelSimilaritySearcher:
         assert searcher.COLLECTION_MAP == {
             "muq": "embedding",
             "qwen3": "description_embedding",
+            "flamingo_audio": "flamingo_audio_embedding",
         }
 
     def test_union_merge_strategy(self):

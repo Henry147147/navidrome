@@ -22,6 +22,7 @@ from models import SongEmbedding
 logger = logging.getLogger("navidrome.database_query")
 
 DEFAULT_COLLECTION = "embedding"
+FLAMINGO_AUDIO_COLLECTION = "flamingo_audio_embedding"
 DEFAULT_TOP_K = 25
 DEFAULT_MIN_EF = 64
 
@@ -321,6 +322,7 @@ class MultiModelSimilaritySearcher:
     COLLECTION_MAP = {
         "muq": "embedding",
         "qwen3": "description_embedding",
+        "flamingo_audio": FLAMINGO_AUDIO_COLLECTION,
     }
 
     def __init__(
@@ -601,7 +603,7 @@ class MultiModelSimilaritySearcher:
 
         Args:
             names: Track names to fetch
-            model: Model to fetch from (muq or qwen3)
+            model: Model to fetch from (muq, qwen3, flamingo_audio)
 
         Returns:
             Dict mapping track name to embedding vector

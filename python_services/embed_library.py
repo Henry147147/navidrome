@@ -6,7 +6,7 @@ Usage:
         --db-path ./navidrome.db \
         --music-root ./music \
         --milvus-db-path ./milvus.db \
-        --models muq qwen3 \
+        --models muq qwen3 flamingo_audio \
         --no-clear-existing
 """
 
@@ -50,7 +50,7 @@ def parse_args() -> argparse.Namespace:
         "--models",
         nargs="+",
         default=["muq", "qwen3"],
-        help="Embedding models to run (default: muq qwen3).",
+        help="Embedding models to run (default: muq qwen3). Supports flamingo_audio.",
     )
     parser.add_argument(
         "--clear-existing",

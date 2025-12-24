@@ -3,8 +3,9 @@ Description generation and text embedding pipeline for Navidrome uploads.
 
 This module wires together NVIDIA's Music Flamingo captioning model with
 Qwen3-Embedding-4B to produce rich text descriptions and cosine-normalized
-embeddings for each uploaded track. The resulting vectors are stored in a
-separate Milvus collection so they can be queried alongside the existing
+embeddings for each uploaded track. Music Flamingo audio features are also
+pooled into a standalone audio embedding. Both vectors are stored in
+separate Milvus collections so they can be queried alongside the existing
 MuQ audio embeddings.
 """
 
@@ -15,12 +16,12 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
 from pymilvus import MilvusClient, DataType
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer, AutoConfig
 
 from gpu_settings import GPUSettings, load_gpu_settings
 from gpu_model_coordinator import GPU_COORDINATOR
@@ -32,18 +33,61 @@ from transformers import (
 
 _HAS_MUSIC_FLAMINGO = True
 DEFAULT_DESCRIPTION_COLLECTION = "description_embedding"
+DEFAULT_AUDIO_COLLECTION = "flamingo_audio_embedding"
 DESCRIPTION_JSON_PATH = Path("song_descriptions.json")
 
 
 @dataclass
 class DescriptionSegment:
-    """Lightweight container for a single caption + embedding."""
+    """Lightweight container for a single caption + embeddings."""
 
     title: str
     description: str
-    embedding: List[float]
+    description_embedding: List[float]
+    audio_embedding: List[float]
     offset_seconds: float = 0.0
     duration_seconds: Optional[float] = None
+
+    def to_payload(self, *, text_model_id: str, audio_model_id: str) -> dict:
+        """Serialize segment with stable field names for downstream storage."""
+        return {
+            "title": self.title,
+            "description": self.description,
+            "description_embedding": self.description_embedding,
+            "audio_embedding": self.audio_embedding,
+            # Backwards-compatible alias used by existing Milvus insertion logic.
+            "embedding": self.description_embedding,
+            "offset_seconds": self.offset_seconds,
+            "duration_seconds": self.duration_seconds,
+            "model_id": text_model_id,
+            "audio_model_id": audio_model_id,
+        }
+
+
+def _pool_audio_embedding(embedding: torch.Tensor) -> torch.Tensor:
+    """
+    Pool variable-length Flamingo audio embeddings into a single vector.
+
+    Supports 1D, 2D (tokens × dim), or 3D (batch × tokens × dim) tensors.
+    Returns an L2-normalized 1D float tensor.
+    """
+    if embedding.dim() == 1:
+        pooled = embedding
+    elif embedding.dim() == 2:
+        pooled = embedding.mean(dim=0)
+    elif embedding.dim() == 3:
+        pooled = embedding.mean(dim=1).mean(dim=0)
+    else:
+        raise ValueError(
+            f"Unexpected audio embedding shape {tuple(embedding.shape)}; "
+            "expected 1D, 2D, or 3D tensor."
+        )
+
+    pooled = pooled.to(torch.float32)
+    norm = torch.linalg.norm(pooled)
+    if norm > 0:
+        pooled = pooled / norm
+    return pooled
 
 
 class MusicFlamingoCaptioner:
@@ -56,9 +100,9 @@ class MusicFlamingoCaptioner:
         device: Optional[str] = None,
         torch_dtype: Optional[torch.dtype] = torch.bfloat16,
         logger: Optional[logging.Logger] = None,
-        gpu_settings: Optional[GPUSettings] = None,
+        gpu_settings: Optional[GPUSettings] = None
     ) -> None:
-
+        self.last_input_embeds: Optional[torch.Tensor] = None
         self.model_id = model_id
         self.gpu_settings = gpu_settings or load_gpu_settings()
         self.device = device or self.gpu_settings.device_target()
@@ -73,7 +117,7 @@ class MusicFlamingoCaptioner:
         self.model = self._build_model()
         self.model.eval()
 
-    def _build_model(self):
+    def _build_model(self) -> AudioFlamingo3ForConditionalGeneration:
         # Prefer PyTorch SDPA attention to avoid optional flash-attn dependency.
         max_memory = self.gpu_settings.max_memory_map()
         device_map = "auto" if max_memory is not None else {"": self.device}
@@ -92,6 +136,17 @@ class MusicFlamingoCaptioner:
             # Ensure every module ends up on the requested CUDA device when not auto-sharded.
             model = model.to(self.device)
         self.gpu_settings.apply_runtime_limits()
+
+        # monkeypatch the language model to save the input_embeds so we have access to it
+        old_call = model.get_audio_features
+        def new_call(input_features: torch.FloatTensor, input_features_mask: torch.Tensor):
+            return_value = old_call(input_features, input_features_mask)
+            if self.last_input_embeds is None:
+                self.last_input_embeds = return_value.cpu().detach()
+            return return_value
+        model.get_audio_features = new_call
+        # TODO, test this
+        
         return model
 
     def _ensure_model_on_device(self):
@@ -131,7 +186,7 @@ class MusicFlamingoCaptioner:
         except Exception:
             pass
 
-    def generate(self, audio_path: str, prompt: Optional[str] = None) -> str:
+    def generate(self, audio_path: str, prompt: Optional[str] = None) -> Tuple[str, List[float]]:
         """
         Generate a rich caption for the provided audio file using the official
         Music Flamingo chat template, mirroring the model card example.
@@ -148,6 +203,7 @@ class MusicFlamingoCaptioner:
             self._ensure_model_on_device()
         else:
             self._ensure_model_on_device()
+        assert self.model is not None
 
         conversation = [
             {
@@ -175,13 +231,19 @@ class MusicFlamingoCaptioner:
 
         with torch.inference_mode():
             # Allow long, detailed captions for complex tracks.
+            self.last_input_embeds = None
             outputs = self.model.generate(**inputs, max_new_tokens=8192)
+        
+        assert self.last_input_embeds is not None
+        audio_embedding = _pool_audio_embedding(self.last_input_embeds).tolist()
+        self.last_input_embeds = None
+        
 
         # Strip the prompt tokens from the generated sequence
         decoded = self.processor.batch_decode(
             outputs[:, inputs.input_ids.shape[1] :], skip_special_tokens=True
         )
-        return decoded[0].strip()
+        return decoded[0].strip(), audio_embedding
 
 
 class Qwen3Embedder:
@@ -320,6 +382,10 @@ class Qwen3Embedder:
 class DescriptionEmbeddingPipeline:
     """Generate descriptions and text embeddings for uploaded tracks."""
 
+    # Hint for batch jobs to use the two-stage caption + embed flow.
+    caption_only = True
+    collection_audio = DEFAULT_AUDIO_COLLECTION
+
     def __init__(
         self,
         *,
@@ -337,6 +403,7 @@ class DescriptionEmbeddingPipeline:
         self._captioner_instance: Optional[MusicFlamingoCaptioner] = None
         self.text_model_id = text_model_id
         self._embedder_instance: Optional[Qwen3Embedder] = None
+        self._audio_embedding_dim: Optional[int] = None
 
     def _get_captioner(self) -> MusicFlamingoCaptioner:
         """
@@ -365,59 +432,133 @@ class DescriptionEmbeddingPipeline:
             )
         return self._embedder_instance
 
-    def ensure_milvus_schemas(self, client: MilvusClient) -> None:
-        existing = set(client.list_collections())
-        if DEFAULT_DESCRIPTION_COLLECTION in existing:
-            return
+    def _resolve_audio_embedding_dim(self) -> Optional[int]:
+        """Resolve Flamingo audio embedding dimension from config or cached value."""
+        cached = getattr(self, "_audio_embedding_dim", None)
+        if cached:
+            return int(cached)
+        try:
+            config = AutoConfig.from_pretrained(
+                self.caption_model_id, trust_remote_code=True
+            )
+            dim = None
+            text_cfg = getattr(config, "text_config", None)
+            if text_cfg is not None and hasattr(text_cfg, "hidden_size"):
+                dim = int(text_cfg.hidden_size)
+            elif hasattr(config, "hidden_size"):
+                dim = int(config.hidden_size)
+            if dim:
+                self._audio_embedding_dim = dim
+                return dim
+        except Exception:
+            # Avoid hard failure on schema creation; will retry after first embedding.
+            self.logger.debug(
+                "Unable to resolve Flamingo audio embedding dimension yet",
+                exc_info=True,
+            )
+        return None
 
-        schema = MilvusClient.create_schema(auto_id=False, enable_dynamic_field=False)
-        schema.add_field("name", DataType.VARCHAR, is_primary=True, max_length=512)
-        schema.add_field("description", DataType.VARCHAR, max_length=2048)
-        schema.add_field("embedding", DataType.FLOAT_VECTOR, dim=2560)
-        schema.add_field("offset", DataType.FLOAT)
-        schema.add_field("model_id", DataType.VARCHAR, max_length=256)
-        client.create_collection(DEFAULT_DESCRIPTION_COLLECTION, schema=schema)
+    def ensure_milvus_schemas(
+        self, client: MilvusClient, *, audio_dim: Optional[int] = None
+    ) -> None:
+        existing = set(client.list_collections())
+        if DEFAULT_DESCRIPTION_COLLECTION not in existing:
+            schema = MilvusClient.create_schema(
+                auto_id=False, enable_dynamic_field=False
+            )
+            schema.add_field("name", DataType.VARCHAR, is_primary=True, max_length=512)
+            schema.add_field("description", DataType.VARCHAR, max_length=2048)
+            schema.add_field("embedding", DataType.FLOAT_VECTOR, dim=2560)
+            schema.add_field("offset", DataType.FLOAT)
+            schema.add_field("model_id", DataType.VARCHAR, max_length=256)
+            client.create_collection(DEFAULT_DESCRIPTION_COLLECTION, schema=schema)
+
+        if DEFAULT_AUDIO_COLLECTION not in existing:
+            resolved_dim = audio_dim or self._resolve_audio_embedding_dim()
+            if resolved_dim:
+                self._audio_embedding_dim = int(resolved_dim)
+                schema = MilvusClient.create_schema(
+                    auto_id=False, enable_dynamic_field=False
+                )
+                schema.add_field(
+                    "name", DataType.VARCHAR, is_primary=True, max_length=512
+                )
+                schema.add_field(
+                    "embedding", DataType.FLOAT_VECTOR, dim=int(resolved_dim)
+                )
+                schema.add_field("offset", DataType.FLOAT)
+                schema.add_field("model_id", DataType.VARCHAR, max_length=256)
+                client.create_collection(DEFAULT_AUDIO_COLLECTION, schema=schema)
+            else:
+                self.logger.warning(
+                    "Skipping audio embedding schema creation; dimension unavailable"
+                )
 
     def ensure_milvus_index(self, client: MilvusClient) -> None:
-        indexes = client.describe_collection(DEFAULT_DESCRIPTION_COLLECTION).get(
-            "indexes", []
-        )
-        index_fields = {index.get("field_name") for index in indexes}
-        if "embedding" in index_fields and "name" in index_fields:
-            return
-
-        params = MilvusClient.prepare_index_params()
-        params.add_index(field_name="name", index_type="INVERTED")
+        existing = set(client.list_collections())
         from embedding_models import _milvus_uses_lite
 
-        if _milvus_uses_lite():
-            params.add_index(
-                field_name="embedding",
-                index_type="IVF_FLAT",
-                metric_type="COSINE",
-                params={"nlist": 1024},
+        if DEFAULT_DESCRIPTION_COLLECTION in existing:
+            indexes = client.describe_collection(DEFAULT_DESCRIPTION_COLLECTION).get(
+                "indexes", []
             )
-        else:
-            params.add_index(
-                field_name="embedding",
-                index_type="HNSW",
-                metric_type="COSINE",
-                params={"M": 50, "efConstruction": 250},
+            index_fields = {index.get("field_name") for index in indexes}
+            if "embedding" not in index_fields or "name" not in index_fields:
+                params = MilvusClient.prepare_index_params()
+                params.add_index(field_name="name", index_type="INVERTED")
+                if _milvus_uses_lite():
+                    params.add_index(
+                        field_name="embedding",
+                        index_type="IVF_FLAT",
+                        metric_type="COSINE",
+                        params={"nlist": 1024},
+                    )
+                else:
+                    params.add_index(
+                        field_name="embedding",
+                        index_type="HNSW",
+                        metric_type="COSINE",
+                        params={"M": 50, "efConstruction": 250},
+                    )
+                client.create_index(DEFAULT_DESCRIPTION_COLLECTION, params)
+
+        if DEFAULT_AUDIO_COLLECTION in existing:
+            indexes = client.describe_collection(DEFAULT_AUDIO_COLLECTION).get(
+                "indexes", []
             )
-        client.create_index(DEFAULT_DESCRIPTION_COLLECTION, params)
+            index_fields = {index.get("field_name") for index in indexes}
+            if "embedding" not in index_fields or "name" not in index_fields:
+                params = MilvusClient.prepare_index_params()
+                params.add_index(field_name="name", index_type="INVERTED")
+                if _milvus_uses_lite():
+                    params.add_index(
+                        field_name="embedding",
+                        index_type="IVF_FLAT",
+                        metric_type="COSINE",
+                        params={"nlist": 1024},
+                    )
+                else:
+                    params.add_index(
+                        field_name="embedding",
+                        index_type="HNSW",
+                        metric_type="COSINE",
+                        params={"M": 50, "efConstruction": 250},
+                    )
+                client.create_index(DEFAULT_AUDIO_COLLECTION, params)
 
     def describe_music(
         self, music_file: str, music_name: str, *, offset_seconds: float = 0.0
-    ) -> List[DescriptionSegment]:
+    ) -> Optional[List[DescriptionSegment]]:
         try:
-            description = self._get_captioner().generate(music_file)
+            description, audio_embedding = self._get_captioner().generate(music_file)
         except Exception:
             self.logger.exception(
                 "Failed to generate caption with Music Flamingo; using fallback text"
             )
-            description = (
-                f"Audio track titled '{music_name}' with mixed instrumentation."
-            )
+            return None
+
+        if audio_embedding:
+            self._audio_embedding_dim = len(audio_embedding)
 
         # Persist raw description immediately
         self._persist_description(music_name, description, music_file)
@@ -430,17 +571,20 @@ class DescriptionEmbeddingPipeline:
             DescriptionSegment(
                 title=music_name,
                 description=description,
-                embedding=embedding.cpu().tolist(),
+                description_embedding=embedding.cpu().tolist(),
+                audio_embedding=audio_embedding,
                 offset_seconds=float(offset_seconds),
                 duration_seconds=None,
             )
         ]
 
-    def caption_only(self, music_file: str, music_name: str) -> str:
+    def get_caption(self, music_file: str, music_name: str) -> Tuple[str, List[float]]:
         """Generate caption only (no embeddings) and persist to JSON."""
-        description = self._get_captioner().generate(music_file)
+        description, audio_embedding = self._get_captioner().generate(music_file)
         self._persist_description(music_name, description, music_file)
-        return description
+        if audio_embedding:
+            self._audio_embedding_dim = len(audio_embedding)
+        return description, audio_embedding
 
     def embed_description(
         self, description: str, music_name: str, *, offset_seconds: float = 0.0
@@ -451,7 +595,9 @@ class DescriptionEmbeddingPipeline:
         return DescriptionSegment(
             title=music_name,
             description=description,
-            embedding=embedding.cpu().tolist(),
+            description_embedding=embedding.cpu().tolist(),
+            audio_embedding=[],
+            # TODO
             offset_seconds=float(offset_seconds),
             duration_seconds=None,
         )
@@ -490,6 +636,8 @@ class DescriptionEmbeddingPipeline:
                 "embedding": desc.get("embedding"),
                 "offset_seconds": desc.get("offset_seconds", 0.0),
                 "description": desc.get("description"),
+                "audio_embedding": desc.get("audio_embedding"),
+                "audio_model_id": desc.get("audio_model_id"),
             }
             for desc in payload.get("descriptions", [])
         ]
@@ -524,16 +672,17 @@ class DescriptionEmbeddingPipeline:
             pass
 
     def prepare_payload(self, music_file: str, music_name: str) -> dict:
-        segments = self.describe_music(music_file, music_name)
+        segments = self.describe_music(music_file, music_name) or []
         return {
             "music_file": str(Path(music_file)),
             "model_id": self.text_model_id,
+            "caption_model_id": self.caption_model_id,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "descriptions": [
-                {
-                    **segment.__dict__,
-                    "model_id": self.text_model_id,
-                }
+                segment.to_payload(
+                    text_model_id=self.text_model_id,
+                    audio_model_id=self.caption_model_id,
+                )
                 for segment in segments
             ],
         }

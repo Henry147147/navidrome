@@ -75,21 +75,29 @@ def pipeline(monkeypatch):
 def test_ensure_schema_creates_when_missing(monkeypatch, pipeline):
     monkeypatch.setattr(description_pipeline, "MilvusClient", DummyMilvusClient)
     client = description_pipeline.MilvusClient()
+    pipeline._audio_embedding_dim = 512
 
     pipeline.ensure_milvus_schemas(client)
 
     assert "description_embedding" in client.collections
+    assert "flamingo_audio_embedding" in client.collections
     assert client.created_collections, "Schema should be created when missing"
-    schema = client.created_collections[0][1]
+    created = {name: schema for name, schema in client.created_collections}
+    description_schema = created["description_embedding"]
+    audio_schema = created["flamingo_audio_embedding"]
     # Expect five fields: name, description, embedding, offset, model_id
-    assert len(schema.fields) == 5
+    assert len(description_schema.fields) == 5
+    # Expect four fields: name, embedding, offset, model_id
+    assert len(audio_schema.fields) == 4
 
 
 def test_ensure_index_respects_lite(monkeypatch, pipeline):
     monkeypatch.setattr(description_pipeline, "MilvusClient", DummyMilvusClient)
     # Force lite path
     monkeypatch.setattr(embedding_models, "_milvus_uses_lite", lambda: True)
-    client = description_pipeline.MilvusClient(indexes={})
+    client = description_pipeline.MilvusClient(
+        collections={"description_embedding", "flamingo_audio_embedding"}, indexes={}
+    )
 
     pipeline.ensure_milvus_index(client)
 
@@ -110,7 +118,9 @@ def test_ensure_index_skips_when_present(monkeypatch, pipeline):
             {"field_name": "name"},
         ]
     }
-    client = description_pipeline.MilvusClient(indexes=existing)
+    client = description_pipeline.MilvusClient(
+        collections={"description_embedding"}, indexes=existing
+    )
 
     pipeline.ensure_milvus_index(client)
 

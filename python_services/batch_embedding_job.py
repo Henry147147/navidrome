@@ -15,7 +15,10 @@ from typing import Dict, List, Optional
 from tqdm import tqdm
 
 from embedding_models import MuQEmbeddingModel
-from description_pipeline import DescriptionEmbeddingPipeline
+from description_pipeline import (
+    DEFAULT_AUDIO_COLLECTION,
+    DescriptionEmbeddingPipeline,
+)
 from gpu_settings import GPUSettings, is_oom_error, load_gpu_settings
 from pymilvus import MilvusClient
 import json
@@ -105,10 +108,12 @@ class BatchEmbeddingJob:
         self._cancelled = False
         self._paused = False
 
+        self.audio_collection = DEFAULT_AUDIO_COLLECTION
         # Collection mapping for each model
         self.collection_map = {
             "muq": "embedding",
             "qwen3": "description_embedding",
+            "flamingo_audio": self.audio_collection,
         }
 
     def pause(self) -> None:
@@ -142,6 +147,11 @@ class BatchEmbeddingJob:
             elif model_name == "qwen3":
                 self.logger.info("Initializing description embedding pipeline...")
                 self.models["qwen3"] = DescriptionEmbeddingPipeline(
+                    logger=self.logger, gpu_settings=self.gpu_settings
+                )
+            elif model_name == "flamingo_audio":
+                self.logger.info("Initializing Flamingo audio embedding pipeline...")
+                self.models["flamingo_audio"] = DescriptionEmbeddingPipeline(
                     logger=self.logger, gpu_settings=self.gpu_settings
                 )
             else:
@@ -186,6 +196,7 @@ class BatchEmbeddingJob:
         collection_map = {
             "muq": "embedding",
             "qwen3": "description_embedding",
+            "flamingo_audio": self.audio_collection,
         }
 
         for model_name in models_to_use:
@@ -198,6 +209,19 @@ class BatchEmbeddingJob:
                 client.drop_collection(collection)
             except Exception as e:
                 self.logger.warning(f"Failed to drop collection {collection}: {e}")
+
+            if model_name == "qwen3":
+                try:
+                    self.logger.info(
+                        "Dropping collection: %s", self.audio_collection
+                    )
+                    client.drop_collection(self.audio_collection)
+                except Exception as e:
+                    self.logger.warning(
+                        "Failed to drop collection %s: %s",
+                        self.audio_collection,
+                        e,
+                    )
 
         # Recreate schemas
         self._recreate_schemas(models_to_use, client)
@@ -240,7 +264,7 @@ class BatchEmbeddingJob:
             models_to_use = ["muq", "qwen3"]
 
         # Validate model names
-        valid_models = {"muq", "qwen3"}
+        valid_models = {"muq", "qwen3", "flamingo_audio"}
         invalid_models = [m for m in models_to_use if m not in valid_models]
         if invalid_models:
             error_msg = (
@@ -249,6 +273,13 @@ class BatchEmbeddingJob:
             self.logger.error(error_msg)
             self.progress.status = "failed"
             raise ValueError(error_msg)
+
+        if "qwen3" in models_to_use and "flamingo_audio" in models_to_use:
+            self.logger.info(
+                "flamingo_audio requested alongside qwen3; skipping standalone "
+                "flamingo_audio since qwen3 already generates audio embeddings"
+            )
+            models_to_use = [m for m in models_to_use if m != "flamingo_audio"]
 
         self.logger.info(
             f"Starting batch embedding job with models: {models_to_use} "
@@ -317,15 +348,35 @@ class BatchEmbeddingJob:
                     existing = self._existing_names_for_collection(
                         client, collection, name_list
                     )
-                    model_tracks = [
-                        t for t, name in zip(tracks, name_list) if name not in existing
-                    ]
-                    self.logger.info(
-                        "Missing-only enabled: %s tracks already present in %s; %s remaining",
-                        len(tracks) - len(model_tracks),
-                        collection,
-                        len(model_tracks),
-                    )
+                    if model_name == "qwen3":
+                        existing_audio = self._existing_names_for_collection(
+                            client, self.audio_collection, name_list
+                        )
+                        complete = existing.intersection(existing_audio)
+                        model_tracks = [
+                            t
+                            for t, name in zip(tracks, name_list)
+                            if name not in complete
+                        ]
+                        self.logger.info(
+                            "Missing-only enabled: %s tracks already present in %s and %s; %s remaining",
+                            len(tracks) - len(model_tracks),
+                            collection,
+                            self.audio_collection,
+                            len(model_tracks),
+                        )
+                    else:
+                        model_tracks = [
+                            t
+                            for t, name in zip(tracks, name_list)
+                            if name not in existing
+                        ]
+                        self.logger.info(
+                            "Missing-only enabled: %s tracks already present in %s; %s remaining",
+                            len(tracks) - len(model_tracks),
+                            collection,
+                            len(model_tracks),
+                        )
                 total_operations += len(model_tracks)
                 self.progress.total_operations = total_operations
 
@@ -333,8 +384,20 @@ class BatchEmbeddingJob:
                 model.ensure_model_loaded()
 
                 try:
-                    if model_name == "qwen3" and hasattr(model, "caption_only"):
+                    if model_name == "qwen3" and getattr(model, "caption_only", False):
                         ops_done = self._process_qwen3_two_stage(
+                            model_tracks=model_tracks,
+                            model=model,
+                            collection=collection,
+                            audio_collection=model.collection_audio,
+                            client=client,
+                            batch_size=BATCH_SIZE,
+                        )
+                        operations_completed += ops_done
+                        tracks_processed_this_model += len(model_tracks)
+                        self.progress.processed_operations = operations_completed
+                    elif model_name == "flamingo_audio":
+                        ops_done = self._process_flamingo_audio(
                             model_tracks=model_tracks,
                             model=model,
                             collection=collection,
@@ -642,7 +705,13 @@ class BatchEmbeddingJob:
         return batch_data
 
     def _process_qwen3_two_stage(
-        self, model_tracks: List[Dict], model, collection: str, client, batch_size: int
+        self,
+        model_tracks: List[Dict],
+        model: DescriptionEmbeddingPipeline,
+        collection: str,
+        audio_collection: str,
+        client,
+        batch_size: int,
     ) -> int:
         """
         Two-stage pipeline for qwen3:
@@ -652,13 +721,15 @@ class BatchEmbeddingJob:
         """
         # Stage 1: captions
         caption_results = []
+        audio_batch_data: List[Dict] = []
+        audio_schema_ready = False
         for track in tqdm(model_tracks, desc="Flamingo captions"):
             audio_path = self.music_root / track["path"]
             if not audio_path.exists():
                 raise FileNotFoundError(f"Audio file not found: {audio_path}")
             canonical_name = self._canonical_name(track)
             try:
-                description = model.caption_only(str(audio_path), canonical_name)
+                description, audio_embedding = model.get_caption(str(audio_path), canonical_name)
             except Exception as e:
                 if is_oom_error(e):
                     raise
@@ -666,13 +737,40 @@ class BatchEmbeddingJob:
                 self.logger.warning(
                     "Caption failed for %s, using fallback: %s", canonical_name, e
                 )
-                description = (
-                    f"Audio track titled '{canonical_name}' with mixed instrumentation."
+                description = f"Audio track titled '{canonical_name}'."
+                audio_embedding = []
+
+            if audio_embedding:
+                if not audio_schema_ready:
+                    try:
+                        model.ensure_milvus_schemas(
+                            client, audio_dim=len(audio_embedding)
+                        )
+                        model.ensure_milvus_index(client)
+                        audio_schema_ready = True
+                    except Exception as e:
+                        self.logger.warning(
+                            "Failed to ensure Flamingo audio schema/index: %s", e
+                        )
+                audio_batch_data.append(
+                    {
+                        "name": canonical_name,
+                        "embedding": audio_embedding,
+                        "offset": 0.0,
+                        "model_id": model.caption_model_id,
+                    }
                 )
+                if len(audio_batch_data) >= batch_size:
+                    client.insert(collection_name=audio_collection, data=audio_batch_data)
+                    audio_batch_data = []
+
             caption_results.append((canonical_name, description))
 
         # Free Flamingo before embedding
         model.unload_captioner()
+
+        if audio_batch_data:
+            client.insert(collection_name=audio_collection, data=audio_batch_data)
 
         # Stage 2: embeddings
         batch_data: List[Dict] = []
@@ -683,12 +781,78 @@ class BatchEmbeddingJob:
             segment = model.embed_description(description, canonical_name)
             row = {
                 "name": segment.title,
-                "embedding": segment.embedding,
+                "embedding": segment.description_embedding,
                 "offset": segment.offset_seconds,
                 "model_id": model.text_model_id,
                 "description": segment.description,
             }
             batch_data.append(row)
+            operations_completed += 1
+
+            if len(batch_data) >= batch_size:
+                client.insert(collection_name=collection, data=batch_data)
+                batch_data = []
+
+        if batch_data:
+            client.insert(collection_name=collection, data=batch_data)
+
+        return operations_completed
+
+    def _process_flamingo_audio(
+        self,
+        model_tracks: List[Dict],
+        model: DescriptionEmbeddingPipeline,
+        collection: str,
+        client,
+        batch_size: int,
+    ) -> int:
+        """
+        Generate Flamingo audio embeddings only (no Qwen text embeddings).
+
+        Returns number of completed embedding operations.
+        """
+        batch_data: List[Dict] = []
+        operations_completed = 0
+        audio_schema_ready = False
+
+        for track in tqdm(model_tracks, desc="Flamingo audio"):
+            audio_path = self.music_root / track["path"]
+            if not audio_path.exists():
+                raise FileNotFoundError(f"Audio file not found: {audio_path}")
+            canonical_name = self._canonical_name(track)
+            try:
+                _description, audio_embedding = model.get_caption(
+                    str(audio_path), canonical_name
+                )
+            except Exception as e:
+                if is_oom_error(e):
+                    raise
+                self.logger.warning(
+                    "Audio embedding failed for %s, skipping: %s", canonical_name, e
+                )
+                audio_embedding = []
+
+            if not audio_embedding:
+                continue
+
+            if not audio_schema_ready:
+                try:
+                    model.ensure_milvus_schemas(client, audio_dim=len(audio_embedding))
+                    model.ensure_milvus_index(client)
+                    audio_schema_ready = True
+                except Exception as e:
+                    self.logger.warning(
+                        "Failed to ensure Flamingo audio schema/index: %s", e
+                    )
+
+            batch_data.append(
+                {
+                    "name": canonical_name,
+                    "embedding": audio_embedding,
+                    "offset": 0.0,
+                    "model_id": model.caption_model_id,
+                }
+            )
             operations_completed += 1
 
             if len(batch_data) >= batch_size:

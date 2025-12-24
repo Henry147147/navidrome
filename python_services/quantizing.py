@@ -24,6 +24,12 @@ model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
     "nvidia/music-flamingo-hf", device_map="auto", torch_dtype=torch.bfloat16
 )
 print(model.dtype)
+
+#torch.compile(model, backend="inductor",
+#   mode="max-autotune",
+#   dynamic=False,
+# #  fullgraph=True)
+
 quantize(model, weights=qfloat8, activations=qfloat8, include=include)
 
 flacs = list(glob("/mnt/z/music/**/*.flac"))
@@ -111,7 +117,7 @@ def prepare(processor, audio_path: str) -> dict:
     return inputs
 
 print("starting calibration")
-all_songs = random.sample(all_songs, 50)
+all_songs = random.sample(all_songs, min(len(all_songs), 400))
 
 stop_requested = False
 

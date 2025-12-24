@@ -56,7 +56,7 @@ class RecommendationRequest(BaseModel):
     # Multi-model support
     models: List[str] = Field(
         default_factory=lambda: ["muq", "qwen3"],
-        description="Embedding models to use (muq, qwen3)",
+        description="Embedding models to use (muq, qwen3, flamingo_audio)",
     )
     merge_strategy: str = Field(
         default="union",
@@ -64,7 +64,7 @@ class RecommendationRequest(BaseModel):
         "(union, intersection, priority)",
     )
     model_priorities: Dict[str, int] = Field(
-        default_factory=lambda: {"muq": 1, "qwen3": 2},
+        default_factory=lambda: {"muq": 1, "qwen3": 2, "flamingo_audio": 3},
         description="Priority order for models (lower = higher priority)",
     )
     min_model_agreement: int = Field(
@@ -96,7 +96,7 @@ class RecommendationRequest(BaseModel):
 
     @validator("models")
     def _validate_models(cls, value: List[str]) -> List[str]:
-        valid_models = {"muq", "qwen3"}
+        valid_models = {"muq", "qwen3", "flamingo_audio"}
         for model in value:
             if model not in valid_models:
                 raise ValueError(
