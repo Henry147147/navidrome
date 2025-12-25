@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import logging
 import json
+from safetensors.torch import load_file
+from optimum.quanto import requantize
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -117,6 +119,13 @@ class MusicFlamingoCaptioner:
         self.model = self._build_model()
         self.model.eval()
 
+    def make_quantized(self, model):
+        with open("./music_flamingo_fp8.safetensor", "r") as file:
+            quant_map = json.load(file)
+        
+        quantized_weights = load_file('./music_flamingo_fp8.safetensor')
+        requantize(model, quantized_weights, quant_map)
+
     def _build_model(self) -> AudioFlamingo3ForConditionalGeneration:
         # Prefer PyTorch SDPA attention to avoid optional flash-attn dependency.
         max_memory = self.gpu_settings.max_memory_map()
@@ -132,6 +141,7 @@ class MusicFlamingoCaptioner:
             device_map=device_map,
             max_memory=max_memory,
         )
+        self.make_quantized(model)
         if device_map and device_map != "auto":
             # Ensure every module ends up on the requested CUDA device when not auto-sharded.
             model = model.to(self.device)
