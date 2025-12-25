@@ -1,6 +1,6 @@
 from transformers import (
     AudioFlamingo3ForConditionalGeneration,
-    AutoProcessor as FlamingoProcessor,
+    AudioFlamingo3Processor as FlamingoProcessor,
 )
 import tqdm
 from glob import glob
@@ -21,19 +21,18 @@ include = [
 ]
 
 model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
-    "nvidia/music-flamingo-hf", device_map="auto", torch_dtype=torch.bfloat16
+    "nvidia/music-flamingo-hf", device_map="cpu", torch_dtype=torch.bfloat16
 )
 print(model.dtype)
 
-#torch.compile(model, backend="inductor",
-#   mode="max-autotune",
-#   dynamic=False,
-# #  fullgraph=True)
+model = torch.compile(model,
+mode="max-autotune",
+fullgraph=True)
 
 quantize(model, weights=qfloat8, activations=qfloat8, include=include)
 
-flacs = list(glob("/mnt/z/music/**/*.flac"))
-mp3s = list(glob("/mnt/z/music/**/*.mp3"))
+flacs = list(glob("/mnt/data/share/hosted/music/**/*.flac"))
+mp3s = list(glob("/mnt/data/share/hosted/music/**/*.mp3"))
 
 all_songs = []
 all_songs.extend(flacs)
@@ -140,12 +139,10 @@ with Calibration():
         for k, v in list(prepared.items()):
             if isinstance(v, torch.Tensor):
                 if torch.is_floating_point(v):
-                    prepared[k] = v.to(torch.bfloat16).to(model.device)
-                else:
-                    prepared[k] = v.to(model.device)
+                    prepared[k] = v.to(torch.bfloat16)
 
         try:
-            model.generate(**prepared, max_new_tokens=8192)
+            model.generate(**prepared, max_new_tokens=1024)
         except KeyboardInterrupt:
             stop_requested = True
             print("\nCtrl-C received during generation: stopping after this step and saving results...")
