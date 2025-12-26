@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import os
+import warnings
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -334,8 +335,14 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
     def _load_model(self) -> torch.nn.Module:
         GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
         # Use MuQ class for audio-only embeddings (not MuQMuLan which is for music-text joint embeddings)
-        model = MuQ.from_pretrained(self.model_id)
-        model = model.to(self.device, dtype=self._inference_dtype()).eval()
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"`torch\.nn\.utils\.weight_norm` is deprecated.*",
+                category=FutureWarning,
+            )
+            model = MuQ.from_pretrained(self.model_id).eval()
+        model = model.to(dtype=self._inference_dtype()).to(self.device)
         return model
 
     def ensure_model_loaded(self) -> Any:  # type: ignore[override]

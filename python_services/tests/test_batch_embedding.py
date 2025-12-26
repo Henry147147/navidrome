@@ -331,6 +331,43 @@ class TestBatchJobAPI:
 class TestBatchJobErrorHandling:
     """Test error handling in batch jobs"""
 
+    def test_model_load_oom_fallback(self, temp_paths):
+        """Model load should fall back to CPU on OOM."""
+        import torch
+
+        class OOMModel:
+            def __init__(self):
+                self.device = "cuda"
+                self.model_dtype = torch.float16
+                self.storage_dtype = torch.float32
+                self.load_attempts = 0
+                self.unloaded = False
+
+            def ensure_model_loaded(self):
+                self.load_attempts += 1
+                if self.load_attempts == 1:
+                    raise RuntimeError("CUDA out of memory")
+                return self
+
+            def unload_model(self):
+                self.unloaded = True
+
+        db_path, music_root = temp_paths
+        job = BatchEmbeddingJob(
+            db_path=db_path,
+            music_root=music_root,
+            milvus_uri="http://localhost:19530",
+        )
+
+        model = OOMModel()
+        job._ensure_model_loaded_with_fallback("muq", model)
+
+        assert model.device == "cpu"
+        assert model.model_dtype == torch.float32
+        assert model.storage_dtype == torch.float32
+        assert model.load_attempts == 2
+        assert model.unloaded is True
+
     def test_missing_audio_file(self, temp_paths):
         """Test handling of missing audio file"""
         db_path, music_root = temp_paths
@@ -398,6 +435,494 @@ class TestBatchJobErrorHandling:
         # Track processing should fail
         # In actual implementation, this would be caught and logged
         assert "failing" in job.models
+
+    def test_run_processes_tracks_and_unloads_model(self, temp_paths, monkeypatch):
+        """Run should process tracks, insert embeddings, and unload model."""
+        import batch_embedding_job
+        import pymilvus
+
+        db_path, music_root = temp_paths
+        music_root_path = Path(music_root)
+        track_path = music_root_path / "song.mp3"
+        track_path.write_bytes(b"")
+
+        tracks = [
+            {
+                "id": "1",
+                "path": "song.mp3",
+                "artist": "Artist",
+                "title": "Title",
+                "album": "Album",
+            }
+        ]
+
+        class DummyModel:
+            def __init__(self):
+                self.loaded = False
+                self.unloaded = False
+                self.calls = 0
+
+            def ensure_model_loaded(self):
+                self.loaded = True
+                return self
+
+            def embed_music(self, audio_path, track_name):
+                self.calls += 1
+                return {
+                    "model_id": "muq",
+                    "segments": [
+                        {
+                            "title": track_name,
+                            "embedding": [0.1, 0.2, 0.3],
+                            "offset_seconds": 0.0,
+                        }
+                    ],
+                }
+
+            def unload_model(self):
+                self.unloaded = True
+
+        class DummyMilvusClient:
+            def __init__(self, uri=None):
+                self.uri = uri
+                self.inserted = []
+
+            def insert(self, collection_name, data):
+                self.inserted.append((collection_name, list(data)))
+
+        monkeypatch.setattr(pymilvus, "MilvusClient", DummyMilvusClient)
+        monkeypatch.setattr(batch_embedding_job, "MilvusClient", DummyMilvusClient)
+        monkeypatch.setattr(batch_embedding_job, "tqdm", lambda x, **kwargs: x)
+
+        job = BatchEmbeddingJob(
+            db_path=db_path,
+            music_root=music_root,
+            milvus_uri="http://localhost:19530",
+        )
+        dummy_model = DummyModel()
+        monkeypatch.setattr(job, "_initialize_models", lambda names: None)
+        job.models = {"muq": dummy_model}
+        monkeypatch.setattr(job, "get_all_tracks", lambda: tracks)
+
+        result = job.run(models_to_use=["muq"], clear_existing=False, missing_only=False)
+
+        assert dummy_model.loaded is True
+        assert dummy_model.unloaded is True
+        assert dummy_model.calls == 1
+        assert result["progress"].status in {"completed", "completed_with_errors"}
+
+    def test_run_missing_only_filters_tracks(self, temp_paths, monkeypatch):
+        """missing_only should skip tracks already present in Milvus."""
+        import batch_embedding_job
+        import pymilvus
+
+        db_path, music_root = temp_paths
+        music_root_path = Path(music_root)
+        (music_root_path / "song1.mp3").write_bytes(b"")
+        (music_root_path / "song2.mp3").write_bytes(b"")
+
+        tracks = [
+            {
+                "id": "1",
+                "path": "song1.mp3",
+                "artist": "Artist",
+                "title": "One",
+                "album": "Album",
+            },
+            {
+                "id": "2",
+                "path": "song2.mp3",
+                "artist": "Artist",
+                "title": "Two",
+                "album": "Album",
+            },
+        ]
+
+        class DummyModel:
+            def __init__(self):
+                self.calls = 0
+
+            def ensure_model_loaded(self):
+                return self
+
+            def embed_music(self, audio_path, track_name):
+                self.calls += 1
+                return {
+                    "model_id": "muq",
+                    "segments": [
+                        {
+                            "title": track_name,
+                            "embedding": [0.1, 0.2, 0.3],
+                            "offset_seconds": 0.0,
+                        }
+                    ],
+                }
+
+            def unload_model(self):
+                pass
+
+        class DummyMilvusClient:
+            def __init__(self, uri=None):
+                self.uri = uri
+
+            def insert(self, collection_name, data):
+                pass
+
+        monkeypatch.setattr(pymilvus, "MilvusClient", DummyMilvusClient)
+        monkeypatch.setattr(batch_embedding_job, "MilvusClient", DummyMilvusClient)
+        monkeypatch.setattr(batch_embedding_job, "tqdm", lambda x, **kwargs: x)
+
+        job = BatchEmbeddingJob(
+            db_path=db_path,
+            music_root=music_root,
+            milvus_uri="http://localhost:19530",
+        )
+        dummy_model = DummyModel()
+        monkeypatch.setattr(job, "_initialize_models", lambda names: None)
+        job.models = {"muq": dummy_model}
+        monkeypatch.setattr(job, "get_all_tracks", lambda: tracks)
+        monkeypatch.setattr(
+            job,
+            "_existing_names_for_collection",
+            lambda client, collection, names: {names[0]},
+        )
+
+        job.run(models_to_use=["muq"], clear_existing=False, missing_only=True)
+
+        assert dummy_model.calls == 1
+
+    def test_clear_embeddings_recreates_schema(self, temp_paths, monkeypatch):
+        """clear_embeddings should drop collections and recreate schemas."""
+        import batch_embedding_job
+        import pymilvus
+
+        db_path, music_root = temp_paths
+
+        class DummyModel:
+            def __init__(self):
+                self.schema_calls = 0
+                self.index_calls = 0
+
+            def ensure_milvus_schemas(self, client):
+                self.schema_calls += 1
+
+            def ensure_milvus_index(self, client):
+                self.index_calls += 1
+
+        class DummyMilvusClient:
+            def __init__(self, uri=None):
+                self.dropped = []
+
+            def drop_collection(self, name):
+                self.dropped.append(name)
+
+        monkeypatch.setattr(pymilvus, "MilvusClient", DummyMilvusClient)
+        monkeypatch.setattr(batch_embedding_job, "MilvusClient", DummyMilvusClient)
+
+        job = BatchEmbeddingJob(
+            db_path=db_path,
+            music_root=music_root,
+            milvus_uri="http://localhost:19530",
+        )
+        job.models = {"muq": DummyModel(), "qwen3": DummyModel()}
+
+        job.clear_embeddings(["muq", "qwen3"])
+
+        assert job.models["muq"].schema_calls == 1
+        assert job.models["muq"].index_calls == 1
+        assert job.models["qwen3"].schema_calls == 1
+        assert job.models["qwen3"].index_calls == 1
+
+    def test_process_qwen3_two_stage_inserts_audio_and_text(
+        self, temp_paths, monkeypatch
+    ):
+        """Two-stage Qwen3 pipeline should insert audio + text embeddings."""
+        import batch_embedding_job
+
+        db_path, music_root = temp_paths
+        music_root_path = Path(music_root)
+        track_path = music_root_path / "song.mp3"
+        track_path.write_bytes(b"")
+
+        tracks = [
+            {
+                "id": "1",
+                "path": "song.mp3",
+                "artist": "Artist",
+                "title": "Title",
+                "album": "Album",
+            }
+        ]
+
+        class DummySegment:
+            def __init__(self, title, description, embedding):
+                self.title = title
+                self.description = description
+                self.description_embedding = embedding
+                self.offset_seconds = 0.0
+
+        class DummyPipeline:
+            caption_model_id = "flamingo"
+            text_model_id = "qwen3"
+            collection_audio = "flamingo_audio_embedding"
+
+            def __init__(self):
+                self.schema_calls = 0
+                self.index_calls = 0
+
+            def get_caption(self, audio_path, canonical_name):
+                return "desc", [0.1, 0.2]
+
+            def embed_description(self, description, canonical_name):
+                return DummySegment(canonical_name, description, [0.3, 0.4])
+
+            def ensure_milvus_schemas(self, client, audio_dim=None):
+                self.schema_calls += 1
+
+            def ensure_milvus_index(self, client):
+                self.index_calls += 1
+
+            def unload_captioner(self):
+                pass
+
+        class DummyMilvusClient:
+            def __init__(self):
+                self.inserted = []
+
+            def insert(self, collection_name, data):
+                self.inserted.append((collection_name, list(data)))
+
+        monkeypatch.setattr(batch_embedding_job, "tqdm", lambda x, **kwargs: x)
+        job = BatchEmbeddingJob(
+            db_path=db_path,
+            music_root=music_root,
+            milvus_uri="file:/tmp/milvus.db",
+        )
+        dummy_model = DummyPipeline()
+        client = DummyMilvusClient()
+
+        ops = job._process_qwen3_two_stage(
+            model_tracks=tracks,
+            model=dummy_model,
+            collection="description_embedding",
+            audio_collection="flamingo_audio_embedding",
+            client=client,
+            batch_size=1,
+        )
+
+        assert ops == 1
+        assert dummy_model.schema_calls >= 1
+        assert dummy_model.index_calls >= 1
+        assert any(
+            collection == "flamingo_audio_embedding" for collection, _ in client.inserted
+        )
+        assert any(
+            collection == "description_embedding" for collection, _ in client.inserted
+        )
+
+    def test_existing_names_for_collection_lite_mode(self, temp_paths, monkeypatch):
+        """Lite mode should query using JSON filter."""
+        import batch_embedding_job
+
+        db_path, music_root = temp_paths
+
+        class DummyMilvusClient:
+            def __init__(self):
+                self.last_filter = None
+
+            def query(self, collection_name, filter, output_fields):
+                self.last_filter = filter
+                return [{"name": "Artist - Title"}]
+
+        job = BatchEmbeddingJob(
+            db_path=db_path,
+            music_root=music_root,
+            milvus_uri="file:/tmp/milvus.db",
+        )
+        client = DummyMilvusClient()
+
+        names = ["Artist - Title", "Artist - Other"]
+        existing = job._existing_names_for_collection(client, "embedding", names)
+
+        assert "Artist - Title" in existing
+        assert "name in" in client.last_filter
+
+    def test_run_invalid_model_names_raises(self, temp_paths):
+        """Invalid model names should raise ValueError early."""
+        db_path, music_root = temp_paths
+        job = BatchEmbeddingJob(
+            db_path=db_path,
+            music_root=music_root,
+            milvus_uri="http://localhost:19530",
+        )
+
+        with pytest.raises(ValueError):
+            job.run(models_to_use=["not-a-model"], clear_existing=False)
+
+    def test_run_skips_flamingo_audio_with_qwen3(self, temp_paths, monkeypatch):
+        """flamingo_audio should be removed when qwen3 is present."""
+        import batch_embedding_job
+        import pymilvus
+
+        db_path, music_root = temp_paths
+
+        class DummyModel:
+            def ensure_model_loaded(self):
+                return self
+
+            def unload_model(self):
+                pass
+
+            def embed_music(self, *_args, **_kwargs):
+                return {"model_id": "qwen3", "segments": []}
+
+        class DummyMilvusClient:
+            def __init__(self, uri=None):
+                self.uri = uri
+
+            def insert(self, collection_name, data):
+                pass
+
+        monkeypatch.setattr(pymilvus, "MilvusClient", DummyMilvusClient)
+        monkeypatch.setattr(batch_embedding_job, "MilvusClient", DummyMilvusClient)
+        monkeypatch.setattr(batch_embedding_job, "tqdm", lambda x, **kwargs: x)
+
+        job = BatchEmbeddingJob(
+            db_path=db_path,
+            music_root=music_root,
+            milvus_uri="http://localhost:19530",
+        )
+        monkeypatch.setattr(job, "_initialize_models", lambda names: None)
+        job.models = {"qwen3": DummyModel()}
+        monkeypatch.setattr(job, "get_all_tracks", lambda: [])
+
+        job.run(models_to_use=["qwen3", "flamingo_audio"], clear_existing=False)
+
+    def test_run_oom_during_processing_sets_failed(self, temp_paths, monkeypatch):
+        """OOM during embedding should mark job as failed."""
+        import batch_embedding_job
+        import pymilvus
+
+        db_path, music_root = temp_paths
+        music_root_path = Path(music_root)
+        track_path = music_root_path / "song.mp3"
+        track_path.write_bytes(b"")
+
+        tracks = [
+            {
+                "id": "1",
+                "path": "song.mp3",
+                "artist": "Artist",
+                "title": "Title",
+                "album": "Album",
+            }
+        ]
+
+        class OOMModel:
+            def ensure_model_loaded(self):
+                return self
+
+            def embed_music(self, *_args, **_kwargs):
+                raise RuntimeError("CUDA out of memory")
+
+            def unload_model(self):
+                pass
+
+        class DummyMilvusClient:
+            def __init__(self, uri=None):
+                self.uri = uri
+
+            def insert(self, collection_name, data):
+                pass
+
+        monkeypatch.setattr(pymilvus, "MilvusClient", DummyMilvusClient)
+        monkeypatch.setattr(batch_embedding_job, "MilvusClient", DummyMilvusClient)
+        monkeypatch.setattr(batch_embedding_job, "tqdm", lambda x, **kwargs: x)
+
+        job = BatchEmbeddingJob(
+            db_path=db_path,
+            music_root=music_root,
+            milvus_uri="http://localhost:19530",
+        )
+        monkeypatch.setattr(job, "_initialize_models", lambda names: None)
+        job.models = {"muq": OOMModel()}
+        monkeypatch.setattr(job, "get_all_tracks", lambda: tracks)
+
+        job.run(models_to_use=["muq"], clear_existing=False)
+
+        assert job.progress.status == "failed"
+        assert job.progress.last_error
+
+    def test_existing_names_for_collection_server_mode(self, temp_paths):
+        """Server mode should query with filter_params."""
+        db_path, music_root = temp_paths
+
+        class DummyMilvusClient:
+            def __init__(self):
+                self.filter_params = None
+
+            def query(
+                self,
+                collection_name,
+                filter,
+                filter_params=None,
+                output_fields=None,
+            ):
+                self.filter_params = filter_params
+                return [{"name": "Artist - Title"}]
+
+        job = BatchEmbeddingJob(
+            db_path=db_path,
+            music_root=music_root,
+            milvus_uri="http://localhost:19530",
+        )
+        client = DummyMilvusClient()
+
+        names = ["Artist - Title", "Artist - Other"]
+        existing = job._existing_names_for_collection(client, "embedding", names)
+
+        assert "Artist - Title" in existing
+        assert client.filter_params == {"names": names[:2]}
+
+    def test_process_track_with_description_field(self, temp_paths):
+        """Batched processing should include description field when present."""
+        db_path, music_root = temp_paths
+        music_root_path = Path(music_root)
+        track_path = music_root_path / "song.mp3"
+        track_path.write_bytes(b"")
+
+        class DummyModel:
+            def embed_music(self, *_args, **_kwargs):
+                return {
+                    "model_id": "qwen3",
+                    "segments": [
+                        {
+                            "title": "Artist - Title",
+                            "embedding": [0.1, 0.2],
+                            "offset_seconds": 0.0,
+                            "description": "desc",
+                        }
+                    ],
+                }
+
+        job = BatchEmbeddingJob(
+            db_path=db_path,
+            music_root=music_root,
+            milvus_uri="http://localhost:19530",
+        )
+        track = {
+            "id": "1",
+            "path": "song.mp3",
+            "artist": "Artist",
+            "title": "Title",
+            "album": "Album",
+        }
+
+        rows = job._process_track_with_model_batched(
+            track, "qwen3", DummyModel(), "description_embedding"
+        )
+
+        assert rows[0]["description"] == "desc"
 
 
 class TestBatchJobConcurrency:

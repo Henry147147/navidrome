@@ -8,7 +8,7 @@ Provides progress tracking, error handling, and graceful cancellation.
 import logging
 import sqlite3
 import time
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -315,6 +315,10 @@ class BatchEmbeddingJob:
             f"Starting batch embedding job with models: {models_to_use} "
             f"(missing_only={missing_only})"
         )
+        try:
+            self.logger.info("GPU settings: %s", asdict(self.gpu_settings))
+        except Exception:
+            self.logger.debug("Unable to log GPU settings snapshot", exc_info=True)
         self.progress.status = "running"
 
         # Initialize models

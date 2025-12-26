@@ -2,7 +2,13 @@ import pytest
 import torch
 import torchaudio
 
-from cue_splitter import split_flac_with_cue
+from cue_splitter import (
+    _build_track_context,
+    _cue_time_to_seconds,
+    _read_cuesheet_text,
+    _sanitize_filename,
+    split_flac_with_cue,
+)
 from mutagen.flac import FLAC
 
 
@@ -58,3 +64,36 @@ FILE "album.flac" WAVE
     assert second_tags["artist"] == ["Album Artist"]
     assert second_tags["album"] == ["Test Album"]
     assert second_tags["tracknumber"] == ["2"]
+
+
+def test_sanitize_filename_handles_illegal_chars():
+    name = _sanitize_filename('My:/Track*Name?', 3)
+    assert name.startswith("03 - ")
+    assert ":" not in name
+    assert "*" not in name
+
+
+def test_cue_time_to_seconds_parses_frames():
+    assert _cue_time_to_seconds("01:02:37") == pytest.approx(62.493, rel=1e-3)
+
+
+def test_build_track_context_parses_track_metadata():
+    lines = [
+        'FILE "album.flac" WAVE',
+        "  TRACK 01 AUDIO",
+        '    TITLE "Intro"',
+        '    PERFORMER "Artist"',
+        "  TRACK 02 AUDIO",
+        '    TITLE "Outro"',
+    ]
+    context = _build_track_context(lines)
+    assert context[0]["title"] == "Intro"
+    assert context[0]["performer"] == "Artist"
+    assert context[1]["title"] == "Outro"
+
+
+def test_read_cuesheet_text_strips_bom(tmp_path):
+    cue_path = tmp_path / "test.cue"
+    cue_path.write_text("\ufeffFILE \"album.flac\" WAVE", encoding="utf-8")
+    text = _read_cuesheet_text(cue_path)
+    assert text.startswith("FILE")

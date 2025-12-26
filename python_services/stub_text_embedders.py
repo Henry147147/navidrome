@@ -130,7 +130,7 @@ def get_stub_embedder(model: str) -> StubTextEmbedder:
 
 
 # Example usage and testing
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     # Test each stub embedder
     test_queries = [
         "upbeat rock music with guitar solos",

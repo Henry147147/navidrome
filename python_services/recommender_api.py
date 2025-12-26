@@ -679,7 +679,7 @@ else:
 __all__ = ["app", "create_app", "RecommendationEngine"]
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     import argparse
 
     parser = argparse.ArgumentParser(description="Navidrome Recommender Service")

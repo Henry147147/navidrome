@@ -8,7 +8,10 @@ import pytest
 
 from cue_splitter import SplitTrack
 from models import SongEmbedding
-from python_embed_server import EmbedSocketServer
+from python_embed_server import (
+    EmbedSocketServer,
+    _status_timeout_seconds,
+)
 
 import base64
 from pathlib import Path
@@ -446,3 +449,23 @@ def test_socket_invalid_json_returns_error(logger: logging.Logger):
 
     assert response["status"] == "error"
     assert "invalid json" in response["message"]
+
+
+def test_status_timeout_seconds_parses_env(monkeypatch):
+    monkeypatch.setenv("NAVIDROME_EMBED_STATUS_TIMEOUT", "2.5")
+    assert _status_timeout_seconds() == 2.5
+
+    monkeypatch.setenv("NAVIDROME_EMBED_STATUS_TIMEOUT", "invalid")
+    assert _status_timeout_seconds() == 5.0
+
+
+def test_canonical_name_from_meta_prefers_artist_title():
+    assert (
+        EmbedSocketServer._canonical_name_from_meta("Artist", "Title", "Fallback")
+        == "Artist - Title"
+    )
+
+
+def test_using_milvus_lite_env(monkeypatch):
+    monkeypatch.setenv("NAVIDROME_MILVUS_DB_PATH", "/tmp/milvus.db")
+    assert EmbedSocketServer._using_milvus_lite() is True

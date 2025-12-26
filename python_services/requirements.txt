@@ -8,6 +8,7 @@ numpy<2.4
 pydantic
 pymilvus
 pytest
+pytest-cov
 soundfile
 torch
 torchaudio
