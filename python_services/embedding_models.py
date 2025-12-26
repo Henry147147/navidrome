@@ -239,7 +239,7 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         *,
         model_id: str = "OpenMuQ/MuQ-large-msd-iter",
         device: str = "cuda",
-        storage_dtype: torch.dtype = torch.float32,
+        storage_dtype: torch.dtype = torch.float16,
         sample_rate: int = 24_000,
         window_seconds: int = 120,
         hop_seconds: int = 15,
@@ -254,7 +254,7 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         self.sample_rate = sample_rate
         self.window_seconds = window_seconds
         self.hop_seconds = hop_seconds
-        env_batch = os.getenv("NAVIDROME_MUQ_CHUNK_BATCH", "").strip()
+        env_batch = os.getenv("NAVIDROME_MUQ_CHUNK_BATCH", "1").strip()
         if chunk_batch_size is None:
             try:
                 chunk_batch_size = int(env_batch) if env_batch else 1

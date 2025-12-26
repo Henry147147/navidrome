@@ -120,7 +120,7 @@ class MusicFlamingoCaptioner:
         self.model.eval()
 
     def make_quantized(self, model):
-        with open("./music_flamingo_fp8.safetensor", "r") as file:
+        with open("./music_flamingo_fp8_quantization_map.json", "r") as file:
             quant_map = json.load(file)
 
         quantized_weights = load_file("./music_flamingo_fp8.safetensor")
