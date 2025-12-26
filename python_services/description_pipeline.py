@@ -32,6 +32,17 @@ from transformers import (
     AudioFlamingo3ForConditionalGeneration,
     AutoProcessor as FlamingoProcessor,
 )
+from huggingface_hub import try_to_load_from_cache
+
+
+def _is_model_cached(model_id: str) -> bool:
+    """Check if a Hugging Face model is already cached locally."""
+    # Check for config.json as a proxy for whether the model is cached
+    result = try_to_load_from_cache(model_id, "config.json")
+    # Returns path if cached, None if not cached, or _CACHED_NO_EXIST sentinel
+    return result is not None and isinstance(result, str)
+
+
 DEFAULT_DESCRIPTION_COLLECTION = "description_embedding"
 DEFAULT_AUDIO_COLLECTION = "flamingo_audio_embedding"
 DESCRIPTION_JSON_PATH = Path("song_descriptions.json")
@@ -113,8 +124,14 @@ class MusicFlamingoCaptioner:
         self._gpu_owner = "music_flamingo_captioner"
         GPU_COORDINATOR.register(self._gpu_owner, self._offload_to_cpu)
 
-        self.processor = FlamingoProcessor.from_pretrained(self.model_id)
-        self.model = self._build_model()
+        # Use local cache if available to avoid network calls on every load
+        use_local = _is_model_cached(self.model_id)
+        if use_local:
+            self.logger.info("Loading Music Flamingo processor from local cache")
+        self.processor = FlamingoProcessor.from_pretrained(
+            self.model_id, local_files_only=use_local
+        )
+        self.model = self._build_model(use_local_cache=use_local)
         self.model.eval()
 
     def make_quantized(self, model):
@@ -124,25 +141,62 @@ class MusicFlamingoCaptioner:
         quantized_weights = load_file("./music_flamingo_fp8.safetensor")
         requantize(model, quantized_weights, quant_map)
 
-    def _build_model(self) -> AudioFlamingo3ForConditionalGeneration:
+    def _build_model(
+        self, use_local_cache: bool = False
+    ) -> AudioFlamingo3ForConditionalGeneration:
         # Prefer PyTorch SDPA attention to avoid optional flash-attn dependency.
-        max_memory = self.gpu_settings.max_memory_map()
-        device_map = "auto" if max_memory is not None else {"": self.device}
-
         GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
+        from gpu_settings import force_cuda_memory_release
 
+        force_cuda_memory_release()  # Ensure GPU is clean before loading
+
+        # Load model to CPU first, then quantize (avoids OOM during requantize).
+        # We load to CPU because requantize() internally calls model.to() which
+        # can OOM if we use device_map="auto" (loads full model to GPU first).
+        if use_local_cache:
+            self.logger.info("Loading Music Flamingo from local cache to CPU for quantization")
+        else:
+            self.logger.info("Downloading and loading Music Flamingo to CPU for quantization")
         model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
             self.model_id,
             dtype=self.dtype,
             low_cpu_mem_usage=True,
             attn_implementation="sdpa",
-            device_map=device_map,
-            max_memory=max_memory,
+            device_map={"": "cpu"},
+            local_files_only=use_local_cache,
         )
         self.make_quantized(model)
-        if device_map and device_map != "auto":
-            # Ensure every module ends up on the requested CUDA device when not auto-sharded.
-            model = model.to(self.device)
+
+        # Use accelerate's dispatch_model with reduced GPU cap to enable CPU offloading.
+        # This keeps some layers on CPU to leave headroom for inference activations.
+        force_cuda_memory_release()  # Clean up before GPU dispatch
+
+        # Calculate GPU cap: leave 2 GiB headroom for inference (activations, KV cache)
+        import torch
+
+        if torch.cuda.is_available():
+            total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+            # Use at most 75% of GPU for model weights, rest for inference
+            gpu_cap_gb = min(total_gb * 0.75, self.gpu_settings.max_gpu_memory_gb - 2.0)
+            gpu_cap_gb = max(gpu_cap_gb, 4.0)  # At least 4 GB on GPU
+        else:
+            gpu_cap_gb = 4.0
+
+        max_memory = {0: f"{gpu_cap_gb:.1f}GiB", "cpu": "32GiB"}
+        self.logger.info(
+            "Dispatching Music Flamingo with max_memory=%s (GPU: %.1f GiB total)",
+            max_memory,
+            total_gb if torch.cuda.is_available() else 0,
+        )
+
+        from accelerate import dispatch_model, infer_auto_device_map
+
+        device_map = infer_auto_device_map(
+            model,
+            max_memory=max_memory,
+            no_split_module_classes=["LlamaDecoderLayer", "WhisperEncoderLayer"],
+        )
+        model = dispatch_model(model, device_map=device_map)
         self.gpu_settings.apply_runtime_limits()
 
         # monkeypatch the language model to save the input_embeds so we have access to it
@@ -164,39 +218,43 @@ class MusicFlamingoCaptioner:
     def _ensure_model_on_device(self):
         GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
         if self.model is None:
-            self.model = self._build_model()
-        else:
-            try:
-                self.model = self.model.to(self.device, dtype=self.dtype)
-            except Exception:
-                self.logger.exception(
-                    "Failed to move Music Flamingo back to GPU; rebuilding"
-                )
-                self.model = self._build_model()
+            # Model was already loaded once, so it's cached - use local files
+            self.model = self._build_model(use_local_cache=True)
+        # For dispatched models, we don't need to move - dispatch_model handles placement
         self.model.eval()
 
     def _offload_to_cpu(self) -> None:
-        try:
-            if self.model is not None:
-                self.model = self.model.to("cpu")
-        except Exception:
-            self.logger.exception("Failed to offload Music Flamingo to CPU")
-        try:
-            torch.cuda.empty_cache()
-        except Exception:
-            pass
+        # For models using dispatch_model, we can't use .to("cpu") - we must
+        # delete and rebuild. Set model to None and let _ensure_model_on_device rebuild.
+        from gpu_settings import force_cuda_memory_release
+
+        model = getattr(self, "model", None)
+        if model is not None:
+            try:
+                # Remove accelerate hooks if present
+                from accelerate.hooks import remove_hook_from_submodules
+
+                remove_hook_from_submodules(model)
+            except Exception:
+                pass
+            del self.model
+            self.model = None
+        force_cuda_memory_release()
 
     def unload(self):
-        try:
-            if self.model:
-                self.model.to("cpu")
-        except Exception:
-            pass
+        from gpu_settings import force_cuda_memory_release
+
+        model = getattr(self, "model", None)
+        if model is not None:
+            try:
+                from accelerate.hooks import remove_hook_from_submodules
+
+                remove_hook_from_submodules(model)
+            except Exception:
+                pass
+            del self.model
         self.model = None
-        try:
-            torch.cuda.empty_cache()
-        except Exception:
-            pass
+        force_cuda_memory_release()
 
     def generate(
         self, audio_path: str, prompt: Optional[str] = None
@@ -283,11 +341,20 @@ class Qwen3Embedder:
         self._gpu_owner = "qwen3_embedder"
         GPU_COORDINATOR.register(self._gpu_owner, self._offload_to_cpu)
 
+        # Use local cache if available to avoid network calls on every load
+        use_local = _is_model_cached(self.model_id)
+        if use_local:
+            self.logger.info("Loading Qwen3 embedder from local cache")
+
         # Follow the official model card recommendations: left padding and last-token pooling.
         self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_id, padding_side="left", trust_remote_code=True
+            self.model_id,
+            padding_side="left",
+            trust_remote_code=True,
+            local_files_only=use_local,
         )
         self.device_map = "auto" if self.device.startswith("cuda") else None
+        self._use_local_cache = use_local
         try:
             self.model = self._build_model()
         except Exception as exc:
@@ -306,6 +373,10 @@ class Qwen3Embedder:
 
     def _build_model(self):
         GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
+        # Use cached flag - after first load, model is always cached
+        use_local = getattr(self, "_use_local_cache", False) or _is_model_cached(
+            self.model_id
+        )
         model = AutoModel.from_pretrained(
             self.model_id,
             trust_remote_code=True,
@@ -313,6 +384,7 @@ class Qwen3Embedder:
             low_cpu_mem_usage=True,
             attn_implementation="sdpa",
             device_map=self.device_map,
+            local_files_only=use_local,
         )
         if self.device_map is None:
             model = model.to(self.device)
@@ -334,26 +406,26 @@ class Qwen3Embedder:
 
     def _offload_to_cpu(self) -> None:
         try:
-            if self.model is not None:
-                self.model = self.model.to("cpu")
+            model = getattr(self, "model", None)
+            if model is not None:
+                self.model = model.to("cpu")
         except Exception:
             self.logger.exception("Failed to offload Qwen3 embedder to CPU")
-        try:
-            torch.cuda.empty_cache()
-        except Exception:
-            pass
+        from gpu_settings import force_cuda_memory_release
+
+        force_cuda_memory_release()
 
     def unload(self):
         try:
-            if self.model:
-                self.model.to("cpu")
+            model = getattr(self, "model", None)
+            if model:
+                model.to("cpu")
         except Exception:
             pass
         self.model = None
-        try:
-            torch.cuda.empty_cache()
-        except Exception:
-            pass
+        from gpu_settings import force_cuda_memory_release
+
+        force_cuda_memory_release()
 
     def embed_text(self, text: str) -> torch.Tensor:
         """
@@ -463,8 +535,11 @@ class DescriptionEmbeddingPipeline:
         if cached:
             return int(cached)
         try:
+            use_local = _is_model_cached(self.caption_model_id)
             config = AutoConfig.from_pretrained(
-                self.caption_model_id, trust_remote_code=True
+                self.caption_model_id,
+                trust_remote_code=True,
+                local_files_only=use_local,
             )
             dim = None
             text_cfg = getattr(config, "text_config", None)
@@ -574,13 +649,14 @@ class DescriptionEmbeddingPipeline:
     def describe_music(
         self, music_file: str, music_name: str, *, offset_seconds: float = 0.0
     ) -> Optional[List[DescriptionSegment]]:
-        try:
-            description, audio_embedding = self._get_captioner().generate(music_file)
-        except Exception:
-            self.logger.exception(
-                "Failed to generate caption with Music Flamingo; using fallback text"
-            )
-            return None
+        # Generate caption - let exceptions propagate so caller knows about failures
+        description, audio_embedding = self._get_captioner().generate(music_file)
+
+        self.logger.info(
+            "Music Flamingo caption for '%s': %s",
+            music_name,
+            description[:500] + "..." if len(description) > 500 else description,
+        )
 
         if audio_embedding:
             self._audio_embedding_dim = len(audio_embedding)
@@ -606,6 +682,11 @@ class DescriptionEmbeddingPipeline:
     def get_caption(self, music_file: str, music_name: str) -> Tuple[str, List[float]]:
         """Generate caption only (no embeddings) and persist to JSON."""
         description, audio_embedding = self._get_captioner().generate(music_file)
+        self.logger.info(
+            "Music Flamingo caption for '%s': %s",
+            music_name,
+            description[:500] + "..." if len(description) > 500 else description,
+        )
         self._persist_description(music_name, description, music_file)
         if audio_embedding:
             self._audio_embedding_dim = len(audio_embedding)

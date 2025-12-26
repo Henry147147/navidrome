@@ -8,6 +8,7 @@ the working cap at ~9GB and using fp16 precision with CPU offload enabled.
 
 from __future__ import annotations
 
+import gc
 import json
 import configparser
 import os
@@ -151,6 +152,44 @@ def is_oom_error(exc: Exception) -> bool:
     """Heuristic to spot CUDA/CPU OOM errors."""
     msg = str(exc).lower()
     return isinstance(exc, torch.cuda.OutOfMemoryError) or "out of memory" in msg
+
+
+def force_cuda_memory_release() -> None:
+    """
+    Aggressively release CUDA memory with proper synchronization.
+
+    This ensures:
+    1. All pending CUDA operations complete (synchronize)
+    2. Python garbage collector runs to release tensor references
+    3. PyTorch's CUDA cache is emptied
+    """
+    if not torch.cuda.is_available():
+        return
+    try:
+        torch.cuda.synchronize()
+    except Exception:
+        pass
+    gc.collect()
+    try:
+        torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
+def get_cuda_memory_stats() -> Dict[str, Any]:
+    """Get current CUDA memory statistics for debugging."""
+    if not torch.cuda.is_available():
+        return {"available": False}
+    try:
+        allocated = torch.cuda.memory_allocated() / (1024**3)
+        total = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        return {
+            "allocated_gib": round(allocated, 2),
+            "total_gib": round(total, 2),
+            "free_gib": round(total - allocated, 2),
+        }
+    except Exception:
+        return {"error": "Unable to query"}
 
 
 # Encourage PyTorch to use expandable segments to reduce fragmentation OOMs.

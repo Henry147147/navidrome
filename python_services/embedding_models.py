@@ -153,10 +153,9 @@ class BaseEmbeddingModel(ABC):
         self._empty_cuda_cache()
 
     def _empty_cuda_cache(self) -> None:
-        try:
-            torch.cuda.empty_cache()
-        except Exception:  # pragma: no cover - torch.cuda may be unavailable
-            pass
+        from gpu_settings import force_cuda_memory_release
+
+        force_cuda_memory_release()
 
     @abstractmethod
     def _load_model(self) -> Any:
@@ -359,10 +358,21 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
                     self._model = self._model.to(  # type: ignore[attr-defined]
                         self.device, dtype=self._inference_dtype()
                     )
-                except Exception:
-                    self.logger.exception(
-                        "Failed to move %s back to GPU", self.__class__.__name__
-                    )
+                except Exception as exc:
+                    from gpu_settings import force_cuda_memory_release, is_oom_error
+
+                    if is_oom_error(exc):
+                        self.logger.warning(
+                            "OOM moving %s to GPU; releasing and reloading",
+                            self.__class__.__name__,
+                        )
+                        del self._model
+                        self._model = None
+                        force_cuda_memory_release()
+                    else:
+                        self.logger.exception(
+                            "Failed to move %s back to GPU", self.__class__.__name__
+                        )
                     self._model = self._load_model()
             self._last_used = datetime.now(timezone.utc)
             return self._model

@@ -38,19 +38,42 @@ class GPUModelCoordinator:
             return
 
         offload_prev: Optional[Callable[[], None]] = None
+        prev_owner: Optional[str] = None
         with self._lock:
             if self._current and self._current != owner:
                 offload_prev = self._offloaders.get(self._current)
+                prev_owner = self._current
             self._current = owner
 
         if offload_prev:
+            from gpu_settings import force_cuda_memory_release, get_cuda_memory_stats
+
+            if logger:
+                stats_before = get_cuda_memory_stats()
+                logger.info(
+                    "GPU claim: offloading %s (%.2f/%.2f GiB before)",
+                    prev_owner,
+                    stats_before.get("allocated_gib", 0),
+                    stats_before.get("total_gib", 0),
+                )
             try:
                 offload_prev()
             except Exception:  # pragma: no cover - defensive
                 if logger:
                     logger.exception(
-                        "Failed to offload previous GPU owner %s", self._current
+                        "Failed to offload previous GPU owner %s", prev_owner
                     )
+            # Ensure memory is fully released after offload
+            force_cuda_memory_release()
+            if logger:
+                stats_after = get_cuda_memory_stats()
+                logger.info(
+                    "GPU claim: %s -> %s (%.2f/%.2f GiB after offload)",
+                    prev_owner,
+                    owner,
+                    stats_after.get("allocated_gib", 0),
+                    stats_after.get("total_gib", 0),
+                )
 
     def current_owner(self) -> Optional[str]:
         with self._lock:
