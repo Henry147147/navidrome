@@ -330,7 +330,9 @@ def test_muq_empty_audio_handling(mock_load, mock_muq_components, sample_track_s
 
 
 @pytest.mark.unit
-def test_muq_chunk_batching_uses_multiple_calls(mock_muq_components, sample_track_segment):
+def test_muq_chunk_batching_uses_multiple_calls(
+    mock_muq_components, sample_track_segment
+):
     """Ensure long audio is split into multiple inference batches."""
     model = MuQEmbeddingModel(
         device="cpu",
@@ -343,7 +345,9 @@ def test_muq_chunk_batching_uses_multiple_calls(mock_muq_components, sample_trac
 
     audio = np.arange(9, dtype=np.float32)
     expected_chunks = len(list(model._iter_audio_chunks(audio)))
-    expected_batches = (expected_chunks + model.chunk_batch_size - 1) // model.chunk_batch_size
+    expected_batches = (
+        expected_chunks + model.chunk_batch_size - 1
+    ) // model.chunk_batch_size
 
     with patch.object(model, "_load_audio_segment", return_value=audio):
         with model.model_session() as loaded_model:

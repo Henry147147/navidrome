@@ -257,14 +257,16 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         env_batch = os.getenv("NAVIDROME_MUQ_CHUNK_BATCH", "").strip()
         if chunk_batch_size is None:
             try:
-                chunk_batch_size = int(env_batch) if env_batch else 4
+                chunk_batch_size = int(env_batch) if env_batch else 1
             except ValueError:
-                chunk_batch_size = 4
+                chunk_batch_size = 1
         self.chunk_batch_size = max(int(chunk_batch_size), 1)
         self._gpu_owner = f"{self.__class__.__name__}"
         GPU_COORDINATOR.register(self._gpu_owner, self.offload_to_cpu)
 
-    def _iter_audio_chunks(self, audio: np.ndarray) -> Generator[np.ndarray, None, None]:
+    def _iter_audio_chunks(
+        self, audio: np.ndarray
+    ) -> Generator[np.ndarray, None, None]:
         chunk_size = int(self.window_seconds * self.sample_rate)
         hop_size = int(self.hop_seconds * self.sample_rate)
         if chunk_size <= 0 or hop_size <= 0:
@@ -432,7 +434,9 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
                     )
                     batch = []
             if batch:
-                outputs_cpu.append(self._run_chunk_batch(model=model, chunk_batch=batch))
+                outputs_cpu.append(
+                    self._run_chunk_batch(model=model, chunk_batch=batch)
+                )
 
         if not outputs_cpu:
             raise RuntimeError("No audio chunks produced")
@@ -498,9 +502,7 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
                         outputs = self._run_chunk_batch(
                             model=model, chunk_batch=batch_chunks
                         )
-                        for output, mapped_track in zip(
-                            outputs, batch_track_indices
-                        ):
+                        for output, mapped_track in zip(outputs, batch_track_indices):
                             track_embeddings[mapped_track].append(output)
                         batch_chunks = []
                         batch_track_indices = []
@@ -610,7 +612,9 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         for chunk in self._iter_audio_chunks(audio):
             batch.append(chunk)
             if len(batch) >= self.chunk_batch_size:
-                outputs_cpu.append(self._run_chunk_batch(model=model, chunk_batch=batch))
+                outputs_cpu.append(
+                    self._run_chunk_batch(model=model, chunk_batch=batch)
+                )
                 batch = []
         if batch:
             outputs_cpu.append(self._run_chunk_batch(model=model, chunk_batch=batch))

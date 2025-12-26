@@ -102,7 +102,7 @@ class MusicFlamingoCaptioner:
         device: Optional[str] = None,
         torch_dtype: Optional[torch.dtype] = torch.bfloat16,
         logger: Optional[logging.Logger] = None,
-        gpu_settings: Optional[GPUSettings] = None
+        gpu_settings: Optional[GPUSettings] = None,
     ) -> None:
         self.last_input_embeds: Optional[torch.Tensor] = None
         self.model_id = model_id
@@ -122,8 +122,8 @@ class MusicFlamingoCaptioner:
     def make_quantized(self, model):
         with open("./music_flamingo_fp8.safetensor", "r") as file:
             quant_map = json.load(file)
-        
-        quantized_weights = load_file('./music_flamingo_fp8.safetensor')
+
+        quantized_weights = load_file("./music_flamingo_fp8.safetensor")
         requantize(model, quantized_weights, quant_map)
 
     def _build_model(self) -> AudioFlamingo3ForConditionalGeneration:
@@ -149,14 +149,18 @@ class MusicFlamingoCaptioner:
 
         # monkeypatch the language model to save the input_embeds so we have access to it
         old_call = model.get_audio_features
-        def new_call(input_features: torch.FloatTensor, input_features_mask: torch.Tensor):
+
+        def new_call(
+            input_features: torch.FloatTensor, input_features_mask: torch.Tensor
+        ):
             return_value = old_call(input_features, input_features_mask)
             if self.last_input_embeds is None:
                 self.last_input_embeds = return_value.cpu().detach()
             return return_value
+
         model.get_audio_features = new_call
         # TODO, test this
-        
+
         return model
 
     def _ensure_model_on_device(self):
@@ -196,7 +200,9 @@ class MusicFlamingoCaptioner:
         except Exception:
             pass
 
-    def generate(self, audio_path: str, prompt: Optional[str] = None) -> Tuple[str, List[float]]:
+    def generate(
+        self, audio_path: str, prompt: Optional[str] = None
+    ) -> Tuple[str, List[float]]:
         """
         Generate a rich caption for the provided audio file using the official
         Music Flamingo chat template, mirroring the model card example.
@@ -243,11 +249,10 @@ class MusicFlamingoCaptioner:
             # Allow long, detailed captions for complex tracks.
             self.last_input_embeds = None
             outputs = self.model.generate(**inputs, max_new_tokens=8192)
-        
+
         assert self.last_input_embeds is not None
         audio_embedding = _pool_audio_embedding(self.last_input_embeds).tolist()
         self.last_input_embeds = None
-        
 
         # Strip the prompt tokens from the generated sequence
         decoded = self.processor.batch_decode(

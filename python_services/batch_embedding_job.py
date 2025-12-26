@@ -212,9 +212,7 @@ class BatchEmbeddingJob:
 
             if model_name == "qwen3":
                 try:
-                    self.logger.info(
-                        "Dropping collection: %s", self.audio_collection
-                    )
+                    self.logger.info("Dropping collection: %s", self.audio_collection)
                     client.drop_collection(self.audio_collection)
                 except Exception as e:
                     self.logger.warning(
@@ -729,7 +727,9 @@ class BatchEmbeddingJob:
                 raise FileNotFoundError(f"Audio file not found: {audio_path}")
             canonical_name = self._canonical_name(track)
             try:
-                description, audio_embedding = model.get_caption(str(audio_path), canonical_name)
+                description, audio_embedding = model.get_caption(
+                    str(audio_path), canonical_name
+                )
             except Exception as e:
                 if is_oom_error(e):
                     raise
@@ -761,7 +761,9 @@ class BatchEmbeddingJob:
                     }
                 )
                 if len(audio_batch_data) >= batch_size:
-                    client.insert(collection_name=audio_collection, data=audio_batch_data)
+                    client.insert(
+                        collection_name=audio_collection, data=audio_batch_data
+                    )
                     audio_batch_data = []
 
             caption_results.append((canonical_name, description))

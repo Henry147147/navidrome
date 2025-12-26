@@ -20,7 +20,15 @@ func (c embeddingCandidate) key() string {
 
 func (c embeddingCandidate) absolutePath() string {
 	if filepath.IsAbs(c.TrackPath) {
-		return c.TrackPath
+		return filepath.Clean(c.TrackPath)
 	}
-	return filepath.Join(c.LibraryPath, c.TrackPath)
+	path := filepath.Join(c.LibraryPath, c.TrackPath)
+	if filepath.IsAbs(c.LibraryPath) {
+		return filepath.Clean(path)
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	return absPath
 }

@@ -25,9 +25,7 @@ model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
 )
 print(model.dtype)
 
-model = torch.compile(model,
-mode="max-autotune",
-fullgraph=True)
+model = torch.compile(model, mode="max-autotune", fullgraph=True)
 
 quantize(model, weights=qfloat8, activations=qfloat8, include=include)
 
@@ -78,7 +76,7 @@ Explain the similarities in sound palette, vocal treatment, groove, and arrangem
             and overall mood it creates. Also describe the language used (or if it is instrumental), any clearly intelligible and 
             important lyrics or recurring phrases and what they are about, the emotions the music and vocals evoke and the era or scene it most strongly resembles. Include any 
             other musically relevant details such as how the energy changes over time.""",
-            "Describe this track in full detail"
+    "Describe this track in full detail",
 ]
 
 
@@ -115,6 +113,7 @@ def prepare(processor, audio_path: str) -> dict:
 
     return inputs
 
+
 print("starting calibration")
 all_songs = random.sample(all_songs, min(len(all_songs), 400))
 
@@ -124,7 +123,9 @@ stop_requested = False
 def _handle_sigint(signum, frame):
     global stop_requested
     if not stop_requested:
-        print("\nCtrl-C received: will stop after current calibration step and save results...")
+        print(
+            "\nCtrl-C received: will stop after current calibration step and save results..."
+        )
     stop_requested = True
 
 
@@ -145,7 +146,9 @@ with Calibration():
             model.generate(**prepared, max_new_tokens=1024)
         except KeyboardInterrupt:
             stop_requested = True
-            print("\nCtrl-C received during generation: stopping after this step and saving results...")
+            print(
+                "\nCtrl-C received during generation: stopping after this step and saving results..."
+            )
             break
 
 if stop_requested:
@@ -163,5 +166,5 @@ import json
 
 from optimum.quanto import quantization_map
 
-with open('music_flamingo_fp8_quantization_map.json', 'w') as f:
-  json.dump(quantization_map(model), f)
+with open("music_flamingo_fp8_quantization_map.json", "w") as f:
+    json.dump(quantization_map(model), f)
