@@ -32,8 +32,6 @@ from transformers import (
     AudioFlamingo3ForConditionalGeneration,
     AutoProcessor as FlamingoProcessor,
 )
-
-_HAS_MUSIC_FLAMINGO = True
 DEFAULT_DESCRIPTION_COLLECTION = "description_embedding"
 DEFAULT_AUDIO_COLLECTION = "flamingo_audio_embedding"
 DESCRIPTION_JSON_PATH = Path("song_descriptions.json")

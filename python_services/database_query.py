@@ -32,8 +32,12 @@ def _using_milvus_lite() -> bool:
     Detect whether Milvus Lite is being used (local file path URI).
     Lite mode does not support parameterized filters.
     """
-    uri = os.getenv("NAVIDROME_MILVUS_URI", "")
-    return "://" not in uri or uri.startswith("file:")
+    if os.getenv("NAVIDROME_MILVUS_DB_PATH"):
+        return True
+    uri = os.getenv("NAVIDROME_MILVUS_URI")
+    if not uri:
+        return False
+    return uri.startswith("file:")
 
 
 @dataclass

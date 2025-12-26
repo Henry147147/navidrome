@@ -16,7 +16,7 @@ import torch
 from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from description_pipeline import DescriptionEmbeddingPipeline, _HAS_MUSIC_FLAMINGO
+from description_pipeline import DescriptionEmbeddingPipeline
 from gpu_settings import GPUSettings, is_oom_error, load_gpu_settings
 from stub_text_embedders import (  # noqa: E402
     get_stub_embedder,
@@ -258,8 +258,8 @@ if use_stubs_env == "true":
 elif use_stubs_env == "false":
     use_stubs = False
 else:
-    # Auto-mode: use stubs when heavy model dependencies are unavailable
-    use_stubs = not _HAS_MUSIC_FLAMINGO
+    # Auto-mode defaults to real models; dependencies should be installed via requirements.
+    use_stubs = False
 device = os.getenv("TEXT_EMBEDDING_DEVICE", None)
 gpu_settings = load_gpu_settings()
 

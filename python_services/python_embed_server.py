@@ -161,8 +161,12 @@ class EmbedSocketServer:
 
     @staticmethod
     def _using_milvus_lite() -> bool:
-        uri = os.getenv("NAVIDROME_MILVUS_URI", "")
-        return "://" not in uri or uri.startswith("file:")
+        if os.getenv("NAVIDROME_MILVUS_DB_PATH"):
+            return True
+        uri = os.getenv("NAVIDROME_MILVUS_URI")
+        if not uri:
+            return False
+        return uri.startswith("file:")
 
     def _milvus_name_exists(self, collection: str, names: List[str]) -> bool:
         normalized = sorted({(name or "").strip() for name in names if name})

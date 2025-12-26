@@ -3,7 +3,8 @@ fastapi
 librosa
 muq
 mutagen
-numpy
+# Keep librosa/numba compatible; NumPy 2.4 breaks numba imports.
+numpy<2.4
 pydantic
 pymilvus
 pytest

@@ -13,8 +13,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Event, Lock, Thread
 from typing import Any, Generator, List, Optional, Sequence
-import librosa
 
+import librosa
 import numpy as np
 import torch
 import torchaudio
@@ -28,23 +28,15 @@ def _milvus_uses_lite() -> bool:
 
     Lite mode only supports FLAT/IVF_FLAT/AUTOINDEX indexes.
     """
-    uri = os.getenv("NAVIDROME_MILVUS_URI", "")
-    return "://" not in uri or uri.startswith("file:")
+    if os.getenv("NAVIDROME_MILVUS_DB_PATH"):
+        return True
+    uri = os.getenv("NAVIDROME_MILVUS_URI")
+    if not uri:
+        return False
+    return uri.startswith("file:")
 
 
-# Use try-except to handle import from different contexts
-try:
-    from models import TrackSegment
-except ImportError:
-    # If 'models' is shadowed by another package, try importing from local file
-    from pathlib import Path
-    import importlib.util
-
-    _models_path = Path(__file__).parent / "models.py"
-    _spec = importlib.util.spec_from_file_location("_ps_models", _models_path)
-    _ps_models = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(_ps_models)
-    TrackSegment = _ps_models.TrackSegment
+from models import TrackSegment
 
 from muq import MuQ
 
