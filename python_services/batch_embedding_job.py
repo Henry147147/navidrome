@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import torch
 from tqdm import tqdm
 
 from embedding_models import MuQEmbeddingModel
@@ -156,6 +157,37 @@ class BatchEmbeddingJob:
                 )
             else:
                 self.logger.warning(f"Unknown model: {model_name}")
+
+    def _ensure_model_loaded_with_fallback(self, model_name: str, model) -> None:
+        """Load a model and retry on CPU if GPU OOM occurs."""
+        try:
+            model.ensure_model_loaded()
+            return
+        except Exception as exc:
+            if not is_oom_error(exc):
+                raise
+
+        device_label = getattr(model, "device", "cuda")
+        self.logger.warning(
+            "%s load hit OOM on %s; retrying on CPU fp32", model_name, device_label
+        )
+        try:
+            if hasattr(model, "unload_model"):
+                model.unload_model()
+        except Exception:
+            pass
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+        if hasattr(model, "device"):
+            model.device = "cpu"
+        if hasattr(model, "model_dtype"):
+            model.model_dtype = torch.float32
+        if hasattr(model, "storage_dtype"):
+            model.storage_dtype = torch.float32
+
+        model.ensure_model_loaded()
 
     def get_all_tracks(self) -> List[Dict]:
         """Query all tracks from Navidrome database."""
@@ -379,7 +411,7 @@ class BatchEmbeddingJob:
                 self.progress.total_operations = total_operations
 
                 # Ensure model is loaded
-                model.ensure_model_loaded()
+                self._ensure_model_loaded_with_fallback(model_name, model)
 
                 try:
                     if model_name == "qwen3" and getattr(model, "caption_only", False):
@@ -427,7 +459,9 @@ class BatchEmbeddingJob:
                                     time.sleep(0.5)
                                 if self._cancelled:
                                     break
-                                model.ensure_model_loaded()
+                                self._ensure_model_loaded_with_fallback(
+                                    model_name, model
+                                )
 
                             self.progress.current_track = (
                                 f"{track['artist']} - {track['title']}"

@@ -25,7 +25,7 @@ import torch.nn.functional as F
 from pymilvus import MilvusClient, DataType
 from transformers import AutoModel, AutoTokenizer, AutoConfig
 
-from gpu_settings import GPUSettings, load_gpu_settings
+from gpu_settings import GPUSettings, is_oom_error, load_gpu_settings
 from gpu_model_coordinator import GPU_COORDINATOR
 
 from transformers import (
@@ -133,7 +133,7 @@ class MusicFlamingoCaptioner:
 
         model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
             self.model_id,
-            torch_dtype=self.dtype,
+            dtype=self.dtype,
             low_cpu_mem_usage=True,
             attn_implementation="sdpa",
             device_map=device_map,
@@ -288,7 +288,19 @@ class Qwen3Embedder:
             self.model_id, padding_side="left", trust_remote_code=True
         )
         self.device_map = "auto" if self.device.startswith("cuda") else None
-        self.model = self._build_model()
+        try:
+            self.model = self._build_model()
+        except Exception as exc:
+            if is_oom_error(exc) and self.device.startswith("cuda"):
+                self.logger.warning(
+                    "Qwen3 load hit OOM on cuda; retrying on CPU fp32"
+                )
+                self.device = "cpu"
+                self.device_map = None
+                self.dtype = torch.float32
+                self.model = self._build_model()
+            else:
+                raise
         self.model.eval()
         self.gpu_settings.apply_runtime_limits()
 
@@ -297,7 +309,7 @@ class Qwen3Embedder:
         model = AutoModel.from_pretrained(
             self.model_id,
             trust_remote_code=True,
-            torch_dtype=self.dtype,
+            dtype=self.dtype,
             low_cpu_mem_usage=True,
             attn_implementation="sdpa",
             device_map=self.device_map,
