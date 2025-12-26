@@ -239,7 +239,8 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         *,
         model_id: str = "OpenMuQ/MuQ-large-msd-iter",
         device: str = "cuda",
-        storage_dtype: torch.dtype = torch.float16,
+        model_dtype: torch.dtype = torch.float16,
+        storage_dtype: torch.dtype = torch.float32,
         sample_rate: int = 24_000,
         window_seconds: int = 120,
         hop_seconds: int = 15,
@@ -250,6 +251,7 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         super().__init__(timeout_seconds=timeout_seconds, logger=logger)
         self.model_id = model_id
         self.device = device
+        self.model_dtype = model_dtype
         self.storage_dtype = storage_dtype
         self.sample_rate = sample_rate
         self.window_seconds = window_seconds
@@ -263,6 +265,11 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         self.chunk_batch_size = max(int(chunk_batch_size), 1)
         self._gpu_owner = f"{self.__class__.__name__}"
         GPU_COORDINATOR.register(self._gpu_owner, self.offload_to_cpu)
+
+    def _inference_dtype(self) -> torch.dtype:
+        if not str(self.device).startswith("cuda"):
+            return torch.float32
+        return self.model_dtype
 
     def _iter_audio_chunks(
         self, audio: np.ndarray
@@ -302,8 +309,8 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         chunk_batch: List[np.ndarray],
     ) -> torch.Tensor:
         chunk_matrix = np.stack(chunk_batch, axis=0)
-        chunk_tensor = (
-            torch.from_numpy(chunk_matrix).to(self.device).to(self.storage_dtype)
+        chunk_tensor = torch.from_numpy(chunk_matrix).to(
+            self.device, dtype=self._inference_dtype()
         )
         model_output: Optional[torch.Tensor] = None
         outputs: Optional[torch.Tensor] = None
@@ -319,7 +326,7 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
                     outputs = outputs.mean(dim=1)
                 elif outputs.dim() == 1:
                     outputs = outputs.unsqueeze(0)
-                outputs_cpu = outputs.detach().to("cpu")
+                outputs_cpu = outputs.detach().to("cpu", dtype=torch.float32)
         finally:
             if self.device.startswith("cuda") and torch.cuda.is_available():
                 del chunk_tensor
@@ -336,7 +343,7 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
         # Use MuQ class for audio-only embeddings (not MuQMuLan which is for music-text joint embeddings)
         model = MuQ.from_pretrained(self.model_id)
-        model = model.to(self.device).to(self.storage_dtype).eval()
+        model = model.to(self.device, dtype=self._inference_dtype()).eval()
         return model
 
     def ensure_model_loaded(self) -> Any:  # type: ignore[override]
@@ -350,7 +357,9 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
             else:
                 GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
                 try:
-                    self._model = self._model.to(self.device).to(self.storage_dtype)  # type: ignore[attr-defined]
+                    self._model = self._model.to(  # type: ignore[attr-defined]
+                        self.device, dtype=self._inference_dtype()
+                    )
                 except Exception:
                     self.logger.exception(
                         "Failed to move %s back to GPU", self.__class__.__name__
