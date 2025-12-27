@@ -504,7 +504,9 @@ class TestBatchJobErrorHandling:
         job.models = {"muq": dummy_model}
         monkeypatch.setattr(job, "get_all_tracks", lambda: tracks)
 
-        result = job.run(models_to_use=["muq"], clear_existing=False, missing_only=False)
+        result = job.run(
+            models_to_use=["muq"], clear_existing=False, missing_only=False
+        )
 
         assert dummy_model.loaded is True
         assert dummy_model.unloaded is True
@@ -714,7 +716,8 @@ class TestBatchJobErrorHandling:
         assert dummy_model.schema_calls >= 1
         assert dummy_model.index_calls >= 1
         assert any(
-            collection == "flamingo_audio_embedding" for collection, _ in client.inserted
+            collection == "flamingo_audio_embedding"
+            for collection, _ in client.inserted
         )
         assert any(
             collection == "description_embedding" for collection, _ in client.inserted

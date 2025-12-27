@@ -58,7 +58,9 @@ def load_audio(path: str) -> np.ndarray:
     return audio.astype(np.float32, copy=False)
 
 
-def run_chunk_batch(model: torch.nn.Module, batch: List[np.ndarray], device: str, dtype: torch.dtype) -> None:
+def run_chunk_batch(
+    model: torch.nn.Module, batch: List[np.ndarray], device: str, dtype: torch.dtype
+) -> None:
     chunk_matrix = np.stack(batch, axis=0)
     chunk_tensor = torch.from_numpy(chunk_matrix).to(device=device)
     if dtype != torch.float32:

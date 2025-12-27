@@ -34,9 +34,20 @@ from cue_splitter import SplitTrack, split_flac_with_cue
 from models import SongEmbedding
 from database_query import MilvusSimilaritySearcher
 from track_name_resolver import TrackNameResolver
+from batch_queue_manager import BatchQueueManager, BatchResult
+from batch_processor import ModelFirstBatchProcessor
 
 
 SOCKET_PATH = "/tmp/navidrome_embed.sock"
+
+# Batch processing configuration
+BATCH_TIMEOUT_SECONDS = float(os.getenv("NAVIDROME_BATCH_TIMEOUT", "5.0"))
+BATCH_SIZE_THRESHOLD = int(os.getenv("NAVIDROME_BATCH_SIZE", "50"))
+BATCH_MODE_ENABLED = os.getenv("NAVIDROME_BATCH_MODE", "true").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 
 logger = logging.getLogger("navidrome.embed_server")
@@ -140,6 +151,28 @@ class EmbedSocketServer:
         )
         self.status_timeout = _status_timeout_seconds()
         self._shutdown_event = threading.Event()
+
+        # Initialize batch processing if enabled
+        self._batch_mode_enabled = BATCH_MODE_ENABLED
+        self._batch_processor: Optional[ModelFirstBatchProcessor] = None
+        self._batch_queue: Optional[BatchQueueManager] = None
+        if self._batch_mode_enabled:
+            self._batch_processor = ModelFirstBatchProcessor(
+                muq_model=self.model,
+                description_pipeline=self.description_pipeline,
+                logger=self.logger,
+            )
+            self._batch_queue = BatchQueueManager(
+                batch_timeout_seconds=BATCH_TIMEOUT_SECONDS,
+                batch_size_threshold=BATCH_SIZE_THRESHOLD,
+                process_batch_fn=self._process_embedding_batch,
+                logger=self.logger,
+            )
+            self.logger.info(
+                "Batch mode enabled: timeout=%.1fs, threshold=%d",
+                BATCH_TIMEOUT_SECONDS,
+                BATCH_SIZE_THRESHOLD,
+            )
 
         # Register cleanup and signal handlers
         atexit.register(self._cleanup_socket)
@@ -467,6 +500,53 @@ class EmbedSocketServer:
         except Exception as e:
             self.logger.debug("Error during socket cleanup: %s", e)
 
+    def _process_embedding_batch(self, payloads: List[dict]) -> Dict[str, BatchResult]:
+        """
+        Process a batch of embedding requests with model-first ordering.
+        Called by BatchQueueManager when a batch is ready.
+
+        Returns results keyed by request_id.
+        """
+        if not self._batch_processor:
+            # Should not happen, but handle gracefully
+            return {
+                payload.get("request_id", f"unknown-{i}"): BatchResult(
+                    request_id=payload.get("request_id", f"unknown-{i}"),
+                    success=False,
+                    payload={
+                        "status": "error",
+                        "message": "Batch processor not initialized",
+                    },
+                    error="Batch processor not initialized",
+                )
+                for i, payload in enumerate(payloads)
+            }
+
+        # Process the batch with model-first ordering
+        results = self._batch_processor.process_batch(payloads)
+
+        # Store each successful result in Milvus
+        for request_id, result in results.items():
+            if result.success:
+                try:
+                    music_name = result.payload.get("music_name", "unknown")
+                    self.add_embedding_to_db(music_name, result.payload)
+                except Exception as e:
+                    self.logger.error(
+                        "Failed to store embedding for %s: %s", request_id, e
+                    )
+                    results[request_id] = BatchResult(
+                        request_id=request_id,
+                        success=False,
+                        payload={
+                            "status": "error",
+                            "message": f"Storage failed: {e}",
+                        },
+                        error=str(e),
+                    )
+
+        return results
+
     def _health_check(self) -> Dict[str, object]:
         """Perform health check on embedding service"""
         milvus_ok = False
@@ -477,12 +557,25 @@ class EmbedSocketServer:
         except Exception as e:
             self.logger.debug("Milvus connection check failed: %s", e)
 
+        batch_info = {}
+        if self._batch_mode_enabled and self._batch_queue:
+            batch_info = {
+                "batch_mode": True,
+                "batch_timeout": BATCH_TIMEOUT_SECONDS,
+                "batch_threshold": BATCH_SIZE_THRESHOLD,
+                "batch_pending": self._batch_queue.pending_count(),
+                "batch_processing": self._batch_queue.is_processing(),
+            }
+        else:
+            batch_info = {"batch_mode": False}
+
         return {
             "status": "ok" if milvus_ok else "degraded",
             "milvus_connected": milvus_ok,
             "descriptions_enabled": self.enable_descriptions,
             "socket_path": self.socket_path,
             "model_loaded": self.model is not None,
+            **batch_info,
         }
 
     def serve_forever(self) -> None:
@@ -515,6 +608,10 @@ class EmbedSocketServer:
                         break
                     self.logger.error("Error accepting connection: %s", e)
         finally:
+            # Shutdown batch queue to process remaining requests
+            if self._batch_queue:
+                self.logger.info("Shutting down batch queue...")
+                self._batch_queue.shutdown()
             server_sock.close()
             self.logger.info("Embedding server shutdown complete")
             self._cleanup_socket()
@@ -725,8 +822,51 @@ class EmbedSocketServer:
                             title=payload.get("title"),
                             alternate_names=payload.get("alternate_names"),
                         )
-                    else:  # action == "embed" (default)
-                        response_payload = self.process_payload(payload)
+                    elif action == "flush":
+                        # Force immediate processing of pending batch requests
+                        if self._batch_queue:
+                            pending = self._batch_queue.pending_count()
+                            self._batch_queue.flush()
+                            response_payload = {
+                                "status": "ok",
+                                "message": f"Flush triggered for {pending} pending requests",
+                            }
+                        else:
+                            response_payload = {
+                                "status": "ok",
+                                "message": "Batch mode not enabled",
+                            }
+                    elif action == "embed":
+                        # Use batch mode if enabled, otherwise process immediately
+                        if self._batch_mode_enabled and self._batch_queue:
+                            # Generate request_id if not provided
+                            if not request_id:
+                                request_id = f"embed-{time.monotonic_ns()}"
+                                payload["request_id"] = request_id
+
+                            # Enqueue and wait for batch result
+                            self.logger.debug(
+                                "Enqueueing request %s for batch processing", request_id
+                            )
+                            result_queue = self._batch_queue.enqueue(
+                                request_id, payload
+                            )
+
+                            # Block until batch completes (connection held open)
+                            result: BatchResult = result_queue.get()
+
+                            response_payload = result.payload
+                            if request_id:
+                                response_payload = dict(response_payload)
+                                response_payload["request_id"] = request_id
+                        else:
+                            # Fallback to immediate processing
+                            response_payload = self.process_payload(payload)
+                    else:
+                        response_payload = {
+                            "status": "error",
+                            "message": f"Unknown action: {action}",
+                        }
                 except ValueError as exc:
                     self.logger.error("Invalid payload for %s: %s", action, exc)
                     self._write_response(

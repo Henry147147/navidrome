@@ -32,6 +32,7 @@ type embeddingClient interface {
 	HealthCheck(ctx context.Context) error
 	CheckEmbedding(ctx context.Context, candidate embeddingCandidate) (embeddingStatus, error)
 	EmbedSong(ctx context.Context, candidate embeddingCandidate) error
+	FlushBatch(ctx context.Context) error
 }
 
 type socketEmbeddingClient struct {
@@ -123,6 +124,31 @@ func (c *socketEmbeddingClient) EmbedSong(ctx context.Context, candidate embeddi
 		return fmt.Errorf("embedding failed: %s", resp.Message)
 	}
 
+	return nil
+}
+
+// FlushBatch signals the embedding server to immediately process any pending
+// batch requests. This should be called at the end of a scan to ensure all
+// queued embeddings are processed without waiting for the batch timeout.
+func (c *socketEmbeddingClient) FlushBatch(ctx context.Context) error {
+	payload := map[string]any{
+		"action": "flush",
+	}
+
+	var resp struct {
+		Status  string `json:"status"`
+		Message string `json:"message,omitempty"`
+	}
+
+	if err := c.sendRequest(ctx, 30*time.Second, payload, &resp); err != nil {
+		return fmt.Errorf("flush batch request failed: %w", err)
+	}
+
+	if resp.Status == "error" {
+		return fmt.Errorf("flush batch failed: %s", resp.Message)
+	}
+
+	log.Debug(ctx, "Flushed embedding batch", "message", resp.Message)
 	return nil
 }
 

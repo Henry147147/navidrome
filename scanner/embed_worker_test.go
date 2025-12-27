@@ -59,6 +59,10 @@ func (c *stubEmbeddingClient) EmbedSong(_ context.Context, candidate embeddingCa
 	return err
 }
 
+func (c *stubEmbeddingClient) FlushBatch(_ context.Context) error {
+	return nil
+}
+
 func waitForCondition(t *testing.T, timeout time.Duration, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -235,6 +239,10 @@ func (c *panicEmbeddingClient) EmbedSong(_ context.Context, candidate embeddingC
 	if shouldPanic {
 		panic("simulated panic in embedding")
 	}
+	return nil
+}
+
+func (c *panicEmbeddingClient) FlushBatch(_ context.Context) error {
 	return nil
 }
 

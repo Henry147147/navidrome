@@ -143,9 +143,7 @@ def test_qwen3_embedder_oom_fallback(monkeypatch):
             raise RuntimeError("CUDA out of memory")
         return DummyModel()
 
-    monkeypatch.setattr(
-        description_pipeline.Qwen3Embedder, "_build_model", fake_build
-    )
+    monkeypatch.setattr(description_pipeline.Qwen3Embedder, "_build_model", fake_build)
     monkeypatch.setattr(
         description_pipeline.AutoTokenizer,
         "from_pretrained",
@@ -271,9 +269,7 @@ def test_qwen3_embed_text_uses_last_token_pool(monkeypatch):
 
     class DummyOutput:
         def __init__(self):
-            self.last_hidden_state = torch.tensor(
-                [[[1.0, 0.0], [0.0, 1.0]]]
-            )
+            self.last_hidden_state = torch.tensor([[[1.0, 0.0], [0.0, 1.0]]])
 
     class DummyModel:
         device = "cpu"

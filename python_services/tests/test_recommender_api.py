@@ -44,7 +44,12 @@ def test_process_hits_applies_diversity_and_exclusions():
     )
     seed = RecommendationSeed(track_id="seed", weight=1.0, source="recent")
     hits = [
-        {"name": "Artist - Keep", "distance": 0.8, "track_id": "keep", "models": ["muq"]},
+        {
+            "name": "Artist - Keep",
+            "distance": 0.8,
+            "track_id": "keep",
+            "models": ["muq"],
+        },
         {"name": "Artist - Skip", "distance": 0.9},  # resolved via resolver
     ]
 
@@ -201,7 +206,9 @@ def test_batch_endpoints(monkeypatch, tmp_path):
     app.include_router(recommender_api.build_recommender_router(DummyEngine()))
     client = TestClient(app)
 
-    response = client.post("/batch/start", json={"models": ["muq"], "clearExisting": True})
+    response = client.post(
+        "/batch/start", json={"models": ["muq"], "clearExisting": True}
+    )
     assert response.status_code == 200
 
     progress = client.get("/batch/progress")

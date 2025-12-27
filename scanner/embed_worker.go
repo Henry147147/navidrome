@@ -128,6 +128,10 @@ func (w *embeddingWorker) loop(ctx context.Context) {
 			w.running = false
 			w.mu.Unlock()
 			w.stopProgressReporter()
+			// Flush any remaining batch requests on the server
+			if err := w.client.FlushBatch(ctx); err != nil {
+				log.Warn(ctx, "Failed to flush embedding batch", "error", err)
+			}
 			log.Info(ctx, "Embedding worker queue empty, exiting")
 			return
 		}

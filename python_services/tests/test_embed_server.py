@@ -28,6 +28,10 @@ class StubEmbeddingModel:
     def ensure_milvus_index(self, client) -> None:  # pragma: no cover - simple stub
         return None
 
+    def ensure_model_loaded(self) -> None:  # pragma: no cover - simple stub
+        """Stub for batch processor compatibility."""
+        return None
+
     def embed_music(
         self, music_file: str, music_name: str, cue_file: str | None = None
     ) -> Dict[str, Any]:
@@ -469,3 +473,92 @@ def test_canonical_name_from_meta_prefers_artist_title():
 def test_using_milvus_lite_env(monkeypatch):
     monkeypatch.setenv("NAVIDROME_MILVUS_DB_PATH", "/tmp/milvus.db")
     assert EmbedSocketServer._using_milvus_lite() is True
+
+
+# ============================================================================
+# Batch Mode Tests
+# ============================================================================
+
+
+def test_batch_mode_disabled_by_env(monkeypatch, logger: logging.Logger):
+    """Test that batch mode can be disabled via environment variable."""
+    monkeypatch.setenv("NAVIDROME_BATCH_MODE", "false")
+
+    # Need to reload the module to pick up env var
+    import importlib
+    import python_embed_server
+
+    importlib.reload(python_embed_server)
+
+    server = python_embed_server.EmbedSocketServer(
+        socket_path="/tmp/navidrome-test.sock",
+        milvus_client=RecordingMilvusClient(),
+        model=StubEmbeddingModel(),
+        enable_descriptions=False,
+    )
+
+    assert server._batch_mode_enabled is False
+    assert server._batch_queue is None
+
+    # Restore default
+    monkeypatch.setenv("NAVIDROME_BATCH_MODE", "true")
+    importlib.reload(python_embed_server)
+
+
+def test_health_check_shows_batch_info(monkeypatch, logger: logging.Logger):
+    """Test that health check includes batch mode information."""
+    monkeypatch.setenv("NAVIDROME_BATCH_MODE", "true")
+
+    import importlib
+    import python_embed_server
+
+    importlib.reload(python_embed_server)
+
+    server = python_embed_server.EmbedSocketServer(
+        socket_path="/tmp/navidrome-test.sock",
+        milvus_client=RecordingMilvusClient(),
+        model=StubEmbeddingModel(),
+        enable_descriptions=False,
+    )
+
+    payload = {"action": "health"}
+    response = _socket_roundtrip(server, payload)
+
+    assert response["batch_mode"] is True
+    assert "batch_timeout" in response
+    assert "batch_threshold" in response
+    assert "batch_pending" in response
+    assert response["batch_pending"] == 0
+
+
+def test_flush_action_response(logger: logging.Logger):
+    """Test that flush action returns appropriate response."""
+    server = EmbedSocketServer(
+        socket_path="/tmp/navidrome-test.sock",
+        milvus_client=RecordingMilvusClient(),
+        model=StubEmbeddingModel(),
+        enable_descriptions=False,
+    )
+
+    payload = {"action": "flush", "request_id": "flush-1"}
+    response = _socket_roundtrip(server, payload)
+
+    assert response["status"] == "ok"
+    assert "request_id" in response
+    assert response["request_id"] == "flush-1"
+
+
+def test_unknown_action_returns_error(logger: logging.Logger):
+    """Test that unknown action returns an error."""
+    server = EmbedSocketServer(
+        socket_path="/tmp/navidrome-test.sock",
+        milvus_client=RecordingMilvusClient(),
+        model=StubEmbeddingModel(),
+        enable_descriptions=False,
+    )
+
+    payload = {"action": "unknown_action", "request_id": "unk-1"}
+    response = _socket_roundtrip(server, payload)
+
+    assert response["status"] == "error"
+    assert "Unknown action" in response["message"]

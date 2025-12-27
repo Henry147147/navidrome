@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import torch
+
+torch.set_float32_matmul_precision("high")
 import torch.nn.functional as F
 from pymilvus import MilvusClient, DataType
 from transformers import AutoModel, AutoTokenizer, AutoConfig
@@ -154,9 +156,13 @@ class MusicFlamingoCaptioner:
         # We load to CPU because requantize() internally calls model.to() which
         # can OOM if we use device_map="auto" (loads full model to GPU first).
         if use_local_cache:
-            self.logger.info("Loading Music Flamingo from local cache to CPU for quantization")
+            self.logger.info(
+                "Loading Music Flamingo from local cache to CPU for quantization"
+            )
         else:
-            self.logger.info("Downloading and loading Music Flamingo to CPU for quantization")
+            self.logger.info(
+                "Downloading and loading Music Flamingo to CPU for quantization"
+            )
         model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
             self.model_id,
             dtype=self.dtype,
@@ -166,18 +172,20 @@ class MusicFlamingoCaptioner:
             local_files_only=use_local_cache,
         )
         self.make_quantized(model)
+        model.generation_config.cache_implementation = "static"
+        model.generation_config.max_new_tokens = 2048
+        import torch
 
         # Use accelerate's dispatch_model with reduced GPU cap to enable CPU offloading.
         # This keeps some layers on CPU to leave headroom for inference activations.
         force_cuda_memory_release()  # Clean up before GPU dispatch
 
         # Calculate GPU cap: leave 2 GiB headroom for inference (activations, KV cache)
-        import torch
 
         if torch.cuda.is_available():
             total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
             # Use at most 75% of GPU for model weights, rest for inference
-            gpu_cap_gb = min(total_gb * 0.75, self.gpu_settings.max_gpu_memory_gb - 2.0)
+            gpu_cap_gb = min(total_gb * 0.75, self.gpu_settings.max_gpu_memory_gb - 0.5)
             gpu_cap_gb = max(gpu_cap_gb, 4.0)  # At least 4 GB on GPU
         else:
             gpu_cap_gb = 4.0
@@ -205,7 +213,10 @@ class MusicFlamingoCaptioner:
         def new_call(
             input_features: torch.FloatTensor, input_features_mask: torch.Tensor
         ):
+            print("get_audio_features called")
             return_value = old_call(input_features, input_features_mask)
+            print("get_audio_features returned")
+
             if self.last_input_embeds is None:
                 self.last_input_embeds = return_value.cpu().detach()
             return return_value
@@ -304,7 +315,7 @@ class MusicFlamingoCaptioner:
         with torch.inference_mode():
             # Allow long, detailed captions for complex tracks.
             self.last_input_embeds = None
-            outputs = self.model.generate(**inputs, max_new_tokens=8192)
+            outputs = self.model.generate(**inputs, max_new_tokens=2048)
 
         assert self.last_input_embeds is not None
         audio_embedding = _pool_audio_embedding(self.last_input_embeds).tolist()
@@ -359,9 +370,7 @@ class Qwen3Embedder:
             self.model = self._build_model()
         except Exception as exc:
             if is_oom_error(exc) and self.device.startswith("cuda"):
-                self.logger.warning(
-                    "Qwen3 load hit OOM on cuda; retrying on CPU fp32"
-                )
+                self.logger.warning("Qwen3 load hit OOM on cuda; retrying on CPU fp32")
                 self.device = "cpu"
                 self.device_map = None
                 self.dtype = torch.float32

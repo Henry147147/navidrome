@@ -41,7 +41,9 @@ def test_max_memory_map_with_cuda(monkeypatch):
     class DummyProps:
         total_memory = 8 * 1024**3
 
-    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda *_args: DummyProps())
+    monkeypatch.setattr(
+        torch.cuda, "get_device_properties", lambda *_args: DummyProps()
+    )
 
     settings = GPUSettings(max_gpu_memory_gb=4.0, enable_cpu_offload=False)
     mapping = settings.max_memory_map()
@@ -55,7 +57,9 @@ def test_apply_runtime_limits_sets_fraction(monkeypatch):
     class DummyProps:
         total_memory = 10 * 1024**3
 
-    monkeypatch.setattr(torch.cuda, "get_device_properties", lambda *_args: DummyProps())
+    monkeypatch.setattr(
+        torch.cuda, "get_device_properties", lambda *_args: DummyProps()
+    )
 
     calls = []
 
