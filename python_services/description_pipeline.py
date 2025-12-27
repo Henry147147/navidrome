@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import logging
 import json
+import os
 from safetensors.torch import load_file
 from optimum.quanto import requantize
+from optimum.quanto.nn import QLinear
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -136,12 +138,47 @@ class MusicFlamingoCaptioner:
         self.model = self._build_model(use_local_cache=use_local)
         self.model.eval()
 
-    def make_quantized(self, model):
-        with open("./music_flamingo_fp8_quantization_map.json", "r") as file:
-            quant_map = json.load(file)
+    def _quantization_paths(self) -> tuple[Path, Path]:
+        base_dir = Path(os.getenv("NAVIDROME_FLAMINGO_QUANT_DIR", "."))
+        weights_path = base_dir / "music_flamingo_fp8.safetensor"
+        map_path = base_dir / "music_flamingo_fp8_quantization_map.json"
+        return weights_path, map_path
 
-        quantized_weights = load_file("./music_flamingo_fp8.safetensor")
-        requantize(model, quantized_weights, quant_map)
+    def _load_quantization_artifacts(self) -> tuple[dict, dict]:
+        weights_path, map_path = self._quantization_paths()
+        if not weights_path.exists():
+            raise FileNotFoundError(
+                f"Quantized weights not found at {weights_path}. "
+                "Set NAVIDROME_FLAMINGO_QUANT_DIR to the directory "
+                "containing music_flamingo_fp8.safetensor."
+            )
+        if not map_path.exists():
+            raise FileNotFoundError(
+                f"Quantization map not found at {map_path}. "
+                "Set NAVIDROME_FLAMINGO_QUANT_DIR to the directory "
+                "containing music_flamingo_fp8_quantization_map.json."
+            )
+        with open(map_path, "r", encoding="utf-8") as file:
+            quant_map = json.load(file)
+        quantized_weights = load_file(str(weights_path))
+        return quantized_weights, quant_map
+
+    @staticmethod
+    def _language_model_is_quantized(model: AudioFlamingo3ForConditionalGeneration) -> bool:
+        language_model = getattr(model, "language_model", None)
+        if language_model is None:
+            return False
+        return any(isinstance(module, QLinear) for module in language_model.modules())
+
+    def make_quantized(self, model: AudioFlamingo3ForConditionalGeneration) -> None:
+        quantized_weights, quant_map = self._load_quantization_artifacts()
+        requantize(model, quantized_weights, quant_map, device=torch.device("cpu"))
+        if not self._language_model_is_quantized(model):
+            raise RuntimeError(
+                "Quantized Music Flamingo load did not produce any quantized "
+                "language-model layers. Verify the quantization map targets the "
+                "language_model.* modules and that the weights match the model."
+            )
 
     def _build_model(
         self, use_local_cache: bool = False
@@ -163,18 +200,16 @@ class MusicFlamingoCaptioner:
             self.logger.info(
                 "Downloading and loading Music Flamingo to CPU for quantization"
             )
-        model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
+        config = AutoConfig.from_pretrained(
             self.model_id,
-            dtype=self.dtype,
-            low_cpu_mem_usage=True,
-            attn_implementation="sdpa",
-            device_map={"": "cpu"},
             local_files_only=use_local_cache,
         )
+        config.attn_implementation = "sdpa"
+        with torch.device("meta"):
+            model = AudioFlamingo3ForConditionalGeneration._from_config(config)
         self.make_quantized(model)
         model.generation_config.cache_implementation = "static"
         model.generation_config.max_new_tokens = 2048
-        import torch
 
         # Use accelerate's dispatch_model with reduced GPU cap to enable CPU offloading.
         # This keeps some layers on CPU to leave headroom for inference activations.

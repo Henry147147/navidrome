@@ -1,14 +1,18 @@
 cueparser
+accelerate>=0.20.0
 fastapi
+huggingface-hub>=0.20.0
 librosa
 muq
 mutagen
 # Keep librosa/numba compatible; NumPy 2.4 breaks numba imports.
 numpy<2.4
+optimum-quanto>=0.2.0
 pydantic
 pymilvus
 pytest
 pytest-cov
+safetensors>=0.4.0
 soundfile
 torch
 torchaudio

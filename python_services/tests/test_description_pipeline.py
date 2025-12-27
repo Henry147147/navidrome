@@ -251,6 +251,79 @@ def test_music_flamingo_generate_happy_path(monkeypatch):
     assert len(audio_embedding) == 3
 
 
+def test_music_flamingo_build_model_requantizes_language_model(
+    monkeypatch, tmp_path
+):
+    quant_dir = tmp_path / "quant"
+    quant_dir.mkdir()
+    (quant_dir / "music_flamingo_fp8.safetensor").write_bytes(b"stub")
+    (quant_dir / "music_flamingo_fp8_quantization_map.json").write_text(
+        "{}", encoding="utf-8"
+    )
+    monkeypatch.setenv("NAVIDROME_FLAMINGO_QUANT_DIR", str(quant_dir))
+
+    class DummyConfig:
+        pass
+
+    class DummyLanguageModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(4, 4)
+
+    class DummyModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.language_model = DummyLanguageModel()
+            self.generation_config = types.SimpleNamespace(
+                cache_implementation=None, max_new_tokens=None
+            )
+
+        def get_audio_features(self, _input_features, _input_features_mask):
+            return torch.tensor([1.0])
+
+    monkeypatch.setattr(
+        description_pipeline.AutoConfig,
+        "from_pretrained",
+        lambda *args, **kwargs: DummyConfig(),
+    )
+    monkeypatch.setattr(
+        description_pipeline.AudioFlamingo3ForConditionalGeneration,
+        "_from_config",
+        lambda *_args, **_kwargs: DummyModel(),
+    )
+
+    requantize_calls = {}
+
+    def fake_requantize(model, _state_dict, _quant_map, device=None):
+        requantize_calls["device"] = device
+        model.language_model.linear = description_pipeline.QLinear(4, 4)
+
+    monkeypatch.setattr(description_pipeline, "requantize", fake_requantize)
+    monkeypatch.setattr(description_pipeline, "load_file", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(description_pipeline.GPU_COORDINATOR, "claim", lambda *_a, **_k: None)
+
+    import accelerate
+
+    monkeypatch.setattr(accelerate, "infer_auto_device_map", lambda *_a, **_k: {})
+    monkeypatch.setattr(accelerate, "dispatch_model", lambda model, *_a, **_k: model)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    captioner = description_pipeline.MusicFlamingoCaptioner.__new__(
+        description_pipeline.MusicFlamingoCaptioner
+    )
+    captioner.model_id = "dummy"
+    captioner.dtype = torch.float32
+    captioner.logger = logging.getLogger("navidrome.tests.captioner.quant")
+    captioner.gpu_settings = description_pipeline.GPUSettings()
+    captioner._gpu_owner = "music_flamingo_captioner"
+    captioner.last_input_embeds = None
+
+    model = captioner._build_model(use_local_cache=True)
+
+    assert isinstance(model.language_model.linear, description_pipeline.QLinear)
+    assert requantize_calls["device"] == torch.device("cpu")
+
+
 def test_qwen3_embed_text_uses_last_token_pool(monkeypatch):
     class DummyInputs(dict):
         def to(self, *_args, **_kwargs):
