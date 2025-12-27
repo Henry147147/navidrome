@@ -14,9 +14,6 @@ from __future__ import annotations
 import logging
 import json
 import os
-from safetensors.torch import load_file
-from optimum.quanto import requantize
-from optimum.quanto.nn import QLinear
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -138,49 +135,6 @@ class MusicFlamingoCaptioner:
         self.model = self._build_model(use_local_cache=use_local)
         self.model.eval()
 
-    def _quantization_paths(self) -> tuple[Path, Path]:
-        base_dir = Path(os.getenv("NAVIDROME_FLAMINGO_QUANT_DIR", "."))
-        weights_path = base_dir / "music_flamingo_fp8.safetensor"
-        map_path = base_dir / "music_flamingo_fp8_quantization_map.json"
-        return weights_path, map_path
-
-    def _load_quantization_artifacts(self) -> tuple[dict, dict]:
-        weights_path, map_path = self._quantization_paths()
-        if not weights_path.exists():
-            raise FileNotFoundError(
-                f"Quantized weights not found at {weights_path}. "
-                "Set NAVIDROME_FLAMINGO_QUANT_DIR to the directory "
-                "containing music_flamingo_fp8.safetensor."
-            )
-        if not map_path.exists():
-            raise FileNotFoundError(
-                f"Quantization map not found at {map_path}. "
-                "Set NAVIDROME_FLAMINGO_QUANT_DIR to the directory "
-                "containing music_flamingo_fp8_quantization_map.json."
-            )
-        with open(map_path, "r", encoding="utf-8") as file:
-            quant_map = json.load(file)
-        quantized_weights = load_file(str(weights_path))
-        return quantized_weights, quant_map
-
-    @staticmethod
-    def _normalize_quant_key(key: str) -> str:
-        for prefix in ("_orig_mod.", "._orig_mod."):
-            if key.startswith(prefix):
-                return key[len(prefix) :]
-        return key
-
-    def make_quantized(self, model: AudioFlamingo3ForConditionalGeneration) -> None:
-        quantized_weights, quant_map = self._load_quantization_artifacts()
-        normalized_weights = {
-            self._normalize_quant_key(name): tensor
-            for name, tensor in quantized_weights.items()
-        }
-        normalized_map = {
-            self._normalize_quant_key(name): spec for name, spec in quant_map.items()
-        }
-        requantize(model, normalized_weights, normalized_map, device=torch.device("cpu"))
-
     def _build_model(
         self, use_local_cache: bool = False
     ) -> AudioFlamingo3ForConditionalGeneration:
@@ -190,17 +144,6 @@ class MusicFlamingoCaptioner:
 
         force_cuda_memory_release()  # Ensure GPU is clean before loading
 
-        # Load model to CPU first, then quantize (avoids OOM during requantize).
-        # We load to CPU because requantize() internally calls model.to() which
-        # can OOM if we use device_map="auto" (loads full model to GPU first).
-        if use_local_cache:
-            self.logger.info(
-                "Loading Music Flamingo from local cache to CPU for quantization"
-            )
-        else:
-            self.logger.info(
-                "Downloading and loading Music Flamingo to CPU for quantization"
-            )
         config = AutoConfig.from_pretrained(
             self.model_id,
             local_files_only=use_local_cache,
@@ -208,8 +151,7 @@ class MusicFlamingoCaptioner:
         config.attn_implementation = "sdpa"
         with torch.device("meta"):
             model = AudioFlamingo3ForConditionalGeneration._from_config(config)
-        self.make_quantized(model)
-
+        
         # Use accelerate's dispatch_model with reduced GPU cap to enable CPU offloading.
         # This keeps some layers on CPU to leave headroom for inference activations.
         force_cuda_memory_release()  # Clean up before GPU dispatch
@@ -253,6 +195,7 @@ class MusicFlamingoCaptioner:
 
             if self.last_input_embeds is None:
                 self.last_input_embeds = return_value.cpu().detach()
+            print(f"last input embed delta={self.last_input_embeds - return_value}")
             return return_value
 
         model.get_audio_features = new_call
@@ -347,7 +290,7 @@ class MusicFlamingoCaptioner:
         with torch.inference_mode():
             # Allow long, detailed captions for complex tracks.
             self.last_input_embeds = None
-            outputs = self.model.generate(**inputs, max_new_tokens=2048)
+            outputs = self.model.generate(**inputs, max_new_tokens=32)
 
         assert self.last_input_embeds is not None
         audio_embedding = _pool_audio_embedding(self.last_input_embeds).tolist()

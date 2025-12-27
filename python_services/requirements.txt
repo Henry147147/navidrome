@@ -17,5 +17,6 @@ soundfile
 torch
 torchaudio
 tqdm
-transformers
+transformers>=5.0.0rc1
+accelerate
 uvicorn[standard]
