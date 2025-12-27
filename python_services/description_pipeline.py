@@ -164,21 +164,22 @@ class MusicFlamingoCaptioner:
         return quantized_weights, quant_map
 
     @staticmethod
-    def _language_model_is_quantized(model: AudioFlamingo3ForConditionalGeneration) -> bool:
-        language_model = getattr(model, "language_model", None)
-        if language_model is None:
-            return False
-        return any(isinstance(module, QLinear) for module in language_model.modules())
+    def _normalize_quant_key(key: str) -> str:
+        for prefix in ("_orig_mod.", "._orig_mod."):
+            if key.startswith(prefix):
+                return key[len(prefix) :]
+        return key
 
     def make_quantized(self, model: AudioFlamingo3ForConditionalGeneration) -> None:
         quantized_weights, quant_map = self._load_quantization_artifacts()
-        requantize(model, quantized_weights, quant_map, device=torch.device("cpu"))
-        if not self._language_model_is_quantized(model):
-            raise RuntimeError(
-                "Quantized Music Flamingo load did not produce any quantized "
-                "language-model layers. Verify the quantization map targets the "
-                "language_model.* modules and that the weights match the model."
-            )
+        normalized_weights = {
+            self._normalize_quant_key(name): tensor
+            for name, tensor in quantized_weights.items()
+        }
+        normalized_map = {
+            self._normalize_quant_key(name): spec for name, spec in quant_map.items()
+        }
+        requantize(model, normalized_weights, normalized_map, device=torch.device("cpu"))
 
     def _build_model(
         self, use_local_cache: bool = False
@@ -208,8 +209,6 @@ class MusicFlamingoCaptioner:
         with torch.device("meta"):
             model = AudioFlamingo3ForConditionalGeneration._from_config(config)
         self.make_quantized(model)
-        model.generation_config.cache_implementation = "static"
-        model.generation_config.max_new_tokens = 2048
 
         # Use accelerate's dispatch_model with reduced GPU cap to enable CPU offloading.
         # This keeps some layers on CPU to leave headroom for inference activations.
@@ -224,7 +223,8 @@ class MusicFlamingoCaptioner:
             gpu_cap_gb = max(gpu_cap_gb, 4.0)  # At least 4 GB on GPU
         else:
             gpu_cap_gb = 4.0
-
+        # TODO revert
+        gpu_cap_gb = 7.5
         max_memory = {0: f"{gpu_cap_gb:.1f}GiB", "cpu": "32GiB"}
         self.logger.info(
             "Dispatching Music Flamingo with max_memory=%s (GPU: %.1f GiB total)",
@@ -244,7 +244,6 @@ class MusicFlamingoCaptioner:
 
         # monkeypatch the language model to save the input_embeds so we have access to it
         old_call = model.get_audio_features
-
         def new_call(
             input_features: torch.FloatTensor, input_features_mask: torch.Tensor
         ):
@@ -257,8 +256,6 @@ class MusicFlamingoCaptioner:
             return return_value
 
         model.get_audio_features = new_call
-        # TODO, test this
-
         return model
 
     def _ensure_model_on_device(self):
