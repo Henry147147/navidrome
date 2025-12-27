@@ -838,7 +838,10 @@ class EmbedSocketServer:
                             }
                     elif action == "embed":
                         # Use batch mode if enabled, otherwise process immediately
-                        if self._batch_mode_enabled and self._batch_queue:
+                        has_cue = bool(
+                            payload.get("cue_file") or payload.get("cue_data_b64")
+                        )
+                        if self._batch_mode_enabled and self._batch_queue and not has_cue:
                             # Generate request_id if not provided
                             if not request_id:
                                 request_id = f"embed-{time.monotonic_ns()}"

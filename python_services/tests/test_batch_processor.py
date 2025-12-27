@@ -206,6 +206,50 @@ class TestModelFirstBatchProcessor:
             assert "segments" in result.payload
             assert "descriptions" in result.payload
 
+    def test_description_entries_include_model_ids(self, temp_audio_files):
+        """Descriptions should include text/audio model ids when available."""
+        muq_model = MockMuQModel()
+        pipeline = MockDescriptionPipeline()
+        pipeline.text_model_id = "qwen3"
+        pipeline.caption_model_id = "flamingo"
+
+        processor = ModelFirstBatchProcessor(
+            muq_model=muq_model,
+            description_pipeline=pipeline,
+        )
+
+        payloads = [
+            {"request_id": "req-1", "music_file": temp_audio_files[0], "name": "a.mp3"}
+        ]
+
+        result = processor.process_batch(payloads)["req-1"]
+        desc = result.payload["descriptions"][0]
+
+        assert desc["model_id"] == "qwen3"
+        assert desc["audio_model_id"] == "flamingo"
+
+    def test_canonical_name_matches_resolver(self, temp_audio_files):
+        """Batch processor should normalize artist/title like the resolver."""
+        muq_model = MockMuQModel()
+        processor = ModelFirstBatchProcessor(
+            muq_model=muq_model,
+            description_pipeline=None,
+        )
+
+        payloads = [
+            {
+                "request_id": "req-1",
+                "music_file": temp_audio_files[0],
+                "name": "song.mp3",
+                "artist": "AC/DC",
+                "title": "Track\\Name",
+            }
+        ]
+
+        processor.process_batch(payloads)
+
+        assert muq_model.embed_calls[0]["music_name"] == "AC_DC - Track_Name"
+
     def test_muq_failure_marks_track_as_error(self, temp_audio_files):
         """Test that MuQ failure marks the track with an error."""
         muq_model = MockMuQModel(fail_for={"song1.mp3"})

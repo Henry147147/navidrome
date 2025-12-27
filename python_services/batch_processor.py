@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from batch_queue_manager import BatchResult
+from track_name_resolver import TrackNameResolver
 
 if TYPE_CHECKING:
     from description_pipeline import DescriptionEmbeddingPipeline
@@ -150,9 +151,9 @@ class ModelFirstBatchProcessor:
 
         # Compute canonical name (same logic as EmbedSocketServer)
         if artist or title:
-            music_name = f"{artist} - {title}".strip(" -")
+            music_name = TrackNameResolver.canonical_name(artist, title)
         else:
-            music_name = str(base_name)
+            music_name = str(base_name).strip()
 
         temp_paths: List[Path] = []
 
@@ -330,17 +331,35 @@ class ModelFirstBatchProcessor:
             combined_payload["sample_rate"] = ctx.muq_result.get("sample_rate")
             combined_payload["window_seconds"] = ctx.muq_result.get("window_seconds")
             combined_payload["hop_seconds"] = ctx.muq_result.get("hop_seconds")
+            combined_payload["music_file"] = ctx.muq_result.get("music_file")
 
         if ctx.caption or ctx.audio_embedding or ctx.description_embedding:
+            description_embedding = ctx.description_embedding or []
             combined_payload["descriptions"] = [
                 {
                     "title": ctx.music_name,
                     "description": ctx.caption or "",
-                    "embedding": ctx.description_embedding or [],
+                    "embedding": description_embedding,
+                    "description_embedding": description_embedding,
                     "audio_embedding": ctx.audio_embedding or [],
                     "offset_seconds": 0.0,
                 }
             ]
+
+            if self.description_pipeline:
+                text_model_id = getattr(
+                    self.description_pipeline, "text_model_id", None
+                )
+                caption_model_id = getattr(
+                    self.description_pipeline, "caption_model_id", None
+                )
+                if text_model_id:
+                    combined_payload["descriptions"][0]["model_id"] = text_model_id
+                if caption_model_id:
+                    combined_payload["descriptions"][0][
+                        "audio_model_id"
+                    ] = caption_model_id
+                    combined_payload.setdefault("caption_model_id", caption_model_id)
 
         return BatchResult(
             request_id=ctx.request_id,

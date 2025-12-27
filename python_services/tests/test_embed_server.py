@@ -3,6 +3,7 @@ import logging
 import socket
 import threading
 from typing import Any, Dict, List
+from unittest.mock import Mock
 
 import pytest
 
@@ -546,6 +547,41 @@ def test_flush_action_response(logger: logging.Logger):
     assert response["status"] == "ok"
     assert "request_id" in response
     assert response["request_id"] == "flush-1"
+
+
+def test_embed_with_cue_bypasses_batch(monkeypatch, logger: logging.Logger):
+    """Cue-based embeds should bypass batch mode to preserve split behavior."""
+    monkeypatch.setenv("NAVIDROME_BATCH_MODE", "true")
+
+    import importlib
+    import python_embed_server
+
+    importlib.reload(python_embed_server)
+
+    server = python_embed_server.EmbedSocketServer(
+        socket_path="/tmp/navidrome-test.sock",
+        milvus_client=RecordingMilvusClient(),
+        model=StubEmbeddingModel(),
+        enable_descriptions=False,
+    )
+
+    server._batch_mode_enabled = True
+    server._batch_queue = Mock()
+    server.process_payload = Mock(return_value={"status": "ok"})
+
+    payload = {
+        "action": "embed",
+        "request_id": "cue-1",
+        "music_file": "/tmp/song.flac",
+        "name": "song.flac",
+        "cue_file": "/tmp/song.cue",
+    }
+
+    response = _socket_roundtrip(server, payload)
+
+    assert response["status"] == "ok"
+    server._batch_queue.enqueue.assert_not_called()
+    server.process_payload.assert_called_once()
 
 
 def test_unknown_action_returns_error(logger: logging.Logger):

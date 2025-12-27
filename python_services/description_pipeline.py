@@ -185,7 +185,7 @@ class MusicFlamingoCaptioner:
         if torch.cuda.is_available():
             total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
             # Use at most 75% of GPU for model weights, rest for inference
-            gpu_cap_gb = min(total_gb * 0.75, self.gpu_settings.max_gpu_memory_gb - 0.5)
+            gpu_cap_gb = min(total_gb * 0.70, self.gpu_settings.max_gpu_memory_gb - 2)
             gpu_cap_gb = max(gpu_cap_gb, 4.0)  # At least 4 GB on GPU
         else:
             gpu_cap_gb = 4.0
