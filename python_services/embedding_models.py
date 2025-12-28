@@ -332,7 +332,8 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         return outputs_cpu
 
     def _load_model(self) -> torch.nn.Module:
-        GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
+        # Acquire GPU from coordinator - returns the device to use
+        self.device = GPU_COORDINATOR.acquire(self._gpu_owner, self.logger)
         # Use MuQ class for audio-only embeddings (not MuQMuLan which is for music-text joint embeddings)
         with warnings.catch_warnings():
             warnings.filterwarnings(
@@ -353,7 +354,8 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
                 self.logger.info("Loading embedding model %s", self.__class__.__name__)
                 self._model = self._load_model()
             else:
-                GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
+                # Acquire GPU and get the device to use
+                self.device = GPU_COORDINATOR.acquire(self._gpu_owner, self.logger)
                 try:
                     self._model = self._model.to(  # type: ignore[attr-defined]
                         self.device, dtype=self._inference_dtype()

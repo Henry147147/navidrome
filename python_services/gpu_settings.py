@@ -176,20 +176,53 @@ def force_cuda_memory_release() -> None:
         pass
 
 
-def get_cuda_memory_stats() -> Dict[str, Any]:
-    """Get current CUDA memory statistics for debugging."""
+def get_cuda_memory_stats(device: int = 0) -> Dict[str, Any]:
+    """Get current CUDA memory statistics for debugging.
+
+    Args:
+        device: CUDA device index (default: 0)
+    """
     if not torch.cuda.is_available():
         return {"available": False}
     try:
-        allocated = torch.cuda.memory_allocated() / (1024**3)
-        total = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        allocated = torch.cuda.memory_allocated(device) / (1024**3)
+        total = torch.cuda.get_device_properties(device).total_memory / (1024**3)
         return {
+            "device": device,
             "allocated_gib": round(allocated, 2),
             "total_gib": round(total, 2),
             "free_gib": round(total - allocated, 2),
         }
     except Exception:
         return {"error": "Unable to query"}
+
+
+def get_cuda_device_count() -> int:
+    """Return number of available CUDA devices, or 0 if CUDA unavailable."""
+    if not torch.cuda.is_available():
+        return 0
+    try:
+        return torch.cuda.device_count()
+    except Exception:
+        return 0
+
+
+def get_device_vram_gb(device_index: int) -> float:
+    """Return total VRAM in GiB for the specified CUDA device.
+
+    Args:
+        device_index: CUDA device index
+
+    Returns:
+        Total VRAM in GiB, or 0.0 if device unavailable
+    """
+    if not torch.cuda.is_available():
+        return 0.0
+    try:
+        props = torch.cuda.get_device_properties(device_index)
+        return props.total_memory / (1024**3)
+    except Exception:
+        return 0.0
 
 
 # Encourage PyTorch to use expandable segments to reduce fragmentation OOMs.

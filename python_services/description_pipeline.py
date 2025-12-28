@@ -137,7 +137,8 @@ class MusicFlamingoCaptioner:
         self, use_local_cache: bool = False
     ) -> AudioFlamingo3ForConditionalGeneration:
         # Prefer PyTorch SDPA attention to avoid optional flash-attn dependency.
-        GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
+        # Acquire GPU from coordinator - returns the device to use
+        self.device = GPU_COORDINATOR.acquire(self._gpu_owner, self.logger)
         from gpu_settings import force_cuda_memory_release
 
         force_cuda_memory_release()  # Ensure GPU is clean before loading
@@ -150,13 +151,14 @@ class MusicFlamingoCaptioner:
 
         # Use a reduced GPU cap to enable CPU offloading and leave headroom
         # for inference activations (KV cache, attention buffers).
-        if torch.cuda.is_available():
-            total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        if self.device != "cpu" and torch.cuda.is_available():
+            device_index = int(self.device.split(":")[1]) if ":" in self.device else 0
+            total_gb = torch.cuda.get_device_properties(device_index).total_memory / (1024**3)
             gpu_cap_gb = min(total_gb * 0.70, self.gpu_settings.max_gpu_memory_gb - 2)
             gpu_cap_gb = max(gpu_cap_gb, 4.0)
             device_map = "auto"
             gpu_cap_gb = 7.5
-            max_memory = {0: f"{gpu_cap_gb:.1f}GiB", "cpu": "32GiB"}
+            max_memory = GPU_COORDINATOR.get_max_memory_for_device(self.device, gpu_cap_gb)
         else:
             total_gb = 0.0
             device_map = None
@@ -164,7 +166,8 @@ class MusicFlamingoCaptioner:
 
         if max_memory:
             self.logger.info(
-                "Loading Music Flamingo with max_memory=%s (GPU: %.1f GiB total)",
+                "Loading Music Flamingo on %s with max_memory=%s (GPU: %.1f GiB total)",
+                self.device,
                 max_memory,
                 total_gb,
             )
@@ -197,7 +200,8 @@ class MusicFlamingoCaptioner:
         return model
 
     def _ensure_model_on_device(self):
-        GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
+        # Acquire GPU from coordinator - returns the device to use
+        self.device = GPU_COORDINATOR.acquire(self._gpu_owner, self.logger)
         if self.model is None:
             # Model was already loaded once, so it's cached - use local files
             self.model = self._build_model(use_local_cache=True)
@@ -352,7 +356,9 @@ class Qwen3Embedder:
         self.gpu_settings.apply_runtime_limits()
 
     def _build_model(self):
-        GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
+        # Acquire GPU from coordinator - returns the device to use
+        self.device = GPU_COORDINATOR.acquire(self._gpu_owner, self.logger)
+        self.device_map = "auto" if self.device.startswith("cuda") else None
         # Use cached flag - after first load, model is always cached
         use_local = getattr(self, "_use_local_cache", False) or _is_model_cached(
             self.model_id
@@ -371,7 +377,8 @@ class Qwen3Embedder:
         return model
 
     def _ensure_model_on_device(self):
-        GPU_COORDINATOR.claim(self._gpu_owner, self.logger)
+        # Acquire GPU from coordinator - returns the device to use
+        self.device = GPU_COORDINATOR.acquire(self._gpu_owner, self.logger)
         if self.model is None:
             self.model = self._build_model()
         else:
