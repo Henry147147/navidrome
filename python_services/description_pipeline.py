@@ -281,7 +281,12 @@ class MusicFlamingoCaptioner:
         with torch.inference_mode():
             # Allow long, detailed captions for complex tracks.
             self.last_input_embeds = None
-            outputs = self.model.generate(**inputs, max_new_tokens=1024)
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=1024,
+                do_sample=False,
+                temperature=0.0,
+            )
 
         assert self.last_input_embeds is not None
         audio_embedding = _pool_audio_embedding(self.last_input_embeds).tolist()
