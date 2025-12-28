@@ -1,6 +1,4 @@
-import json
 import logging
-import types
 import torch
 
 import pytest
@@ -245,43 +243,33 @@ def test_music_flamingo_generate_happy_path(monkeypatch):
     captioner.model = DummyModel(captioner)
     monkeypatch.setattr(captioner, "_ensure_model_on_device", lambda: None)
 
-    description, audio_embedding = captioner.generate("song.flac", prompt="Hi")
+    description, audio_embedding = captioner.generate("song.flac")
 
     assert description == "caption"
     assert isinstance(audio_embedding, list)
     assert len(audio_embedding) == 3
 
 
-def test_music_flamingo_build_model_requantizes_language_model(
-    monkeypatch, tmp_path
-):
-    quant_dir = tmp_path / "quant"
-    quant_dir.mkdir()
-    (quant_dir / "music_flamingo_fp8.safetensor").write_bytes(b"stub")
-    (quant_dir / "music_flamingo_fp8_quantization_map.json").write_text(
-        json.dumps({"_orig_mod.language_model.linear": {"weights": "qfloat8"}}),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("NAVIDROME_FLAMINGO_QUANT_DIR", str(quant_dir))
-
+def test_music_flamingo_build_model_loads_pretrained(monkeypatch):
     class DummyConfig:
         pass
 
-    class DummyLanguageModel(torch.nn.Module):
+    class DummyModel:
         def __init__(self):
-            super().__init__()
-            self.linear = torch.nn.Linear(4, 4)
+            self.device = "cpu"
 
-    class DummyModel(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.language_model = DummyLanguageModel()
-            self.generation_config = types.SimpleNamespace(
-                cache_implementation=None, max_new_tokens=None
-            )
+        def to(self, _device):
+            return self
 
-        def get_audio_features(self, _input_features, _input_features_mask):
+        def get_audio_features(self, *_args, **_kwargs):
             return torch.tensor([1.0])
+
+    captured = {}
+
+    def fake_from_pretrained(model_id, **kwargs):
+        captured["model_id"] = model_id
+        captured["kwargs"] = kwargs
+        return DummyModel()
 
     monkeypatch.setattr(
         description_pipeline.AutoConfig,
@@ -290,32 +278,15 @@ def test_music_flamingo_build_model_requantizes_language_model(
     )
     monkeypatch.setattr(
         description_pipeline.AudioFlamingo3ForConditionalGeneration,
-        "_from_config",
-        lambda *_args, **_kwargs: DummyModel(),
+        "from_pretrained",
+        fake_from_pretrained,
     )
-
-    requantize_calls = {}
-
-    def fake_requantize(model, _state_dict, _quant_map, device=None):
-        requantize_calls["device"] = device
-        requantize_calls["state_keys"] = list(_state_dict.keys())
-        requantize_calls["map_keys"] = list(_quant_map.keys())
-        model.language_model.linear = description_pipeline.QLinear(4, 4)
-
-    monkeypatch.setattr(description_pipeline, "requantize", fake_requantize)
     monkeypatch.setattr(
-        description_pipeline,
-        "load_file",
-        lambda *_args, **_kwargs: {
-            "_orig_mod.language_model.linear.weight": torch.ones(4, 4)
-        },
+        description_pipeline.GPU_COORDINATOR, "claim", lambda *_a, **_k: None
     )
-    monkeypatch.setattr(description_pipeline.GPU_COORDINATOR, "claim", lambda *_a, **_k: None)
+    import gpu_settings
 
-    import accelerate
-
-    monkeypatch.setattr(accelerate, "infer_auto_device_map", lambda *_a, **_k: {})
-    monkeypatch.setattr(accelerate, "dispatch_model", lambda model, *_a, **_k: model)
+    monkeypatch.setattr(gpu_settings, "force_cuda_memory_release", lambda: None)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
 
     captioner = description_pipeline.MusicFlamingoCaptioner.__new__(
@@ -323,21 +294,20 @@ def test_music_flamingo_build_model_requantizes_language_model(
     )
     captioner.model_id = "dummy"
     captioner.dtype = torch.float32
-    captioner.logger = logging.getLogger("navidrome.tests.captioner.quant")
+    captioner.logger = logging.getLogger("navidrome.tests.captioner.load")
     captioner.gpu_settings = description_pipeline.GPUSettings()
     captioner._gpu_owner = "music_flamingo_captioner"
     captioner.last_input_embeds = None
+    captioner.device = "cpu"
 
     model = captioner._build_model(use_local_cache=True)
+    model.get_audio_features(torch.tensor([1.0]), torch.tensor([1]))
 
-    assert isinstance(model.language_model.linear, description_pipeline.QLinear)
-    assert requantize_calls["device"] == torch.device("cpu")
-    assert all(
-        not key.startswith("_orig_mod.") for key in requantize_calls["state_keys"]
-    )
-    assert all(
-        not key.startswith("_orig_mod.") for key in requantize_calls["map_keys"]
-    )
+    assert captured["model_id"] == "dummy"
+    assert captured["kwargs"]["local_files_only"] is True
+    assert captured["kwargs"]["low_cpu_mem_usage"] is True
+    assert captured["kwargs"]["device_map"] is None
+    assert captioner.last_input_embeds is not None
 
 
 def test_qwen3_embed_text_uses_last_token_pool(monkeypatch):

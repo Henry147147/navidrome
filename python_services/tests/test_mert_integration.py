@@ -14,7 +14,6 @@ from embedding_models import MuQEmbeddingModel
 @pytest.mark.integration
 @pytest.mark.slow
 @pytest.mark.requires_models
-@pytest.mark.skip(reason="Requires MuQ model - enable if available")
 def test_muq_load_real_model():
     """Test loading actual MuQ model."""
     model = MuQEmbeddingModel(device="cpu", timeout_seconds=600)

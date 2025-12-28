@@ -118,8 +118,6 @@ class MusicFlamingoCaptioner:
         self.model_id = model_id
         self.gpu_settings = gpu_settings or load_gpu_settings()
         self.device = device or self.gpu_settings.device_target()
-        if not str(self.device).startswith("cuda"):
-            raise RuntimeError("Music Flamingo must run on CUDA; CPU is too slow.")
         self.dtype = torch_dtype or torch.bfloat16
         self.logger = logger or logging.getLogger("navidrome.description.captioner")
         self._gpu_owner = "music_flamingo_captioner"
@@ -149,53 +147,50 @@ class MusicFlamingoCaptioner:
             local_files_only=use_local_cache,
         )
         config.attn_implementation = "sdpa"
-        with torch.device("meta"):
-            model = AudioFlamingo3ForConditionalGeneration._from_config(config)
-        
-        # Use accelerate's dispatch_model with reduced GPU cap to enable CPU offloading.
-        # This keeps some layers on CPU to leave headroom for inference activations.
-        force_cuda_memory_release()  # Clean up before GPU dispatch
 
-        # Calculate GPU cap: leave 2 GiB headroom for inference (activations, KV cache)
-
+        # Use a reduced GPU cap to enable CPU offloading and leave headroom
+        # for inference activations (KV cache, attention buffers).
         if torch.cuda.is_available():
             total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-            # Use at most 75% of GPU for model weights, rest for inference
             gpu_cap_gb = min(total_gb * 0.70, self.gpu_settings.max_gpu_memory_gb - 2)
-            gpu_cap_gb = max(gpu_cap_gb, 4.0)  # At least 4 GB on GPU
+            gpu_cap_gb = max(gpu_cap_gb, 4.0)
+            device_map = "auto"
+            gpu_cap_gb = 7.5
+            max_memory = {0: f"{gpu_cap_gb:.1f}GiB", "cpu": "32GiB"}
         else:
-            gpu_cap_gb = 4.0
-        # TODO revert
-        gpu_cap_gb = 7.5
-        max_memory = {0: f"{gpu_cap_gb:.1f}GiB", "cpu": "32GiB"}
-        self.logger.info(
-            "Dispatching Music Flamingo with max_memory=%s (GPU: %.1f GiB total)",
-            max_memory,
-            total_gb if torch.cuda.is_available() else 0,
-        )
+            total_gb = 0.0
+            device_map = None
+            max_memory = None
 
-        from accelerate import dispatch_model, infer_auto_device_map
+        if max_memory:
+            self.logger.info(
+                "Loading Music Flamingo with max_memory=%s (GPU: %.1f GiB total)",
+                max_memory,
+                total_gb,
+            )
 
-        device_map = infer_auto_device_map(
-            model,
+        model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
+            self.model_id,
+            config=config,
+            torch_dtype=self.dtype,
+            low_cpu_mem_usage=True,
+            device_map=device_map,
             max_memory=max_memory,
-            no_split_module_classes=["LlamaDecoderLayer", "WhisperEncoderLayer"],
+            local_files_only=use_local_cache,
         )
-        model = dispatch_model(model, device_map=device_map)
+        if device_map is None:
+            model = model.to(self.device)
         self.gpu_settings.apply_runtime_limits()
 
         # monkeypatch the language model to save the input_embeds so we have access to it
         old_call = model.get_audio_features
+
         def new_call(
             input_features: torch.FloatTensor, input_features_mask: torch.Tensor
         ):
-            print("get_audio_features called")
             return_value = old_call(input_features, input_features_mask)
-            print("get_audio_features returned")
-
             if self.last_input_embeds is None:
                 self.last_input_embeds = return_value.cpu().detach()
-            print(f"last input embed delta={self.last_input_embeds - return_value}")
             return return_value
 
         model.get_audio_features = new_call
@@ -243,18 +238,14 @@ class MusicFlamingoCaptioner:
         force_cuda_memory_release()
 
     def generate(
-        self, audio_path: str, prompt: Optional[str] = None
+        self, audio_path: str
     ) -> Tuple[str, List[float]]:
         """
         Generate a rich caption for the provided audio file using the official
         Music Flamingo chat template, mirroring the model card example.
         """
-        prompt = prompt or (
-            """Describe this track in full detail - tell me the genre, tempo, and key, then dive into the instruments, production style, 
-            and overall mood it creates. Also describe the language used (or if it is instrumental), any clearly intelligible and 
-            important lyrics or recurring phrases and what they are about, the emotions the music and vocals evoke, any cultural or 
-            regional influences you can hear, and the era or scene it most strongly resembles based only on the audio. Include any 
-            other musically relevant details you can infer directly from the sound, such as song structure, vocal style, and how the energy changes over time."""
+        prompt = (
+            """Describe this track in full detail - tell me the genre, tempo, and key, then dive into the instruments, production style, and overall mood it creates. Include any important lyrics and themes discussed."""
         )
 
         if self.model is None:
@@ -290,7 +281,7 @@ class MusicFlamingoCaptioner:
         with torch.inference_mode():
             # Allow long, detailed captions for complex tracks.
             self.last_input_embeds = None
-            outputs = self.model.generate(**inputs, max_new_tokens=32)
+            outputs = self.model.generate(**inputs, max_new_tokens=1024)
 
         assert self.last_input_embeds is not None
         audio_embedding = _pool_audio_embedding(self.last_input_embeds).tolist()

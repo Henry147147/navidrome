@@ -841,7 +841,11 @@ class EmbedSocketServer:
                         has_cue = bool(
                             payload.get("cue_file") or payload.get("cue_data_b64")
                         )
-                        if self._batch_mode_enabled and self._batch_queue and not has_cue:
+                        if (
+                            self._batch_mode_enabled
+                            and self._batch_queue
+                            and not has_cue
+                        ):
                             # Generate request_id if not provided
                             if not request_id:
                                 request_id = f"embed-{time.monotonic_ns()}"
