@@ -7,7 +7,6 @@ muq
 mutagen
 # Keep librosa/numba compatible; NumPy 2.4 breaks numba imports.
 numpy<2.4
-optimum-quanto>=0.2.0
 pydantic
 pymilvus
 pytest

@@ -288,6 +288,7 @@ class MusicFlamingoCaptioner:
                     self.model = dispatch_model(self.model, self._device_map)
                     for idx in range(torch.cuda.device_count()):
                         self.gpu_settings.apply_runtime_limits(device_index=idx)
+                    self.model.eval()
                 except Exception as exc:
                     if is_oom_error(exc):
                         self.logger.warning(
