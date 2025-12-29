@@ -72,3 +72,23 @@ def test_apply_runtime_limits_sets_fraction(monkeypatch):
     settings.apply_runtime_limits()
 
     assert calls
+
+
+def test_resolve_device_prefers_largest_gpu(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+
+    class DummyProps:
+        def __init__(self, total_memory):
+            self.total_memory = total_memory
+
+    def fake_props(index):
+        if index == 0:
+            return DummyProps(8 * 1024**3)
+        return DummyProps(12 * 1024**3)
+
+    monkeypatch.setattr(torch.cuda, "get_device_properties", fake_props)
+
+    from gpu_settings import resolve_device
+
+    assert resolve_device("auto") == "cuda:1"

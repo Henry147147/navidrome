@@ -12,7 +12,7 @@ import gc
 import json
 import configparser
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -42,43 +42,64 @@ class GPUSettings:
         return torch.float16
 
     def device_target(self) -> str:
-        if self.device == "cpu":
-            return "cpu"
-        if self.device == "cuda":
-            return "cuda" if torch.cuda.is_available() else "cpu"
-        # auto
-        return "cuda" if torch.cuda.is_available() else "cpu"
+        return resolve_device(self.device)
 
-    def max_memory_map(self) -> Optional[Dict[Any, str]]:
+    def max_memory_map(
+        self, device_index: Optional[int] = None
+    ) -> Optional[Dict[Any, str]]:
         """Return a huggingface-compatible max_memory map."""
         if not torch.cuda.is_available():
             return None
+        if device_index is None:
+            device_index = 0
         mem_gb = max(float(self.max_gpu_memory_gb), 1.0)
-        mapping: Dict[Any, str] = {0: f"{mem_gb:.1f}GiB"}
+        mapping: Dict[Any, str] = {device_index: f"{mem_gb:.1f}GiB"}
         if self.enable_cpu_offload:
             # Allow offload to CPU when GPU cap is reached
             mapping["cpu"] = "32GiB"
         return mapping
 
-    def apply_runtime_limits(self) -> None:
+    def max_memory_map_all_gpus(self) -> Optional[Dict[Any, str]]:
+        """Return a max_memory map that spans every visible GPU."""
+        if not torch.cuda.is_available():
+            return None
+        mapping: Dict[Any, str] = {}
+        for idx in range(get_cuda_device_count()):
+            total_gb = get_device_vram_gb(idx)
+            cap_gb = min(self.max_gpu_memory_gb, total_gb * 0.80)
+            cap_gb = max(cap_gb, 2.0)
+            mapping[idx] = f"{cap_gb:.1f}GiB"
+        if self.enable_cpu_offload:
+            mapping["cpu"] = "32GiB"
+        return mapping
+
+    def apply_runtime_limits(self, device_index: Optional[int] = None) -> None:
         """Attempt to cap process VRAM usage so OOMs fail fast and cleanly."""
         if not torch.cuda.is_available():
             return
+        if device_index is None:
+            device_index = 0
         try:
-            total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+            total_gb = torch.cuda.get_device_properties(device_index).total_memory / (
+                1024**3
+            )
             fraction = min(self.max_gpu_memory_gb / total_gb, 0.97)
             fraction = max(fraction, 0.1)
-            torch.cuda.set_per_process_memory_fraction(fraction, 0)
+            torch.cuda.set_per_process_memory_fraction(fraction, device_index)
         except Exception:
             # Best-effort only; not all torch builds expose this API
             pass
 
-    def estimated_vram_gb(self) -> float:
+    def estimated_vram_gb(self, device_index: Optional[int] = None) -> float:
         """Return an approximate peak VRAM usage for display purposes."""
         if not torch.cuda.is_available():
             return 0.0
+        if device_index is None:
+            device_index = 0
         try:
-            total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+            total_gb = torch.cuda.get_device_properties(device_index).total_memory / (
+                1024**3
+            )
             return round(min(total_gb, self.max_gpu_memory_gb), 2)
         except Exception:
             return round(self.max_gpu_memory_gb, 2)
@@ -124,7 +145,8 @@ def load_gpu_settings(path: Optional[Path] = None) -> GPUSettings:
     # Clamp to available GPU memory if possible to avoid immediate OOM on load
     if torch.cuda.is_available():
         try:
-            total_bytes = torch.cuda.get_device_properties(0).total_memory
+            device_index = parse_device_index(resolve_device(cfg.device))
+            total_bytes = torch.cuda.get_device_properties(device_index).total_memory
             total_gb = total_bytes / (1024**3)
             max_cap = max(min(cfg.max_gpu_memory_gb, total_gb * 0.85), 2.0)
             cfg.max_gpu_memory_gb = round(max_cap, 2)
@@ -207,6 +229,42 @@ def get_cuda_device_count() -> int:
         return 0
 
 
+def resolve_device(device: Optional[str]) -> str:
+    """
+    Resolve a device string to a concrete target (cpu or cuda:<index>).
+
+    For auto/cuda targets on multi-GPU systems, the GPU with the most VRAM
+    is selected to maximize headroom for large models.
+    """
+    if device is None:
+        device = "auto"
+    device = str(device).strip()
+    if device == "cpu":
+        return "cpu"
+    if device.startswith("cuda:"):
+        if not torch.cuda.is_available():
+            return "cpu"
+        try:
+            index = int(device.split(":")[1])
+        except (ValueError, IndexError):
+            return "cpu"
+        if index < 0 or index >= get_cuda_device_count():
+            return "cpu"
+        return f"cuda:{index}"
+    if device in {"cuda", "auto"}:
+        if not torch.cuda.is_available():
+            return "cpu"
+        best_index = 0
+        best_vram = 0.0
+        for idx in range(get_cuda_device_count()):
+            vram = get_device_vram_gb(idx)
+            if vram > best_vram:
+                best_vram = vram
+                best_index = idx
+        return f"cuda:{best_index}"
+    return device
+
+
 def get_device_vram_gb(device_index: int) -> float:
     """Return total VRAM in GiB for the specified CUDA device.
 
@@ -223,6 +281,17 @@ def get_device_vram_gb(device_index: int) -> float:
         return props.total_memory / (1024**3)
     except Exception:
         return 0.0
+
+
+def parse_device_index(device: str) -> int:
+    if device.startswith("cuda:"):
+        try:
+            return int(device.split(":")[1])
+        except (ValueError, IndexError):
+            return 0
+    if device == "cuda":
+        return 0
+    return 0
 
 
 # Encourage PyTorch to use expandable segments to reduce fragmentation OOMs.

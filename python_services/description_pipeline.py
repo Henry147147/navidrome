@@ -11,29 +11,41 @@ MuQ audio embeddings.
 
 from __future__ import annotations
 
-import logging
 import json
-import os
+import logging
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 import torch
-
-torch.set_float32_matmul_precision("high")
 import torch.nn.functional as F
 from pymilvus import MilvusClient, DataType
 from transformers import AutoModel, AutoTokenizer, AutoConfig
 
-from gpu_settings import GPUSettings, is_oom_error, load_gpu_settings
-from gpu_model_coordinator import GPU_COORDINATOR
+from gpu_settings import (
+    GPUSettings,
+    is_oom_error,
+    load_gpu_settings,
+    parse_device_index,
+    resolve_device,
+)
+from model_runtime import (
+    DEFAULT_MODEL_IDLE_TIMEOUT_SECONDS,
+    exclusive_model_access,
+)
 
 from transformers import (
     AudioFlamingo3ForConditionalGeneration,
     AutoProcessor as FlamingoProcessor,
 )
 from huggingface_hub import try_to_load_from_cache
+from accelerate import dispatch_model
+from accelerate.hooks import remove_hook_from_submodules
+from accelerate.utils import infer_auto_device_map
+
+torch.set_float32_matmul_precision("high")
 
 
 def _is_model_cached(model_id: str) -> bool:
@@ -42,6 +54,66 @@ def _is_model_cached(model_id: str) -> bool:
     result = try_to_load_from_cache(model_id, "config.json")
     # Returns path if cached, None if not cached, or _CACHED_NO_EXIST sentinel
     return result is not None and isinstance(result, str)
+
+
+def _resolve_flamingo_device(
+    requested_device: Optional[str], gpu_settings: GPUSettings
+) -> str:
+    """Prefer cuda:1 for Music Flamingo when available."""
+    if requested_device:
+        return resolve_device(requested_device)
+    if torch.cuda.is_available():
+        try:
+            if torch.cuda.device_count() > 1:
+                return resolve_device("cuda:1")
+        except Exception:
+            pass
+    return resolve_device(gpu_settings.device_target())
+
+
+def _should_use_multi_gpu(requested_device: Optional[str]) -> bool:
+    if not torch.cuda.is_available():
+        return False
+    try:
+        if torch.cuda.device_count() <= 1:
+            return False
+    except Exception:
+        return False
+    if requested_device is None:
+        return True
+    return str(requested_device).strip().lower() != "cpu"
+
+
+def _collect_no_split_modules(*modules: Optional[torch.nn.Module]) -> List[str]:
+    no_split: set[str] = set()
+    for module in modules:
+        if module is None:
+            continue
+        module_no_split = getattr(module, "_no_split_modules", None)
+        if module_no_split:
+            no_split.update(module_no_split)
+    return sorted(no_split)
+
+
+def _infer_device_map(model: torch.nn.Module, max_memory: Optional[dict]) -> dict:
+    language_model = getattr(model, "language_model", None)
+    inner_model = getattr(language_model, "model", None)
+    no_split = _collect_no_split_modules(model, language_model, inner_model)
+    if no_split:
+        return infer_auto_device_map(
+            model,
+            max_memory=max_memory,
+            no_split_module_classes=no_split,
+        )
+    return infer_auto_device_map(model, max_memory=max_memory)
+
+
+def _device_from_map(device_map: dict, prefixes: List[str]) -> Optional[str]:
+    for key, device in device_map.items():
+        for prefix in prefixes:
+            if key == prefix or key.startswith(f"{prefix}."):
+                return device
+    return None
 
 
 DEFAULT_DESCRIPTION_COLLECTION = "description_embedding"
@@ -113,15 +185,22 @@ class MusicFlamingoCaptioner:
         torch_dtype: Optional[torch.dtype] = torch.bfloat16,
         logger: Optional[logging.Logger] = None,
         gpu_settings: Optional[GPUSettings] = None,
+        timeout_seconds: int = DEFAULT_MODEL_IDLE_TIMEOUT_SECONDS,
     ) -> None:
         self.last_input_embeds: Optional[torch.Tensor] = None
         self.model_id = model_id
         self.gpu_settings = gpu_settings or load_gpu_settings()
-        self.device = device or self.gpu_settings.device_target()
-        self.dtype = torch_dtype or torch.bfloat16
+        self.device = _resolve_flamingo_device(device, self.gpu_settings)
+        self.dtype = torch_dtype or self.gpu_settings.torch_dtype()
+        if self.device == "cpu":
+            self.dtype = torch.float32
         self.logger = logger or logging.getLogger("navidrome.description.captioner")
-        self._gpu_owner = "music_flamingo_captioner"
-        GPU_COORDINATOR.register(self._gpu_owner, self._offload_to_cpu)
+        self._model_owner = "music_flamingo_captioner"
+        self._model_lock = threading.Lock()
+        self._idle_timeout = max(int(timeout_seconds), 30)
+        self._idle_timer: Optional[threading.Timer] = None
+        self._use_multi_gpu = _should_use_multi_gpu(device)
+        self._device_map: Optional[dict] = None
 
         # Use local cache if available to avoid network calls on every load
         use_local = _is_model_cached(self.model_id)
@@ -137,53 +216,34 @@ class MusicFlamingoCaptioner:
         self, use_local_cache: bool = False
     ) -> AudioFlamingo3ForConditionalGeneration:
         # Prefer PyTorch SDPA attention to avoid optional flash-attn dependency.
-        # Acquire GPU from coordinator - returns the device to use
-        self.device = GPU_COORDINATOR.acquire(self._gpu_owner, self.logger)
         from gpu_settings import force_cuda_memory_release
 
-        force_cuda_memory_release()  # Ensure GPU is clean before loading
-
+        force_cuda_memory_release()
         config = AutoConfig.from_pretrained(
             self.model_id,
             local_files_only=use_local_cache,
         )
         config.attn_implementation = "sdpa"
 
-        # Use a reduced GPU cap to enable CPU offloading and leave headroom
-        # for inference activations (KV cache, attention buffers).
-        if self.device != "cpu" and torch.cuda.is_available():
-            device_index = int(self.device.split(":")[1]) if ":" in self.device else 0
-            total_gb = torch.cuda.get_device_properties(device_index).total_memory / (1024**3)
-            gpu_cap_gb = min(total_gb * 0.70, self.gpu_settings.max_gpu_memory_gb - 2)
-            gpu_cap_gb = max(gpu_cap_gb, 4.0)
-            device_map = "auto"
-            gpu_cap_gb = 7.5
-            max_memory = GPU_COORDINATOR.get_max_memory_for_device(self.device, gpu_cap_gb)
-        else:
-            total_gb = 0.0
-            device_map = None
-            max_memory = None
-
-        if max_memory:
-            self.logger.info(
-                "Loading Music Flamingo on %s with max_memory=%s (GPU: %.1f GiB total)",
-                self.device,
-                max_memory,
-                total_gb,
-            )
-
         model = AudioFlamingo3ForConditionalGeneration.from_pretrained(
             self.model_id,
             config=config,
             torch_dtype=self.dtype,
             low_cpu_mem_usage=True,
-            device_map=device_map,
-            max_memory=max_memory,
             local_files_only=use_local_cache,
         )
-        if device_map is None:
-            model = model.to(self.device)
-        self.gpu_settings.apply_runtime_limits()
+        model = model.to("cpu")
+        if self.device != "cpu" and torch.cuda.is_available():
+            device_index = parse_device_index(self.device)
+            total_gb = torch.cuda.get_device_properties(device_index).total_memory / (
+                1024**3
+            )
+            self.logger.info(
+                "Prepared Music Flamingo weights for %s (GPU: %.1f GiB total)",
+                self.device,
+                total_gb,
+            )
+            self.gpu_settings.apply_runtime_limits(device_index=device_index)
 
         # monkeypatch the language model to save the input_embeds so we have access to it
         old_call = model.get_audio_features
@@ -199,108 +259,183 @@ class MusicFlamingoCaptioner:
         model.get_audio_features = new_call
         return model
 
+    def _cancel_idle_unload_locked(self) -> None:
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
+
+    def _schedule_idle_unload(self) -> None:
+        with self._model_lock:
+            self._cancel_idle_unload_locked()
+            timer = threading.Timer(self._idle_timeout, self.unload)
+            timer.daemon = True
+            self._idle_timer = timer
+            timer.start()
+
     def _ensure_model_on_device(self):
-        # Acquire GPU from coordinator - returns the device to use
-        self.device = GPU_COORDINATOR.acquire(self._gpu_owner, self.logger)
-        if self.model is None:
-            # Model was already loaded once, so it's cached - use local files
-            self.model = self._build_model(use_local_cache=True)
-        # For dispatched models, we don't need to move - dispatch_model handles placement
-        self.model.eval()
+        with self._model_lock:
+            self._cancel_idle_unload_locked()
+            if self.model is None:
+                # Model was already loaded once, so it's cached - use local files
+                self.model = self._build_model(use_local_cache=True)
+            if self._use_multi_gpu:
+                try:
+                    max_memory = self.gpu_settings.max_memory_map_all_gpus()
+                    if self._device_map is None:
+                        self._device_map = _infer_device_map(
+                            self.model, max_memory=max_memory
+                        )
+                    self.model = dispatch_model(self.model, self._device_map)
+                    for idx in range(torch.cuda.device_count()):
+                        self.gpu_settings.apply_runtime_limits(device_index=idx)
+                except Exception as exc:
+                    if is_oom_error(exc):
+                        self.logger.warning(
+                            "Music Flamingo multi-GPU dispatch OOM; falling back to CPU"
+                        )
+                        self.device = "cpu"
+                        self._use_multi_gpu = False
+                        self.dtype = torch.float32
+                        self.model = self.model.to("cpu", dtype=self.dtype)
+                    else:
+                        self.logger.exception(
+                            "Failed to dispatch Music Flamingo across GPUs; reloading"
+                        )
+                        self.model = self._build_model(use_local_cache=True)
+            else:
+                target_device = resolve_device(self.device)
+                self.device = target_device
+                try:
+                    if self.device == "cpu":
+                        self.dtype = torch.float32
+                        self.model = self.model.to("cpu", dtype=self.dtype)
+                    else:
+                        self.model = self.model.to(self.device, dtype=self.dtype)
+                except Exception as exc:
+                    if is_oom_error(exc) and self.device.startswith("cuda"):
+                        self.logger.warning(
+                            "Music Flamingo OOM on %s; falling back to CPU",
+                            self.device,
+                        )
+                        self.device = "cpu"
+                        self.dtype = torch.float32
+                        self.model = self.model.to("cpu", dtype=self.dtype)
+                    else:
+                        self.logger.exception(
+                            "Failed to move Music Flamingo to %s; reloading",
+                            self.device,
+                        )
+                        self.model = self._build_model(use_local_cache=True)
+                self.model.eval()
+            self.model.eval()
 
     def _offload_to_cpu(self) -> None:
-        # For models using dispatch_model, we can't use .to("cpu") - we must
-        # delete and rebuild. Set model to None and let _ensure_model_on_device rebuild.
         from gpu_settings import force_cuda_memory_release
 
-        model = getattr(self, "model", None)
-        if model is not None:
-            try:
-                # Remove accelerate hooks if present
-                from accelerate.hooks import remove_hook_from_submodules
-
-                remove_hook_from_submodules(model)
-            except Exception:
-                pass
-            del self.model
-            self.model = None
+        with self._model_lock:
+            model = getattr(self, "model", None)
+            if model is not None:
+                if self._use_multi_gpu:
+                    remove_hook_from_submodules(model)
+                if self.device == "cpu":
+                    self.model = model.to("cpu", dtype=torch.float32)
+                else:
+                    self.model = model.to("cpu")
         force_cuda_memory_release()
 
     def unload(self):
         from gpu_settings import force_cuda_memory_release
 
-        model = getattr(self, "model", None)
-        if model is not None:
-            try:
-                from accelerate.hooks import remove_hook_from_submodules
-
-                remove_hook_from_submodules(model)
-            except Exception:
-                pass
-            del self.model
-        self.model = None
+        with self._model_lock:
+            self._cancel_idle_unload_locked()
+            model = getattr(self, "model", None)
+            if model is not None:
+                del self.model
+            self.model = None
         force_cuda_memory_release()
 
-    def generate(
-        self, audio_path: str
-    ) -> Tuple[str, List[float]]:
+    def generate(self, audio_path: str) -> Tuple[str, List[float]]:
         """
         Generate a rich caption for the provided audio file using the official
         Music Flamingo chat template, mirroring the model card example.
         """
         prompt = (
-            """Describe this track in full detail - tell me the genre, tempo, and key, then dive into the instruments, production style, and overall mood it creates. Include any important lyrics and themes discussed."""
+            "Describe this track in full detail - tell me the genre, tempo, and key, "
+            "then dive into the instruments, production style, and overall mood it "
+            "creates. Include any important lyrics and themes discussed."
         )
-
-        if self.model is None:
+        with exclusive_model_access(self._model_owner, self.logger):
             self._ensure_model_on_device()
-        else:
-            self._ensure_model_on_device()
-        assert self.model is not None
+            assert self.model is not None
 
-        conversation = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "audio", "path": str(audio_path)},
-                ],
-            }
-        ]
+            conversation = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "audio", "path": str(audio_path)},
+                    ],
+                }
+            ]
 
-        inputs = self.processor.apply_chat_template(
-            conversation,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_dict=True,
-        )
-        # Ensure tensors are on the correct device/dtype
-        for k, v in list(inputs.items()):
-            if isinstance(v, torch.Tensor):
-                if torch.is_floating_point(v):
-                    inputs[k] = v.to(self.model.device, dtype=self.dtype)
-                else:
-                    inputs[k] = v.to(self.model.device)
-
-        with torch.inference_mode():
-            # Allow long, detailed captions for complex tracks.
-            self.last_input_embeds = None
-            outputs = self.model.generate(
-                **inputs,
-                max_new_tokens=1024,
-                do_sample=False,
-                temperature=0.0,
+            inputs = self.processor.apply_chat_template(
+                conversation,
+                tokenize=True,
+                add_generation_prompt=True,
+                return_dict=True,
             )
+            device_map = getattr(self.model, "hf_device_map", None)
+            if device_map:
+                text_device = _device_from_map(
+                    device_map,
+                    ["language_model", "language_model.model"],
+                )
+                audio_device = _device_from_map(
+                    device_map,
+                    ["audio_tower", "audio_encoder", "audio_model"],
+                )
+            else:
+                text_device = None
+                audio_device = None
 
-        assert self.last_input_embeds is not None
-        audio_embedding = _pool_audio_embedding(self.last_input_embeds).tolist()
-        self.last_input_embeds = None
+            # Ensure tensors are on the correct device/dtype
+            for k, v in list(inputs.items()):
+                if not isinstance(v, torch.Tensor):
+                    continue
+                target_device = None
+                if k in {"input_features", "input_features_mask"}:
+                    target_device = audio_device or text_device
+                else:
+                    target_device = text_device or audio_device
+                if target_device is None:
+                    target_device = self.model.device
+                if torch.is_floating_point(v):
+                    inputs[k] = v.to(target_device, dtype=self.dtype)
+                else:
+                    inputs[k] = v.to(target_device)
 
-        # Strip the prompt tokens from the generated sequence
-        decoded = self.processor.batch_decode(
-            outputs[:, inputs.input_ids.shape[1] :], skip_special_tokens=True
-        )
-        return decoded[0].strip(), audio_embedding
+            try:
+                with torch.inference_mode():
+                    # Allow long, detailed captions for complex tracks.
+                    self.last_input_embeds = None
+                    outputs = self.model.generate(
+                        **inputs,
+                        max_new_tokens=1024,
+                        do_sample=False,
+                    )
+
+                assert self.last_input_embeds is not None
+                audio_embedding = _pool_audio_embedding(self.last_input_embeds).tolist()
+                self.last_input_embeds = None
+
+                # Strip the prompt tokens from the generated sequence
+                decoded = self.processor.batch_decode(
+                    outputs[:, inputs.input_ids.shape[1] :], skip_special_tokens=True
+                )
+                return decoded[0].strip(), audio_embedding
+            finally:
+                self._offload_to_cpu()
+                self._schedule_idle_unload()
 
 
 class Qwen3Embedder:
@@ -314,18 +449,25 @@ class Qwen3Embedder:
         torch_dtype: Optional[torch.dtype] = None,
         logger: Optional[logging.Logger] = None,
         gpu_settings: Optional[GPUSettings] = None,
+        timeout_seconds: int = DEFAULT_MODEL_IDLE_TIMEOUT_SECONDS,
     ) -> None:
         self.model_id = model_id
         self.gpu_settings = gpu_settings or load_gpu_settings()
-        self.device = device or self.gpu_settings.device_target()
+        self.device = resolve_device(device or self.gpu_settings.device_target())
         self.dtype = (
             torch_dtype
             if torch_dtype is not None
             else (torch.float16 if self.device.startswith("cuda") else torch.float32)
         )
         self.logger = logger or logging.getLogger("navidrome.description.qwen3")
-        self._gpu_owner = "qwen3_embedder"
-        GPU_COORDINATOR.register(self._gpu_owner, self._offload_to_cpu)
+        if self.device == "cpu":
+            self.dtype = torch.float32
+        self._model_owner = "qwen3_embedder"
+        self._model_lock = threading.Lock()
+        self._idle_timeout = max(int(timeout_seconds), 30)
+        self._idle_timer: Optional[threading.Timer] = None
+        self._use_multi_gpu = _should_use_multi_gpu(device)
+        self._device_map: Optional[dict] = None
 
         # Use local cache if available to avoid network calls on every load
         use_local = _is_model_cached(self.model_id)
@@ -339,7 +481,6 @@ class Qwen3Embedder:
             trust_remote_code=True,
             local_files_only=use_local,
         )
-        self.device_map = "auto" if self.device.startswith("cuda") else None
         self._use_local_cache = use_local
         try:
             self.model = self._build_model()
@@ -347,18 +488,17 @@ class Qwen3Embedder:
             if is_oom_error(exc) and self.device.startswith("cuda"):
                 self.logger.warning("Qwen3 load hit OOM on cuda; retrying on CPU fp32")
                 self.device = "cpu"
-                self.device_map = None
                 self.dtype = torch.float32
                 self.model = self._build_model()
             else:
                 raise
         self.model.eval()
-        self.gpu_settings.apply_runtime_limits()
+        if self.device.startswith("cuda") and torch.cuda.is_available():
+            self.gpu_settings.apply_runtime_limits(
+                device_index=parse_device_index(self.device)
+            )
 
     def _build_model(self):
-        # Acquire GPU from coordinator - returns the device to use
-        self.device = GPU_COORDINATOR.acquire(self._gpu_owner, self.logger)
-        self.device_map = "auto" if self.device.startswith("cuda") else None
         # Use cached flag - after first load, model is always cached
         use_local = getattr(self, "_use_local_cache", False) or _is_model_cached(
             self.model_id
@@ -369,33 +509,91 @@ class Qwen3Embedder:
             dtype=self.dtype,
             low_cpu_mem_usage=True,
             attn_implementation="sdpa",
-            device_map=self.device_map,
             local_files_only=use_local,
         )
-        if self.device_map is None:
-            model = model.to(self.device)
+        model = model.to("cpu")
         return model
 
+    def _cancel_idle_unload_locked(self) -> None:
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
+
+    def _schedule_idle_unload(self) -> None:
+        with self._model_lock:
+            self._cancel_idle_unload_locked()
+            timer = threading.Timer(self._idle_timeout, self.unload)
+            timer.daemon = True
+            self._idle_timer = timer
+            timer.start()
+
     def _ensure_model_on_device(self):
-        # Acquire GPU from coordinator - returns the device to use
-        self.device = GPU_COORDINATOR.acquire(self._gpu_owner, self.logger)
-        if self.model is None:
-            self.model = self._build_model()
-        else:
-            try:
-                self.model = self.model.to(self.device)
-            except Exception:
-                self.logger.exception(
-                    "Failed to move Qwen3 embedder back to GPU; rebuilding"
-                )
+        with self._model_lock:
+            self._cancel_idle_unload_locked()
+            if self.model is None:
                 self.model = self._build_model()
-        self.model.eval()
+            if self._use_multi_gpu:
+                try:
+                    max_memory = self.gpu_settings.max_memory_map_all_gpus()
+                    if self._device_map is None:
+                        self._device_map = _infer_device_map(
+                            self.model, max_memory=max_memory
+                        )
+                    self.model = dispatch_model(self.model, self._device_map)
+                    for idx in range(torch.cuda.device_count()):
+                        self.gpu_settings.apply_runtime_limits(device_index=idx)
+                except Exception as exc:
+                    if is_oom_error(exc):
+                        self.logger.warning(
+                            "Qwen3 multi-GPU dispatch OOM; falling back to CPU"
+                        )
+                        self.device = "cpu"
+                        self._use_multi_gpu = False
+                        self.dtype = torch.float32
+                        self.model = self.model.to("cpu", dtype=self.dtype)
+                    else:
+                        self.logger.exception(
+                            "Failed to dispatch Qwen3 across GPUs; rebuilding"
+                        )
+                        self.model = self._build_model()
+            else:
+                target_device = resolve_device(self.device)
+                self.device = target_device
+                try:
+                    if self.device == "cpu":
+                        self.dtype = torch.float32
+                        self.model = self.model.to("cpu", dtype=self.dtype)
+                    else:
+                        self.model = self.model.to(self.device, dtype=self.dtype)
+                except Exception as exc:
+                    if is_oom_error(exc) and self.device.startswith("cuda"):
+                        self.logger.warning(
+                            "Qwen3 OOM on %s; falling back to CPU",
+                            self.device,
+                        )
+                        self.device = "cpu"
+                        self.dtype = torch.float32
+                        self.model = self.model.to("cpu", dtype=self.dtype)
+                    else:
+                        self.logger.exception(
+                            "Failed to move Qwen3 embedder to %s; rebuilding",
+                            self.device,
+                        )
+                        self.model = self._build_model()
+                self.model.eval()
+            self.model.eval()
 
     def _offload_to_cpu(self) -> None:
         try:
-            model = getattr(self, "model", None)
-            if model is not None:
-                self.model = model.to("cpu")
+            with self._model_lock:
+                model = getattr(self, "model", None)
+                if model is not None:
+                    if self._use_multi_gpu:
+                        remove_hook_from_submodules(model)
+                    if self.device == "cpu":
+                        self.model = model.to("cpu", dtype=torch.float32)
+                    else:
+                        self.model = model.to("cpu")
         except Exception:
             self.logger.exception("Failed to offload Qwen3 embedder to CPU")
         from gpu_settings import force_cuda_memory_release
@@ -404,12 +602,14 @@ class Qwen3Embedder:
 
     def unload(self):
         try:
-            model = getattr(self, "model", None)
-            if model:
-                model.to("cpu")
+            with self._model_lock:
+                self._cancel_idle_unload_locked()
+                model = getattr(self, "model", None)
+                if model:
+                    model.to("cpu")
+                self.model = None
         except Exception:
             pass
-        self.model = None
         from gpu_settings import force_cuda_memory_release
 
         force_cuda_memory_release()
@@ -420,30 +620,33 @@ class Qwen3Embedder:
 
         Mirrors the official model card recipe: left padding + last token pooling.
         """
-        if self.model is None:
+        with exclusive_model_access(self._model_owner, self.logger):
             self._ensure_model_on_device()
-        else:
-            self._ensure_model_on_device()
+            assert self.model is not None
 
-        inputs = self.tokenizer(
-            text,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=min(self.tokenizer.model_max_length, 8192),
-        ).to(self.model.device)
+            inputs = self.tokenizer(
+                text,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=min(self.tokenizer.model_max_length, 8192),
+            ).to(self.model.device)
 
-        with torch.inference_mode():
-            outputs = self.model(**inputs)
-            pooled = self._last_token_pool(
-                outputs.last_hidden_state, inputs["attention_mask"]
-            )
+            try:
+                with torch.inference_mode():
+                    outputs = self.model(**inputs)
+                    pooled = self._last_token_pool(
+                        outputs.last_hidden_state, inputs["attention_mask"]
+                    )
 
-        # Normalize as cosine embedding and move to CPU for downstream storage
-        normalized = F.normalize(pooled, p=2, dim=-1)
-        if normalized.dim() == 2 and normalized.size(0) == 1:
-            normalized = normalized.squeeze(0)
-        return normalized.to("cpu")
+                # Normalize as cosine embedding and move to CPU for downstream storage
+                normalized = F.normalize(pooled, p=2, dim=-1)
+                if normalized.dim() == 2 and normalized.size(0) == 1:
+                    normalized = normalized.squeeze(0)
+                return normalized.to("cpu")
+            finally:
+                self._offload_to_cpu()
+                self._schedule_idle_unload()
 
     @staticmethod
     def _last_token_pool(
@@ -480,7 +683,7 @@ class DescriptionEmbeddingPipeline:
         gpu_settings: Optional[GPUSettings] = None,
     ) -> None:
         self.gpu_settings = gpu_settings or load_gpu_settings()
-        self.device = device or self.gpu_settings.device_target()
+        self.device = resolve_device(device or self.gpu_settings.device_target())
         self.logger = logger or logging.getLogger("navidrome.description")
         self.caption_model_id = caption_model_id
         # Avoid name clash with the _get_captioner() accessor below

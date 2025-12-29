@@ -239,15 +239,28 @@ def test_music_flamingo_generate_happy_path(monkeypatch):
     captioner.device = "cpu"
     captioner.dtype = torch.float32
     captioner.logger = logging.getLogger("navidrome.tests.captioner")
+    captioner._model_owner = "music_flamingo_captioner"
     captioner.processor = DummyProcessor()
     captioner.model = DummyModel(captioner)
     monkeypatch.setattr(captioner, "_ensure_model_on_device", lambda: None)
+    monkeypatch.setattr(captioner, "_offload_to_cpu", lambda: None)
+    monkeypatch.setattr(captioner, "_schedule_idle_unload", lambda: None)
 
     description, audio_embedding = captioner.generate("song.flac")
 
     assert description == "caption"
     assert isinstance(audio_embedding, list)
     assert len(audio_embedding) == 3
+
+
+def test_flamingo_prefers_cuda1_when_available(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+    settings = description_pipeline.GPUSettings(device="auto")
+
+    device = description_pipeline._resolve_flamingo_device(None, settings)
+
+    assert device == "cuda:1"
 
 
 def test_music_flamingo_build_model_loads_pretrained(monkeypatch):
@@ -281,9 +294,6 @@ def test_music_flamingo_build_model_loads_pretrained(monkeypatch):
         "from_pretrained",
         fake_from_pretrained,
     )
-    monkeypatch.setattr(
-        description_pipeline.GPU_COORDINATOR, "claim", lambda *_a, **_k: None
-    )
     import gpu_settings
 
     monkeypatch.setattr(gpu_settings, "force_cuda_memory_release", lambda: None)
@@ -296,7 +306,6 @@ def test_music_flamingo_build_model_loads_pretrained(monkeypatch):
     captioner.dtype = torch.float32
     captioner.logger = logging.getLogger("navidrome.tests.captioner.load")
     captioner.gpu_settings = description_pipeline.GPUSettings()
-    captioner._gpu_owner = "music_flamingo_captioner"
     captioner.last_input_embeds = None
     captioner.device = "cpu"
 
@@ -306,7 +315,6 @@ def test_music_flamingo_build_model_loads_pretrained(monkeypatch):
     assert captured["model_id"] == "dummy"
     assert captured["kwargs"]["local_files_only"] is True
     assert captured["kwargs"]["low_cpu_mem_usage"] is True
-    assert captured["kwargs"]["device_map"] is None
     assert captioner.last_input_embeds is not None
 
 
@@ -344,7 +352,10 @@ def test_qwen3_embed_text_uses_last_token_pool(monkeypatch):
     embedder.device = "cpu"
     embedder.dtype = torch.float32
     embedder.logger = logging.getLogger("navidrome.tests.qwen3")
+    embedder._model_owner = "qwen3_embedder"
     monkeypatch.setattr(embedder, "_ensure_model_on_device", lambda: None)
+    monkeypatch.setattr(embedder, "_offload_to_cpu", lambda: None)
+    monkeypatch.setattr(embedder, "_schedule_idle_unload", lambda: None)
 
     embedding = embedder.embed_text("hello")
 

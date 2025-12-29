@@ -18,5 +18,4 @@ torch
 torchaudio
 tqdm
 transformers>=5.0.0rc1
-accelerate
 uvicorn[standard]

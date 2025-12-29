@@ -240,7 +240,7 @@ class ModelFirstBatchProcessor:
         )
         stage_start = time.monotonic()
 
-        # Get captioner (claims GPU, offloads MuQ via GPU_COORDINATOR)
+        # Get captioner (exclusive model lock keeps only one model on GPU at a time)
         captioner = self.description_pipeline._get_captioner()
 
         for i, ctx in enumerate(valid_contexts, 1):

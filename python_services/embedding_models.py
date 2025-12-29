@@ -20,7 +20,7 @@ import numpy as np
 import torch
 import torchaudio
 from pymilvus import MilvusClient, DataType
-from gpu_model_coordinator import GPU_COORDINATOR
+from model_runtime import exclusive_model_access
 
 
 def _milvus_uses_lite() -> bool:
@@ -37,9 +37,9 @@ def _milvus_uses_lite() -> bool:
     return uri.startswith("file:")
 
 
-from models import TrackSegment
+from models import TrackSegment  # noqa: E402
 
-from muq import MuQ
+from muq import MuQ  # noqa: E402
 
 
 class BaseEmbeddingModel(ABC):
@@ -58,6 +58,7 @@ class BaseEmbeddingModel(ABC):
         self._lock = Lock()
         self._model: Optional[torch.nn.Module] = None
         self._last_used = datetime.now(timezone.utc)
+        self._active_sessions = 0
         self._stop_event = Event()
         self._unloader = Thread(
             target=self._auto_unload_loop,
@@ -73,7 +74,7 @@ class BaseEmbeddingModel(ABC):
         check_interval = 5
         while not self._stop_event.wait(check_interval):
             with self._lock:
-                if self._model is None:
+                if self._model is None or self._active_sessions > 0:
                     continue
                 idle = datetime.now(timezone.utc) - self._last_used
                 if idle >= timedelta(seconds=self._timeout):
@@ -95,6 +96,7 @@ class BaseEmbeddingModel(ABC):
         self._stop_event.set()
         self._unloader.join(timeout=1)
         with self._lock:
+            self._active_sessions = 0
             if self._model is not None:
                 self._release_model(self._model)
                 self._model = None
@@ -111,17 +113,37 @@ class BaseEmbeddingModel(ABC):
             self._last_used = datetime.now(timezone.utc)
             return self._model
 
+    def _prepare_for_inference(self) -> torch.nn.Module:
+        """
+        Hook for subclasses to move models to the right device before inference.
+        """
+        return self.ensure_model_loaded()
+
+    def _finish_inference(self, model: torch.nn.Module) -> None:
+        """
+        Hook for subclasses to offload after inference.
+        """
+        self.offload_to_cpu()
+
     @contextmanager
     def model_session(self) -> Generator[torch.nn.Module, Any, Any]:
         """
         Context manager that ensures the model is loaded and updates usage tracking.
         """
-        model = self.ensure_model_loaded()
-        try:
-            yield model
-        finally:
+        with exclusive_model_access(self.__class__.__name__, self.logger):
+            model = self._prepare_for_inference()
             with self._lock:
-                self._last_used = datetime.now(timezone.utc)
+                self._active_sessions += 1
+            try:
+                yield model
+            finally:
+                should_offload = False
+                with self._lock:
+                    self._active_sessions = max(self._active_sessions - 1, 0)
+                    self._last_used = datetime.now(timezone.utc)
+                    should_offload = self._active_sessions == 0
+                if should_offload:
+                    self._finish_inference(model)
 
     def unload_model(self) -> None:
         """
@@ -242,7 +264,9 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
     ) -> None:
         super().__init__(timeout_seconds=timeout_seconds, logger=logger)
         self.model_id = model_id
-        self.device = device
+        from gpu_settings import resolve_device
+
+        self.device = resolve_device(device)
         self.model_dtype = model_dtype
         self.storage_dtype = storage_dtype
         self.sample_rate = sample_rate
@@ -255,10 +279,13 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
             except ValueError:
                 chunk_batch_size = 1
         self.chunk_batch_size = max(int(chunk_batch_size), 1)
-        self._gpu_owner = f"{self.__class__.__name__}"
-        GPU_COORDINATOR.register(self._gpu_owner, self.offload_to_cpu)
 
     def _inference_dtype(self) -> torch.dtype:
+        if not str(self.device).startswith("cuda"):
+            return torch.float32
+        return self.model_dtype
+
+    def _storage_dtype(self) -> torch.dtype:
         if not str(self.device).startswith("cuda"):
             return torch.float32
         return self.model_dtype
@@ -332,9 +359,8 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
         return outputs_cpu
 
     def _load_model(self) -> torch.nn.Module:
-        # Acquire GPU from coordinator - returns the device to use
-        self.device = GPU_COORDINATOR.acquire(self._gpu_owner, self.logger)
-        # Use MuQ class for audio-only embeddings (not MuQMuLan which is for music-text joint embeddings)
+        # Use MuQ class for audio-only embeddings
+        # (not MuQMuLan which is for music-text joint embeddings)
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 "ignore",
@@ -342,42 +368,37 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
                 category=FutureWarning,
             )
             model = MuQ.from_pretrained(self.model_id).eval()
-        model = model.to(dtype=self._inference_dtype()).to(self.device)
+        model = model.to(dtype=self._storage_dtype()).to("cpu")
         return model
 
-    def ensure_model_loaded(self) -> Any:  # type: ignore[override]
-        """
-        Override to ensure model is moved back to GPU if it was offloaded.
-        """
-        with self._lock:
-            if self._model is None:
-                self.logger.info("Loading embedding model %s", self.__class__.__name__)
-                self._model = self._load_model()
-            else:
-                # Acquire GPU and get the device to use
-                self.device = GPU_COORDINATOR.acquire(self._gpu_owner, self.logger)
-                try:
-                    self._model = self._model.to(  # type: ignore[attr-defined]
-                        self.device, dtype=self._inference_dtype()
-                    )
-                except Exception as exc:
-                    from gpu_settings import force_cuda_memory_release, is_oom_error
+    def _prepare_for_inference(self) -> torch.nn.Module:
+        model = self.ensure_model_loaded()
+        if str(self.device).startswith("cuda") and torch.cuda.is_available():
+            try:
+                model = model.to(self.device, dtype=self._inference_dtype())
+            except Exception as exc:
+                from gpu_settings import force_cuda_memory_release, is_oom_error
 
-                    if is_oom_error(exc):
-                        self.logger.warning(
-                            "OOM moving %s to GPU; releasing and reloading",
-                            self.__class__.__name__,
-                        )
-                        del self._model
-                        self._model = None
-                        force_cuda_memory_release()
-                    else:
-                        self.logger.exception(
-                            "Failed to move %s back to GPU", self.__class__.__name__
-                        )
-                    self._model = self._load_model()
-            self._last_used = datetime.now(timezone.utc)
-            return self._model
+                if is_oom_error(exc):
+                    self.logger.warning(
+                        "OOM moving %s to GPU; falling back to CPU",
+                        self.__class__.__name__,
+                    )
+                    self.device = "cpu"
+                    model = model.to("cpu", dtype=torch.float32)
+                else:
+                    self.logger.exception(
+                        "Failed to move %s to GPU; reloading",
+                        self.__class__.__name__,
+                    )
+                    self._release_model(model)
+                    self._model = None
+                    force_cuda_memory_release()
+                    model = self.ensure_model_loaded()
+        else:
+            model = model.to("cpu", dtype=torch.float32)
+        self._model = model
+        return model
 
     def embed_music(self, music_file: str, music_name: str) -> dict:
         segments = self.prepare_music(music_file, music_name)
@@ -750,7 +771,7 @@ class MuQEmbeddingModel(BaseEmbeddingModel):
 
 
 _IQR_TO_SIGMA = 1.3489795003921634  # sigma ≈ IQR / 1.34898
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: E402
 
 
 def enrich_embedding(embedding: torch.Tensor) -> torch.Tensor:

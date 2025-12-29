@@ -167,7 +167,10 @@ def test_muq_model_init_defaults(mock_muq_components):
     """Test MuQEmbeddingModel initializes with correct defaults."""
     model = MuQEmbeddingModel()
     assert model.model_id == "OpenMuQ/MuQ-large-msd-iter"
-    assert model.device == "cuda"
+    if torch.cuda.is_available():
+        assert model.device.startswith("cuda")
+    else:
+        assert model.device == "cpu"
     assert model.sample_rate == 24_000
     assert model.window_seconds == 120
     assert model.hop_seconds == 15
@@ -197,7 +200,7 @@ def test_muq_model_init_custom_params(mock_muq_components):
 def test_muq_load_model(mock_muq_components):
     """Test MuQ model loading."""
     model = MuQEmbeddingModel(device="cpu")
-    _loaded_model = model._load_model()
+    model._load_model()
 
     # Verify MuQ.from_pretrained was called
     mock_muq_components["muq_class"].from_pretrained.assert_called_once()
@@ -380,7 +383,7 @@ def test_muq_load_audio_with_torchaudio(mock_info, mock_load, mock_muq_component
     model = MuQEmbeddingModel(device="cpu", sample_rate=24_000)
     model._load_model()
 
-    _audio = model._load_audio_segment(
+    model._load_audio_segment(
         music_file="test.wav",
         offset=0.0,
         duration=1.0,
@@ -438,7 +441,7 @@ def test_muq_audio_resampling(mock_info, mock_load, mock_muq_components):
     with patch("embedding_models.torchaudio.functional.resample") as mock_resample:
         mock_resample.return_value = torch.randn(24_000)
 
-        _audio = model._load_audio_segment(
+        model._load_audio_segment(
             music_file="test.wav",
             offset=0.0,
             duration=1.0,
@@ -745,3 +748,24 @@ def test_base_model_session_context_manager_protocol(dummy_model):
     """Test model_session follows context manager protocol."""
     with dummy_model.model_session() as model:
         assert model is not None
+
+
+def test_base_nested_sessions_offload_once():
+    """Nested sessions should only offload after the outermost session exits."""
+
+    class OffloadTracker(DummyEmbeddingModel):
+        def __init__(self) -> None:
+            super().__init__()
+            self.offload_calls = 0
+
+        def offload_to_cpu(self) -> None:
+            self.offload_calls += 1
+
+    model = OffloadTracker()
+    try:
+        with model.model_session():
+            with model.model_session():
+                pass
+        assert model.offload_calls == 1
+    finally:
+        model.shutdown()
