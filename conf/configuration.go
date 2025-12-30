@@ -229,6 +229,27 @@ type recommendationsOptions struct {
 	EmbedTimeout time.Duration
 	DefaultLimit int
 	Diversity    float64
+
+	// Go-native embedder options (for llama.cpp backend)
+	Embedder embedderOptions
+	// Milvus vector database options
+	Milvus milvusOptions
+}
+
+type embedderOptions struct {
+	LlamaCppAudioURL    string        // llama.cpp audio embedding endpoint
+	LlamaCppDescribeURL string        // llama.cpp audio description endpoint
+	LlamaCppTextURL     string        // llama.cpp text embedding endpoint
+	BatchTimeout        time.Duration // Time to wait before processing batch
+	BatchSize           int           // Max items per batch
+	EnableDescriptions  bool          // Enable stage 2 (audio -> description)
+	EnableTextEmbed     bool          // Enable stage 3 (description -> text embedding)
+}
+
+type milvusOptions struct {
+	URI        string        // Milvus server URI or file path for Milvus Lite
+	Timeout    time.Duration // Connection/operation timeout
+	MaxRetries int           // Max retry attempts
 }
 
 type pluginsOptions struct {
@@ -543,6 +564,18 @@ func setViperDefaults() {
 	viper.SetDefault("recommendations.timeout", 5*time.Second)
 	viper.SetDefault("recommendations.defaultlimit", 25)
 	viper.SetDefault("recommendations.diversity", 0.15)
+	// Go-native embedder options
+	viper.SetDefault("recommendations.embedder.llamacppaudiourl", "http://localhost:8080/embed/audio")
+	viper.SetDefault("recommendations.embedder.llamacppdescribeurl", "http://localhost:8081/describe")
+	viper.SetDefault("recommendations.embedder.llamacpptexturl", "http://localhost:8082/embed/text")
+	viper.SetDefault("recommendations.embedder.batchtimeout", 5*time.Second)
+	viper.SetDefault("recommendations.embedder.batchsize", 50)
+	viper.SetDefault("recommendations.embedder.enabledescriptions", true)
+	viper.SetDefault("recommendations.embedder.enabletextembed", true)
+	// Milvus options
+	viper.SetDefault("recommendations.milvus.uri", "http://localhost:19530")
+	viper.SetDefault("recommendations.milvus.timeout", 30*time.Second)
+	viper.SetDefault("recommendations.milvus.maxretries", 3)
 	viper.SetDefault("autotranscodedownload", false)
 	viper.SetDefault("defaultdownsamplingformat", consts.DefaultDownsamplingFormat)
 	viper.SetDefault("searchfullstring", false)

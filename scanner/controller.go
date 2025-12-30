@@ -26,6 +26,9 @@ var (
 	ErrAlreadyScanning = errors.New("already scanning")
 )
 
+// ScannerOption is a functional option for configuring the scanner.
+type ScannerOption func(*controller)
+
 type Scanner interface {
 	// ScanAll starts a full scan of the music library. This is a blocking operation.
 	ScanAll(ctx context.Context, fullScan bool) (warnings []string, err error)
@@ -43,7 +46,7 @@ type StatusInfo struct {
 }
 
 func New(rootCtx context.Context, ds model.DataStore, cw artwork.CacheWarmer, broker events.Broker,
-	pls core.Playlists, m metrics.Metrics) Scanner {
+	pls core.Playlists, m metrics.Metrics, opts ...ScannerOption) Scanner {
 	c := &controller{
 		rootCtx: rootCtx,
 		ds:      ds,
@@ -52,8 +55,15 @@ func New(rootCtx context.Context, ds model.DataStore, cw artwork.CacheWarmer, br
 		pls:     pls,
 		metrics: m,
 	}
-	if client := newPythonEmbeddingClient(); client != nil {
-		c.embedWorker = newEmbeddingWorker(client)
+	// Apply options
+	for _, opt := range opts {
+		opt(c)
+	}
+	// If no embedding worker was set via options, try Python client
+	if c.embedWorker == nil {
+		if client := newPythonEmbeddingClient(); client != nil {
+			c.embedWorker = newEmbeddingWorker(client)
+		}
 	}
 	if !conf.Server.DevExternalScanner {
 		c.limiter = P(rate.Sometimes{Interval: conf.Server.DevActivityPanelUpdateRate})
