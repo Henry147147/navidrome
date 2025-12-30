@@ -421,7 +421,8 @@ class MusicFlamingoCaptioner:
                     self.last_input_embeds = None
                     outputs = self.model.generate(
                         **inputs,
-                        max_new_tokens=1024,
+                        max_new_tokens=512,
+                        use_cache=False,
                         do_sample=False,
                     )
 
