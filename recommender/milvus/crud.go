@@ -21,14 +21,14 @@ type EmbeddingData struct {
 // DimensionForCollection returns the vector dimension for a collection.
 func DimensionForCollection(collection string) int {
 	switch collection {
-	case CollectionEmbedding:
-		return DimMuQ
-	case CollectionDescriptionEmbedding:
-		return DimQwen3
-	case CollectionFlamingoAudio:
-		return DimFlamingoAudio
+	case CollectionLyrics:
+		return DimLyrics
+	case CollectionDescription:
+		return DimDescription
+	case CollectionFlamingo:
+		return DimFlamingo
 	default:
-		return DimMuQ
+		return DimLyrics
 	}
 }
 
@@ -73,8 +73,8 @@ func (c *Client) Upsert(ctx context.Context, collection string, data []Embedding
 		entity.NewColumnVarChar("model_id", modelIDs),
 	}
 
-	// Add description column for description_embedding collection
-	if collection == CollectionDescriptionEmbedding {
+	// Add description column for description collection
+	if collection == CollectionDescription {
 		columns = append(columns, entity.NewColumnVarChar("description", descriptions))
 	}
 

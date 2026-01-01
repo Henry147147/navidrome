@@ -59,12 +59,6 @@ func New(rootCtx context.Context, ds model.DataStore, cw artwork.CacheWarmer, br
 	for _, opt := range opts {
 		opt(c)
 	}
-	// If no embedding worker was set via options, try Python client
-	if c.embedWorker == nil {
-		if client := newPythonEmbeddingClient(); client != nil {
-			c.embedWorker = newEmbeddingWorker(client)
-		}
-	}
 	if !conf.Server.DevExternalScanner {
 		c.limiter = P(rate.Sometimes{Interval: conf.Server.DevActivityPanelUpdateRate})
 	}

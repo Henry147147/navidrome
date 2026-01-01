@@ -33,12 +33,12 @@ var allProviders = wire.NewSet(
 	subsonic.New,
 	nativeapi.New,
 	public.New,
-	subsonic.NewRecommendationClient,
+	subsonic.NewNoopRecommendationClient,
 	persistence.New,
 	lastfm.NewRouter,
 	listenbrainz.NewRouter,
 	events.GetBroker,
-	scanner.New,
+	newScanner,
 	scanner.GetWatcher,
 	plugins.GetManager,
 	metrics.GetPrometheusInstance,
@@ -49,6 +49,11 @@ var allProviders = wire.NewSet(
 	wire.Bind(new(core.Scanner), new(scanner.Scanner)),
 	wire.Bind(new(core.Watcher), new(scanner.Watcher)),
 )
+
+// newScanner creates a scanner with no options (uses default Python client if available).
+func newScanner(ctx context.Context, ds model.DataStore, cw artwork.CacheWarmer, broker events.Broker, pls core.Playlists, m metrics.Metrics) scanner.Scanner {
+	return scanner.New(ctx, ds, cw, broker, pls, m)
+}
 
 func CreateDataStore() model.DataStore {
 	panic(wire.Build(

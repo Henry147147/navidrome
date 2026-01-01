@@ -13,22 +13,18 @@ import (
 
 // Model identifiers.
 const (
-	ModelMuQ      = "muq"
-	ModelQwen3    = "qwen3"
-	ModelFlamingo = "flamingo"
-)
-
-// Collection names for Milvus.
-const (
-	CollectionFlamingoAudio = "flamingo_audio_embedding"
+	ModelLyrics      = "lyrics"
+	ModelDescription = "description"
+	ModelFlamingo    = "flamingo"
 )
 
 // PipelineConfig configures batch processing behavior.
 type PipelineConfig struct {
-	BatchTimeout       time.Duration // Time to wait before processing partial batch
-	BatchSize          int           // Maximum items per batch
-	EnableDescriptions bool          // Enable stage 2 (audio -> description)
-	EnableTextEmbed    bool          // Enable stage 3 (description -> text embedding)
+	BatchTimeout      time.Duration // Time to wait before processing partial batch
+	BatchSize         int           // Maximum items per batch
+	EnableLyrics      bool          // Enable lyrics embedding
+	EnableDescription bool          // Enable audio description embedding
+	EnableFlamingo    bool          // Enable flamingo audio embedding
 }
 
 // TrackContext holds intermediate state for a track being processed.
@@ -40,17 +36,17 @@ type TrackContext struct {
 	Artist    string
 	Title     string
 	Album     string
+	Lyrics    string // Lyrics text if available
 
-	// Stage 1 results: audio -> audio embedding
-	AudioEmbedding []float64
-	ModelID        string
+	// Stage 1 results: lyrics -> lyrics embedding
+	LyricsEmbedding []float64
 
-	// Stage 2 results: audio -> text description + flamingo audio embedding
-	Description       string
+	// Stage 2 results: audio -> description -> description embedding
+	Description          string
+	DescriptionEmbedding []float64
+
+	// Stage 3 results: audio -> flamingo embedding
 	FlamingoEmbedding []float64
-
-	// Stage 3 results: text description -> text embedding
-	TextEmbedding []float64
 
 	// Status
 	Error error
@@ -185,17 +181,19 @@ func (p *Pipeline) processBatch(batch []*TrackContext) {
 	log.Info(ctx, "Processing embedding batch", "count", len(batch))
 	start := time.Now()
 
-	// Stage 1: Audio embeddings for ALL tracks
-	p.stage1AudioEmbedding(ctx, batch)
-
-	// Stage 2: Descriptions for ALL tracks (if enabled)
-	if p.config.EnableDescriptions {
-		p.stage2Description(ctx, batch)
+	// Stage 1: Lyrics embeddings (if enabled and lyrics available)
+	if p.config.EnableLyrics {
+		p.stageLyricsEmbedding(ctx, batch)
 	}
 
-	// Stage 3: Text embeddings for ALL descriptions (if enabled)
-	if p.config.EnableTextEmbed {
-		p.stage3TextEmbedding(ctx, batch)
+	// Stage 2: Audio description -> description embedding (if enabled)
+	if p.config.EnableDescription {
+		p.stageDescriptionEmbedding(ctx, batch)
+	}
+
+	// Stage 3: Flamingo audio embedding (if enabled)
+	if p.config.EnableFlamingo {
+		p.stageFlamingoEmbedding(ctx, batch)
 	}
 
 	// Store results in Milvus
@@ -212,7 +210,127 @@ func (p *Pipeline) processBatch(batch []*TrackContext) {
 	}
 }
 
-func (p *Pipeline) stage1AudioEmbedding(ctx context.Context, batch []*TrackContext) {
+func (p *Pipeline) stageLyricsEmbedding(ctx context.Context, batch []*TrackContext) {
+	// Collect tracks with lyrics
+	requests := make([]llamacpp.TextEmbedRequest, 0, len(batch))
+	indices := make([]int, 0, len(batch))
+
+	for i, track := range batch {
+		if track.Error != nil || track.Lyrics == "" {
+			continue
+		}
+		requests = append(requests, llamacpp.TextEmbedRequest{
+			Text: track.Lyrics,
+		})
+		indices = append(indices, i)
+	}
+
+	if len(requests) == 0 {
+		return
+	}
+
+	log.Debug(ctx, "Stage: Lyrics embedding", "count", len(requests))
+
+	responses, err := p.llamaClient.EmbedTextBatch(ctx, requests)
+	if err != nil {
+		// Non-fatal: continue without lyrics embeddings
+		log.Warn(ctx, "Lyrics embedding failed (non-fatal)", err)
+		return
+	}
+
+	for j, resp := range responses {
+		if j >= len(indices) {
+			break
+		}
+		idx := indices[j]
+		if resp.Error != "" {
+			log.Warn(ctx, "Lyrics embedding failed", "track", batch[idx].TrackName, "error", resp.Error)
+			continue
+		}
+		batch[idx].LyricsEmbedding = resp.Embedding
+	}
+}
+
+func (p *Pipeline) stageDescriptionEmbedding(ctx context.Context, batch []*TrackContext) {
+	// First, get audio descriptions
+	descRequests := make([]llamacpp.AudioDescribeRequest, 0, len(batch))
+	descIndices := make([]int, 0, len(batch))
+
+	for i, track := range batch {
+		if track.Error != nil {
+			continue
+		}
+		descRequests = append(descRequests, llamacpp.AudioDescribeRequest{
+			AudioPath: track.FilePath,
+		})
+		descIndices = append(descIndices, i)
+	}
+
+	if len(descRequests) == 0 {
+		return
+	}
+
+	log.Debug(ctx, "Stage: Audio description", "count", len(descRequests))
+
+	descResponses, err := p.llamaClient.DescribeAudioBatch(ctx, descRequests)
+	if err != nil {
+		log.Warn(ctx, "Audio description failed (non-fatal)", err)
+		return
+	}
+
+	// Assign descriptions
+	for j, resp := range descResponses {
+		if j >= len(descIndices) {
+			break
+		}
+		idx := descIndices[j]
+		if resp.Error != "" {
+			log.Warn(ctx, "Audio description failed", "track", batch[idx].TrackName, "error", resp.Error)
+			continue
+		}
+		batch[idx].Description = resp.Description
+	}
+
+	// Now embed the descriptions
+	embedRequests := make([]llamacpp.TextEmbedRequest, 0, len(batch))
+	embedIndices := make([]int, 0, len(batch))
+
+	for i, track := range batch {
+		if track.Error != nil || track.Description == "" {
+			continue
+		}
+		embedRequests = append(embedRequests, llamacpp.TextEmbedRequest{
+			Text: track.Description,
+		})
+		embedIndices = append(embedIndices, i)
+	}
+
+	if len(embedRequests) == 0 {
+		return
+	}
+
+	log.Debug(ctx, "Stage: Description text embedding", "count", len(embedRequests))
+
+	embedResponses, err := p.llamaClient.EmbedTextBatch(ctx, embedRequests)
+	if err != nil {
+		log.Warn(ctx, "Description embedding failed (non-fatal)", err)
+		return
+	}
+
+	for j, resp := range embedResponses {
+		if j >= len(embedIndices) {
+			break
+		}
+		idx := embedIndices[j]
+		if resp.Error != "" {
+			log.Warn(ctx, "Description embedding failed", "track", batch[idx].TrackName, "error", resp.Error)
+			continue
+		}
+		batch[idx].DescriptionEmbedding = resp.Embedding
+	}
+}
+
+func (p *Pipeline) stageFlamingoEmbedding(ctx context.Context, batch []*TrackContext) {
 	// Collect valid tracks
 	requests := make([]llamacpp.AudioEmbedRequest, 0, len(batch))
 	indices := make([]int, 0, len(batch))
@@ -231,58 +349,11 @@ func (p *Pipeline) stage1AudioEmbedding(ctx context.Context, batch []*TrackConte
 		return
 	}
 
-	log.Debug(ctx, "Stage 1: Audio embedding", "count", len(requests))
+	log.Debug(ctx, "Stage: Flamingo audio embedding", "count", len(requests))
 
-	// Call llama.cpp batch endpoint
 	responses, err := p.llamaClient.EmbedAudioBatch(ctx, requests)
 	if err != nil {
-		log.Error(ctx, "Stage 1 failed", err)
-		for _, idx := range indices {
-			batch[idx].Error = fmt.Errorf("stage1 audio embedding: %w", err)
-		}
-		return
-	}
-
-	// Assign results
-	for j, resp := range responses {
-		if j >= len(indices) {
-			break
-		}
-		idx := indices[j]
-		if resp.Error != "" {
-			batch[idx].Error = fmt.Errorf("audio embedding: %s", resp.Error)
-			continue
-		}
-		batch[idx].AudioEmbedding = resp.Embedding
-		batch[idx].ModelID = resp.ModelID
-	}
-}
-
-func (p *Pipeline) stage2Description(ctx context.Context, batch []*TrackContext) {
-	// Collect tracks that passed stage 1
-	requests := make([]llamacpp.AudioDescribeRequest, 0, len(batch))
-	indices := make([]int, 0, len(batch))
-
-	for i, track := range batch {
-		if track.Error != nil {
-			continue
-		}
-		requests = append(requests, llamacpp.AudioDescribeRequest{
-			AudioPath: track.FilePath,
-		})
-		indices = append(indices, i)
-	}
-
-	if len(requests) == 0 {
-		return
-	}
-
-	log.Debug(ctx, "Stage 2: Audio description", "count", len(requests))
-
-	responses, err := p.llamaClient.DescribeAudioBatch(ctx, requests)
-	if err != nil {
-		// Non-fatal: continue without descriptions
-		log.Warn(ctx, "Stage 2 failed (non-fatal)", err)
+		log.Warn(ctx, "Flamingo embedding failed (non-fatal)", err)
 		return
 	}
 
@@ -292,53 +363,10 @@ func (p *Pipeline) stage2Description(ctx context.Context, batch []*TrackContext)
 		}
 		idx := indices[j]
 		if resp.Error != "" {
-			// Non-fatal for individual items
-			log.Warn(ctx, "Audio description failed", "track", batch[idx].TrackName, "error", resp.Error)
+			log.Warn(ctx, "Flamingo embedding failed", "track", batch[idx].TrackName, "error", resp.Error)
 			continue
 		}
-		batch[idx].Description = resp.Description
-		batch[idx].FlamingoEmbedding = resp.AudioEmbedding
-	}
-}
-
-func (p *Pipeline) stage3TextEmbedding(ctx context.Context, batch []*TrackContext) {
-	// Collect tracks with descriptions
-	requests := make([]llamacpp.TextEmbedRequest, 0, len(batch))
-	indices := make([]int, 0, len(batch))
-
-	for i, track := range batch {
-		if track.Error != nil || track.Description == "" {
-			continue
-		}
-		requests = append(requests, llamacpp.TextEmbedRequest{
-			Text: track.Description,
-		})
-		indices = append(indices, i)
-	}
-
-	if len(requests) == 0 {
-		return
-	}
-
-	log.Debug(ctx, "Stage 3: Text embedding", "count", len(requests))
-
-	responses, err := p.llamaClient.EmbedTextBatch(ctx, requests)
-	if err != nil {
-		// Non-fatal: continue without text embeddings
-		log.Warn(ctx, "Stage 3 failed (non-fatal)", err)
-		return
-	}
-
-	for j, resp := range responses {
-		if j >= len(indices) {
-			break
-		}
-		idx := indices[j]
-		if resp.Error != "" {
-			log.Warn(ctx, "Text embedding failed", "track", batch[idx].TrackName, "error", resp.Error)
-			continue
-		}
-		batch[idx].TextEmbedding = resp.Embedding
+		batch[idx].FlamingoEmbedding = resp.Embedding
 	}
 }
 
@@ -353,29 +381,29 @@ type EmbeddingData struct {
 
 func (p *Pipeline) storeResults(ctx context.Context, batch []*TrackContext) {
 	// Group by collection type and batch insert
-	var audioData, descData, flamingoData []EmbeddingData
+	var lyricsData, descData, flamingoData []EmbeddingData
 
 	for _, track := range batch {
 		if track.Error != nil {
 			continue
 		}
 
-		// Store audio embedding
-		if len(track.AudioEmbedding) > 0 {
-			audioData = append(audioData, EmbeddingData{
+		// Store lyrics embedding
+		if len(track.LyricsEmbedding) > 0 {
+			lyricsData = append(lyricsData, EmbeddingData{
 				Name:      track.TrackName,
-				Embedding: track.AudioEmbedding,
-				ModelID:   track.ModelID,
+				Embedding: track.LyricsEmbedding,
+				ModelID:   ModelLyrics,
 			})
 		}
 
-		// Store text embedding (with description)
-		if len(track.TextEmbedding) > 0 {
+		// Store description embedding (with description text)
+		if len(track.DescriptionEmbedding) > 0 {
 			descData = append(descData, EmbeddingData{
 				Name:        track.TrackName,
-				Embedding:   track.TextEmbedding,
+				Embedding:   track.DescriptionEmbedding,
 				Description: track.Description,
-				ModelID:     ModelQwen3,
+				ModelID:     ModelDescription,
 			})
 		}
 
@@ -390,18 +418,18 @@ func (p *Pipeline) storeResults(ctx context.Context, batch []*TrackContext) {
 	}
 
 	// Batch upsert to each collection
-	if len(audioData) > 0 {
-		milvusData := toMilvusData(audioData)
-		if err := p.milvus.Upsert(ctx, CollectionEmbedding, milvusData); err != nil {
-			log.Error(ctx, "Failed to store audio embeddings", err, "count", len(audioData))
+	if len(lyricsData) > 0 {
+		milvusData := toMilvusData(lyricsData)
+		if err := p.milvus.Upsert(ctx, milvus.CollectionLyrics, milvusData); err != nil {
+			log.Error(ctx, "Failed to store lyrics embeddings", err, "count", len(lyricsData))
 		} else {
-			log.Debug(ctx, "Stored audio embeddings", "count", len(audioData))
+			log.Debug(ctx, "Stored lyrics embeddings", "count", len(lyricsData))
 		}
 	}
 
 	if len(descData) > 0 {
 		milvusData := toMilvusData(descData)
-		if err := p.milvus.Upsert(ctx, CollectionDescriptionEmbedding, milvusData); err != nil {
+		if err := p.milvus.Upsert(ctx, milvus.CollectionDescription, milvusData); err != nil {
 			log.Error(ctx, "Failed to store description embeddings", err, "count", len(descData))
 		} else {
 			log.Debug(ctx, "Stored description embeddings", "count", len(descData))
@@ -410,7 +438,7 @@ func (p *Pipeline) storeResults(ctx context.Context, batch []*TrackContext) {
 
 	if len(flamingoData) > 0 {
 		milvusData := toMilvusData(flamingoData)
-		if err := p.milvus.Upsert(ctx, CollectionFlamingoAudio, milvusData); err != nil {
+		if err := p.milvus.Upsert(ctx, milvus.CollectionFlamingo, milvusData); err != nil {
 			log.Error(ctx, "Failed to store flamingo embeddings", err, "count", len(flamingoData))
 		} else {
 			log.Debug(ctx, "Stored flamingo embeddings", "count", len(flamingoData))

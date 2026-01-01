@@ -24,10 +24,11 @@ type LLMConfig struct {
 // EmbedderConfig holds embedder pipeline configuration.
 // Note: This is re-exported from embedder subpackage for external use.
 type EmbedderConfig struct {
-	BatchTimeout       time.Duration // Time to wait before processing partial batch
-	BatchSize          int           // Maximum items per batch
-	EnableDescriptions bool          // Enable stage 2 (audio -> description)
-	EnableTextEmbed    bool          // Enable stage 3 (description -> text embedding)
+	BatchTimeout      time.Duration // Time to wait before processing partial batch
+	BatchSize         int           // Maximum items per batch
+	EnableLyrics      bool          // Enable lyrics text embedding
+	EnableDescription bool          // Enable audio description embedding
+	EnableFlamingo    bool          // Enable flamingo audio embedding
 }
 
 // EngineConfig holds recommendation engine configuration.

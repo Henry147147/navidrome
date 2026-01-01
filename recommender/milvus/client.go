@@ -13,16 +13,16 @@ import (
 
 // Collection names for Milvus.
 const (
-	CollectionEmbedding            = "embedding"                // MuQ audio (1536D)
-	CollectionDescriptionEmbedding = "description_embedding"    // Qwen3 text (2560D)
-	CollectionFlamingoAudio        = "flamingo_audio_embedding" // Flamingo (1024D)
+	CollectionLyrics      = "lyrics_embedding"       // Lyrics text embedding
+	CollectionDescription = "description_embedding"  // Audio description text embedding
+	CollectionFlamingo    = "flamingo_audio_embedding" // Flamingo audio embedding
 )
 
 // Embedding dimensions.
 const (
-	DimMuQ           = 1536 // 512 * 3 (enriched: mean + IQR sigma + dmean)
-	DimQwen3         = 2560
-	DimFlamingoAudio = 1024
+	DimLyrics      = 4096 // Lyrics text embedding dimension
+	DimDescription = 4096 // Description text embedding dimension
+	DimFlamingo    = 1024 // Flamingo audio embedding dimension
 )
 
 // Config holds Milvus connection settings.
@@ -94,9 +94,9 @@ func (c *Client) EnsureCollections(ctx context.Context) error {
 		name string
 		dim  int
 	}{
-		{CollectionEmbedding, DimMuQ},
-		{CollectionDescriptionEmbedding, DimQwen3},
-		{CollectionFlamingoAudio, DimFlamingoAudio},
+		{CollectionLyrics, DimLyrics},
+		{CollectionDescription, DimDescription},
+		{CollectionFlamingo, DimFlamingo},
 	}
 
 	for _, col := range collections {

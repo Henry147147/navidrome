@@ -14,11 +14,11 @@ import (
 
 // Config holds embedder configuration.
 type Config struct {
-	BatchTimeout       time.Duration
-	BatchSize          int
-	EnableDescriptions bool
-	EnableTextEmbed    bool
-	EnableLyricsEmbed  bool
+	BatchTimeout      time.Duration
+	BatchSize         int
+	EnableLyrics      bool // Enable lyrics text embedding
+	EnableDescription bool // Enable audio description embedding
+	EnableFlamingo    bool // Enable flamingo audio embedding
 }
 
 // EmbedRequest contains all information needed to embed a track.
@@ -33,12 +33,11 @@ type EmbedRequest struct {
 
 // EmbedResult contains the results of embedding a track.
 type EmbedResult struct {
-	TrackName         string
-	LyricEmbedding    []float64
-	TextEmbedding     []float64
-	FlamingoEmbedding []float64
-	Description       string
-	ModelID           string
+	TrackName            string
+	LyricsEmbedding      []float64
+	DescriptionEmbedding []float64
+	FlamingoEmbedding    []float64
+	Description          string
 }
 
 // StatusRequest contains information for checking embedding status.
@@ -77,10 +76,11 @@ func New(cfg Config, llm *llamacpp.Client, milvus *milvus.Client) *Embedder {
 	}
 
 	e.pipeline = NewPipeline(PipelineConfig{
-		BatchTimeout:       cfg.BatchTimeout,
-		BatchSize:          cfg.BatchSize,
-		EnableDescriptions: cfg.EnableDescriptions,
-		EnableTextEmbed:    cfg.EnableTextEmbed,
+		BatchTimeout:      cfg.BatchTimeout,
+		BatchSize:         cfg.BatchSize,
+		EnableLyrics:      cfg.EnableLyrics,
+		EnableDescription: cfg.EnableDescription,
+		EnableFlamingo:    cfg.EnableFlamingo,
 	}, llm, milvus)
 
 	return e
@@ -137,12 +137,11 @@ func (e *Embedder) EmbedAudio(ctx context.Context, req EmbedRequest) (*EmbedResu
 	}
 
 	return &EmbedResult{
-		TrackName:         trackCtx.TrackName,
-		AudioEmbedding:    trackCtx.AudioEmbedding,
-		TextEmbedding:     trackCtx.TextEmbedding,
-		FlamingoEmbedding: trackCtx.FlamingoEmbedding,
-		Description:       trackCtx.Description,
-		ModelID:           trackCtx.ModelID,
+		TrackName:            trackCtx.TrackName,
+		LyricsEmbedding:      trackCtx.LyricsEmbedding,
+		DescriptionEmbedding: trackCtx.DescriptionEmbedding,
+		FlamingoEmbedding:    trackCtx.FlamingoEmbedding,
+		Description:          trackCtx.Description,
 	}, nil
 }
 
@@ -187,23 +186,28 @@ func (e *Embedder) CheckStatus(ctx context.Context, req StatusRequest) (*StatusR
 	}
 
 	// Check existence in each collection
-	audioExists, err := e.vectorStore.Exists(ctx, CollectionEmbedding, names)
+	lyricsExists, err := e.vectorStore.Exists(ctx, milvus.CollectionLyrics, names)
 	if err != nil {
-		return nil, fmt.Errorf("check audio embeddings: %w", err)
+		return nil, fmt.Errorf("check lyrics embeddings: %w", err)
 	}
 
-	descExists, err := e.vectorStore.Exists(ctx, CollectionDescriptionEmbedding, names)
+	descExists, err := e.vectorStore.Exists(ctx, milvus.CollectionDescription, names)
 	if err != nil {
 		return nil, fmt.Errorf("check description embeddings: %w", err)
 	}
 
+	flamingoExists, err := e.vectorStore.Exists(ctx, milvus.CollectionFlamingo, names)
+	if err != nil {
+		return nil, fmt.Errorf("check flamingo embeddings: %w", err)
+	}
+
 	// Find the canonical name (first match found)
 	var canonicalNameResult string
-	var hasAudio, hasDesc bool
+	var hasLyrics, hasDesc, hasFlamingo bool
 	for _, name := range names {
-		if audioExists[name] {
+		if lyricsExists[name] {
 			canonicalNameResult = name
-			hasAudio = true
+			hasLyrics = true
 			break
 		}
 	}
@@ -216,10 +220,19 @@ func (e *Embedder) CheckStatus(ctx context.Context, req StatusRequest) (*StatusR
 			break
 		}
 	}
+	for _, name := range names {
+		if flamingoExists[name] {
+			if canonicalNameResult == "" {
+				canonicalNameResult = name
+			}
+			hasFlamingo = true
+			break
+		}
+	}
 
 	return &StatusResult{
-		Embedded:          hasAudio || hasDesc,
-		HasAudioEmbedding: hasAudio,
+		Embedded:          hasLyrics || hasDesc || hasFlamingo,
+		HasAudioEmbedding: hasFlamingo,
 		HasDescription:    hasDesc,
 		CanonicalName:     canonicalNameResult,
 	}, nil
@@ -251,11 +264,6 @@ func (e *Embedder) Close() error {
 	return nil
 }
 
-// Collection names.
-const (
-	CollectionEmbedding            = "embedding"
-	CollectionDescriptionEmbedding = "description_embedding"
-)
 
 // buildPossibleNames generates all possible track names from a status request.
 func buildPossibleNames(req StatusRequest) []string {

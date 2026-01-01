@@ -70,8 +70,8 @@ func (c *Client) buildSchema(name string, dim int) *entity.Schema {
 		},
 	}
 
-	// Add description field for the description_embedding collection
-	if name == CollectionDescriptionEmbedding {
+	// Add description field for the description collection
+	if name == CollectionDescription {
 		schema.Fields = append(schema.Fields, &entity.Field{
 			Name:     "description",
 			DataType: entity.FieldTypeVarChar,

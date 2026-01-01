@@ -242,8 +242,9 @@ type embedderOptions struct {
 	LlamaCppTextURL     string        // llama.cpp text embedding endpoint
 	BatchTimeout        time.Duration // Time to wait before processing batch
 	BatchSize           int           // Max items per batch
-	EnableDescriptions  bool          // Enable stage 2 (audio -> description)
-	EnableTextEmbed     bool          // Enable stage 3 (description -> text embedding)
+	EnableLyrics        bool          // Enable lyrics text embedding
+	EnableDescription   bool          // Enable audio description embedding
+	EnableFlamingo      bool          // Enable flamingo audio embedding
 }
 
 type milvusOptions struct {

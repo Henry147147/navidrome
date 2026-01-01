@@ -86,12 +86,11 @@ type EmbedRequest struct {
 
 // EmbedResult contains the results of embedding a track.
 type EmbedResult struct {
-	TrackName       string
-	AudioEmbedding  []float64
-	TextEmbedding   []float64
-	FlamingoEmbedding []float64
-	Description     string
-	ModelID         string
+	TrackName            string
+	LyricsEmbedding      []float64
+	DescriptionEmbedding []float64
+	FlamingoEmbedding    []float64
+	Description          string
 }
 
 // StatusRequest contains information for checking embedding status.

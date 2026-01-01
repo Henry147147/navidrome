@@ -94,10 +94,11 @@ func NewLlamaCppClient() *llamacpp.Client {
 // NewEmbedder creates the main embedder.
 func NewEmbedder(llama *llamacpp.Client, milvusClient *milvus.Client) *embedder.Embedder {
 	cfg := embedder.Config{
-		BatchTimeout:       conf.Server.Recommendations.Embedder.BatchTimeout,
-		BatchSize:          conf.Server.Recommendations.Embedder.BatchSize,
-		EnableDescriptions: conf.Server.Recommendations.Embedder.EnableDescriptions,
-		EnableTextEmbed:    conf.Server.Recommendations.Embedder.EnableTextEmbed,
+		BatchTimeout:      conf.Server.Recommendations.Embedder.BatchTimeout,
+		BatchSize:         conf.Server.Recommendations.Embedder.BatchSize,
+		EnableLyrics:      conf.Server.Recommendations.Embedder.EnableLyrics,
+		EnableDescription: conf.Server.Recommendations.Embedder.EnableDescription,
+		EnableFlamingo:    conf.Server.Recommendations.Embedder.EnableFlamingo,
 	}
 
 	// Use defaults if not configured
@@ -115,7 +116,7 @@ func NewEmbedder(llama *llamacpp.Client, milvusClient *milvus.Client) *embedder.
 func NewRecommendationEngine(milvusClient *milvus.Client, res *resolver.Resolver) *engine.Engine {
 	cfg := engine.Config{
 		DefaultTopK:      conf.Server.Recommendations.DefaultLimit * 3,
-		DefaultModels:    []string{engine.ModelMuQ, engine.ModelQwen3},
+		DefaultModels:    []string{engine.ModelLyrics, engine.ModelDescription, engine.ModelFlamingo},
 		DefaultMerge:     "union",
 		DefaultDiversity: conf.Server.Recommendations.Diversity,
 	}

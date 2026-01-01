@@ -12,9 +12,9 @@ import (
 
 // Model identifiers.
 const (
-	ModelMuQ      = "muq"
-	ModelQwen3    = "qwen3"
-	ModelFlamingo = "flamingo"
+	ModelLyrics      = "lyrics"      // Lyrics text embedding
+	ModelDescription = "description" // Audio description text embedding
+	ModelFlamingo    = "flamingo"    // Flamingo audio embedding
 )
 
 // Config holds recommendation engine configuration.
@@ -29,7 +29,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		DefaultTopK:      75,
-		DefaultModels:    []string{ModelMuQ, ModelQwen3},
+		DefaultModels:    []string{ModelLyrics, ModelDescription, ModelFlamingo},
 		DefaultMerge:     "union",
 		DefaultDiversity: 0.0,
 	}
@@ -75,14 +75,14 @@ type RecommendationResponse struct {
 // CollectionForModel returns the Milvus collection name for a model.
 func CollectionForModel(model string) string {
 	switch model {
-	case ModelMuQ:
-		return milvus.CollectionEmbedding
-	case ModelQwen3:
-		return milvus.CollectionDescriptionEmbedding
+	case ModelLyrics:
+		return milvus.CollectionLyrics
+	case ModelDescription:
+		return milvus.CollectionDescription
 	case ModelFlamingo:
-		return milvus.CollectionFlamingoAudio
+		return milvus.CollectionFlamingo
 	default:
-		return milvus.CollectionEmbedding
+		return milvus.CollectionLyrics
 	}
 }
 
@@ -102,7 +102,7 @@ type TrackNameResolver interface {
 // New creates a new recommendation Engine.
 func New(cfg Config, milvus *milvus.Client, resolver TrackNameResolver) *Engine {
 	if len(cfg.DefaultModels) == 0 {
-		cfg.DefaultModels = []string{ModelMuQ, ModelQwen3}
+		cfg.DefaultModels = []string{ModelLyrics, ModelDescription, ModelFlamingo}
 	}
 	if cfg.DefaultMerge == "" {
 		cfg.DefaultMerge = "union"

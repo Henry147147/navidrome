@@ -69,12 +69,12 @@ func CreateNativeAPIRouter(ctx context.Context) *nativeapi.Router {
 	artworkArtwork := artwork.NewArtwork(dataStore, fileCache, fFmpeg, provider)
 	cacheWarmer := artwork.NewCacheWarmer(artworkArtwork, fileCache)
 	broker := events.GetBroker()
-	scannerScanner := scanner.New(ctx, dataStore, cacheWarmer, broker, playlists, metricsMetrics)
+	scannerScanner := newScanner(ctx, dataStore, cacheWarmer, broker, playlists, metricsMetrics)
 	watcher := scanner.GetWatcher(dataStore, scannerScanner)
 	library := core.NewLibrary(dataStore, scannerScanner, watcher, broker)
 	maintenance := core.NewMaintenance(dataStore)
-	recommenderClient := subsonic.NewRecommendationClient()
-	router := nativeapi.New(dataStore, share, playlists, insights, library, maintenance, recommenderClient)
+	recommendationClient := subsonic.NewNoopRecommendationClient()
+	router := nativeapi.New(dataStore, share, playlists, insights, library, maintenance, recommendationClient)
 	return router
 }
 
@@ -96,11 +96,11 @@ func CreateSubsonicAPIRouter(ctx context.Context) *subsonic.Router {
 	cacheWarmer := artwork.NewCacheWarmer(artworkArtwork, fileCache)
 	broker := events.GetBroker()
 	playlists := core.NewPlaylists(dataStore)
-	scannerScanner := scanner.New(ctx, dataStore, cacheWarmer, broker, playlists, metricsMetrics)
+	scannerScanner := newScanner(ctx, dataStore, cacheWarmer, broker, playlists, metricsMetrics)
 	playTracker := scrobbler.GetPlayTracker(dataStore, broker, manager)
 	playbackServer := playback.GetInstance(dataStore)
-	recommenderClient := subsonic.NewRecommendationClient()
-	router := subsonic.New(dataStore, artworkArtwork, mediaStreamer, archiver, players, provider, scannerScanner, broker, playlists, playTracker, share, playbackServer, metricsMetrics, recommenderClient)
+	recommendationClient := subsonic.NewNoopRecommendationClient()
+	router := subsonic.New(dataStore, artworkArtwork, mediaStreamer, archiver, players, provider, scannerScanner, broker, playlists, playTracker, share, playbackServer, metricsMetrics, recommendationClient)
 	return router
 }
 
@@ -165,7 +165,7 @@ func CreateScanner(ctx context.Context) scanner.Scanner {
 	cacheWarmer := artwork.NewCacheWarmer(artworkArtwork, fileCache)
 	broker := events.GetBroker()
 	playlists := core.NewPlaylists(dataStore)
-	scannerScanner := scanner.New(ctx, dataStore, cacheWarmer, broker, playlists, metricsMetrics)
+	scannerScanner := newScanner(ctx, dataStore, cacheWarmer, broker, playlists, metricsMetrics)
 	return scannerScanner
 }
 
@@ -182,7 +182,7 @@ func CreateScanWatcher(ctx context.Context) scanner.Watcher {
 	cacheWarmer := artwork.NewCacheWarmer(artworkArtwork, fileCache)
 	broker := events.GetBroker()
 	playlists := core.NewPlaylists(dataStore)
-	scannerScanner := scanner.New(ctx, dataStore, cacheWarmer, broker, playlists, metricsMetrics)
+	scannerScanner := newScanner(ctx, dataStore, cacheWarmer, broker, playlists, metricsMetrics)
 	watcher := scanner.GetWatcher(dataStore, scannerScanner)
 	return watcher
 }
@@ -204,7 +204,12 @@ func getPluginManager() plugins.Manager {
 
 // wire_injectors.go:
 
-var allProviders = wire.NewSet(core.Set, artwork.Set, server.New, subsonic.New, nativeapi.New, public.New, persistence.New, lastfm.NewRouter, listenbrainz.NewRouter, events.GetBroker, scanner.New, scanner.GetWatcher, plugins.GetManager, metrics.GetPrometheusInstance, db.Db, subsonic.NewRecommendationClient, wire.Bind(new(agents.PluginLoader), new(plugins.Manager)), wire.Bind(new(scrobbler.PluginLoader), new(plugins.Manager)), wire.Bind(new(metrics.PluginLoader), new(plugins.Manager)), wire.Bind(new(core.Scanner), new(scanner.Scanner)), wire.Bind(new(core.Watcher), new(scanner.Watcher)))
+var allProviders = wire.NewSet(core.Set, artwork.Set, server.New, subsonic.New, nativeapi.New, public.New, subsonic.NewNoopRecommendationClient, persistence.New, lastfm.NewRouter, listenbrainz.NewRouter, events.GetBroker, newScanner, scanner.GetWatcher, plugins.GetManager, metrics.GetPrometheusInstance, db.Db, wire.Bind(new(agents.PluginLoader), new(plugins.Manager)), wire.Bind(new(scrobbler.PluginLoader), new(plugins.Manager)), wire.Bind(new(metrics.PluginLoader), new(plugins.Manager)), wire.Bind(new(core.Scanner), new(scanner.Scanner)), wire.Bind(new(core.Watcher), new(scanner.Watcher)))
+
+// newScanner creates a scanner with no options (uses default Python client if available).
+func newScanner(ctx context.Context, ds model.DataStore, cw artwork.CacheWarmer, broker events.Broker, pls core.Playlists, m metrics.Metrics) scanner.Scanner {
+	return scanner.New(ctx, ds, cw, broker, pls, m)
+}
 
 func GetPluginManager(ctx context.Context) plugins.Manager {
 	manager := getPluginManager()
