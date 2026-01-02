@@ -46,12 +46,11 @@ var allProviders = wire.NewSet(
 	wire.Bind(new(agents.PluginLoader), new(plugins.Manager)),
 	wire.Bind(new(scrobbler.PluginLoader), new(plugins.Manager)),
 	wire.Bind(new(metrics.PluginLoader), new(plugins.Manager)),
-	wire.Bind(new(core.Scanner), new(scanner.Scanner)),
 	wire.Bind(new(core.Watcher), new(scanner.Watcher)),
 )
 
 // newScanner creates a scanner with no options (uses default Python client if available).
-func newScanner(ctx context.Context, ds model.DataStore, cw artwork.CacheWarmer, broker events.Broker, pls core.Playlists, m metrics.Metrics) scanner.Scanner {
+func newScanner(ctx context.Context, ds model.DataStore, cw artwork.CacheWarmer, broker events.Broker, pls core.Playlists, m metrics.Metrics) model.Scanner {
 	return scanner.New(ctx, ds, cw, broker, pls, m)
 }
 
@@ -109,7 +108,7 @@ func CreatePrometheus() metrics.Metrics {
 	))
 }
 
-func CreateScanner(ctx context.Context) scanner.Scanner {
+func CreateScanner(ctx context.Context) model.Scanner {
 	panic(wire.Build(
 		allProviders,
 	))

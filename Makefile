@@ -16,7 +16,7 @@ DOCKER_TAG ?= deluan/navidrome:develop
 
 # Taglib version to use in cross-compilation, from https://github.com/navidrome/cross-taglib
 CROSS_TAGLIB_VERSION ?= 2.1.1-1
-GOLANGCI_LINT_VERSION ?= v2.5.0
+GOLANGCI_LINT_VERSION ?= v2.7.2
 JQ_VERSION ?= jq-1.7.1
 
 UI_SRC_FILES := $(shell find ui -type f -not -path "ui/build/*" -not -path "ui/node_modules/*")
@@ -55,7 +55,7 @@ testall: test-race test-i18n test-js ##@Development Run Go and JS tests
 .PHONY: testall
 
 test-race: ##@Development Run Go tests with race detector
-	go test -tags netgo -race -shuffle=on ./...
+	go test -tags netgo -race -shuffle=on  $(PKG)
 .PHONY: test-race
 
 test-js: ##@Development Run JS tests

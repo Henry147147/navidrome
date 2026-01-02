@@ -3,6 +3,7 @@ package deezer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/utils/cache"
+	"github.com/navidrome/navidrome/utils/slice"
 )
 
 const deezerAgentName = "deezer"
@@ -32,7 +34,7 @@ func deezerConstructor(dataStore model.DataStore) agents.Interface {
 		Timeout: consts.DefaultHttpClientTimeOut,
 	}
 	cachedHttpClient := cache.NewHTTPClient(httpClient, consts.DefaultHttpClientTimeOut)
-	agent.client = newClient(cachedHttpClient)
+	agent.client = newClient(cachedHttpClient, conf.Server.Deezer.Language)
 	return agent
 }
 
@@ -81,11 +83,71 @@ func (s *deezerAgent) searchArtist(ctx context.Context, name string) (*Artist, e
 		return nil, err
 	}
 
+	log.Trace(ctx, "Artists found", "count", len(artists), "searched_name", name)
+	for i := range artists {
+		log.Trace(ctx, fmt.Sprintf("Artists found #%d", i), "name", artists[i].Name, "id", artists[i].ID, "link", artists[i].Link)
+		if i > 2 {
+			break
+		}
+	}
+
 	// If the first one has the same name, that's the one
 	if !strings.EqualFold(artists[0].Name, name) {
+		log.Trace(ctx, "Top artist do not match", "searched_name", name, "found_name", artists[0].Name)
 		return nil, agents.ErrNotFound
 	}
+	log.Trace(ctx, "Found artist", "name", artists[0].Name, "id", artists[0].ID, "link", artists[0].Link)
 	return &artists[0], err
+}
+
+func (s *deezerAgent) GetSimilarArtists(ctx context.Context, _, name, _ string, limit int) ([]agents.Artist, error) {
+	artist, err := s.searchArtist(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	related, err := s.client.getRelatedArtists(ctx, artist.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	res := slice.Map(related, func(r Artist) agents.Artist {
+		return agents.Artist{
+			Name: r.Name,
+		}
+	})
+	if len(res) > limit {
+		res = res[:limit]
+	}
+	return res, nil
+}
+
+func (s *deezerAgent) GetArtistTopSongs(ctx context.Context, _, artistName, _ string, count int) ([]agents.Song, error) {
+	artist, err := s.searchArtist(ctx, artistName)
+	if err != nil {
+		return nil, err
+	}
+
+	tracks, err := s.client.getTopTracks(ctx, artist.ID, count)
+	if err != nil {
+		return nil, err
+	}
+
+	res := slice.Map(tracks, func(r Track) agents.Song {
+		return agents.Song{
+			Name: r.Title,
+		}
+	})
+	return res, nil
+}
+
+func (s *deezerAgent) GetArtistBiography(ctx context.Context, _, name, _ string) (string, error) {
+	artist, err := s.searchArtist(ctx, name)
+	if err != nil {
+		return "", err
+	}
+
+	return s.client.getArtistBio(ctx, artist.ID)
 }
 
 func init() {

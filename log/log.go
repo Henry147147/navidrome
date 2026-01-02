@@ -29,8 +29,8 @@ var redacted = &Hook{
 		"(Secret:\")[\\w]*",
 		"(Spotify.*ID:\")[\\w]*",
 		"(PasswordEncryptionKey:[\\s]*\")[^\"]*",
-		"(ReverseProxyUserHeader:[\\s]*\")[^\"]*",
-		"(ReverseProxyWhitelist:[\\s]*\")[^\"]*",
+		"(UserHeader:[\\s]*\")[^\"]*",
+		"(TrustedSources:[\\s]*\")[^\"]*",
 		"(MetricsPath:[\\s]*\")[^\"]*",
 		"(DevAutoCreateAdminPassword:[\\s]*\")[^\"]*",
 		"(DevAutoLoginUsername:[\\s]*\")[^\"]*",
@@ -82,7 +82,7 @@ var (
 func SetLevel(l Level) {
 	loggerMu.Lock()
 	currentLevel = l
-	defaultLogger.SetLevel(logrus.TraceLevel)
+	defaultLogger.Level = logrus.TraceLevel
 	loggerMu.Unlock()
 	logrus.SetLevel(logrus.Level(l))
 }
@@ -226,14 +226,13 @@ func Writer() io.Writer {
 func shouldLog(requiredLevel Level, skip int) bool {
 	loggerMu.RLock()
 	level := currentLevel
-	levelsCopy := make([]levelPath, len(logLevels))
-	copy(levelsCopy, logLevels)
+	levels := logLevels
 	loggerMu.RUnlock()
 
 	if level >= requiredLevel {
 		return true
 	}
-	if len(levelsCopy) == 0 {
+	if len(levels) == 0 {
 		return false
 	}
 
@@ -243,7 +242,7 @@ func shouldLog(requiredLevel Level, skip int) bool {
 	}
 
 	file = strings.TrimPrefix(file, rootPath)
-	for _, lp := range levelsCopy {
+	for _, lp := range levels {
 		if strings.HasPrefix(file, lp.path) {
 			return lp.level >= requiredLevel
 		}

@@ -118,6 +118,9 @@ const ActivityPanel = () => {
         return translate('activity.fullScan')
       case 'quick':
         return translate('activity.quickScan')
+      case 'full-selective':
+      case 'quick-selective':
+        return translate('activity.selectiveScan')
       default:
         return ''
     }
