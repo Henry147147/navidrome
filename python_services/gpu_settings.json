@@ -1,7 +1,0 @@
-{
-  "maxGpuMemoryGb": 28,
-  "precision": "fp16",
-  "enableCpuOffload": true,
-  "device": "auto",
-  "estimatedVramGb": 28
-}
