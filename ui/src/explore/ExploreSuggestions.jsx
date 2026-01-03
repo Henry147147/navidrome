@@ -359,7 +359,7 @@ const ExploreSuggestions = () => {
   const [settingsMessage, setSettingsMessage] = useState(null)
 
   // Multi-model recommendation options
-  const [selectedModels, setSelectedModels] = useState(['muq'])
+  const [selectedModels, setSelectedModels] = useState(['qwen3'])
   const [mergeStrategy, setMergeStrategy] = useState('union')
   const [minModelAgreement, setMinModelAgreement] = useState(1)
 
@@ -577,7 +577,7 @@ const ExploreSuggestions = () => {
       limit: settings.mixLength,
       diversity: settings.baseDiversity,
       // Multi-model options
-      models: selectedModels.length > 0 ? selectedModels : ['muq'],
+      models: selectedModels.length > 0 ? selectedModels : ['qwen3'],
       mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
       minModelAgreement:
         selectedModels.length > 1 ? minModelAgreement : undefined,

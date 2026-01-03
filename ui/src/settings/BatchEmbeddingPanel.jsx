@@ -104,14 +104,14 @@ const useStyles = makeStyles((theme) => ({
 
 const MODEL_OPTIONS = [
   {
-    value: 'muq',
-    label: 'MuQ (1536-dim)',
-    description: 'MuQ-large-msd-iter audio embedding model',
+    value: 'qwen3',
+    label: 'Qwen Text (4096-dim)',
+    description: 'Music Flamingo captions + Qwen text embeddings for lyrics/descriptions',
   },
   {
-    value: 'qwen3',
-    label: 'Qwen3 (2560-dim)',
-    description: 'Music Flamingo captions + Qwen3 text embeddings',
+    value: 'flamingo',
+    label: 'Flamingo Audio (1024-dim)',
+    description: 'Music Flamingo audio embeddings for direct audio similarity',
   },
 ]
 
@@ -132,7 +132,7 @@ const BatchEmbeddingPanel = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
   const [progress, setProgress] = useState(null)
-  const [selectedModels, setSelectedModels] = useState(['muq', 'qwen3'])
+  const [selectedModels, setSelectedModels] = useState(['qwen3', 'flamingo'])
   const [clearExisting, setClearExisting] = useState(true)
   const [error, setError] = useState(null)
   const [gpuSettings, setGpuSettings] = useState(DEFAULT_GPU_SETTINGS)
