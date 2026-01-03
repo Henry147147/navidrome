@@ -19,7 +19,6 @@ func (e *Engine) searchMultiModel(ctx context.Context, seedEmbeddings map[string
 			continue
 		}
 
-		collection := CollectionForModel(model)
 		topK := e.config.DefaultTopK
 		if topK < req.Limit*3 {
 			topK = req.Limit * 3 // Search for more than we need to allow for filtering
@@ -44,34 +43,23 @@ func (e *Engine) searchMultiModel(ctx context.Context, seedEmbeddings map[string
 		}
 
 		// Perform search
-		hits, err := e.milvus.SearchMultiple(ctx, collection, vectors, milvus.SearchOptions{
-			TopK:         topK,
-			ExcludeNames: excludeNames,
-		})
+		candidates, err := e.searchSingleModel(ctx, model, vectors, excludeNames, topK)
 		if err != nil {
 			log.Warn(ctx, "Search failed for model", "model", model, "error", err)
 			continue
 		}
-
-		// Convert hits to candidates with weighted scores
-		candidates := make([]candidate, 0, len(hits))
-		for _, hit := range hits {
-			// Apply diversity if configured
-			score := hit.Distance
-			if req.Diversity > 0 {
-				score = score * (1 - req.Diversity)
+		if req.Diversity > 0 {
+			for i := range candidates {
+				score := candidates[i].Score * (1 - req.Diversity)
+				candidates[i].Score = score
+				if len(candidates[i].Scores) > 0 {
+					candidates[i].Scores[0] = score
+				}
 			}
-
-			candidates = append(candidates, candidate{
-				Name:   hit.Name,
-				Score:  score,
-				Scores: []float64{score},
-				Models: []string{model},
-			})
 		}
 
 		modelResults[model] = candidates
-		log.Debug(ctx, "Model search complete", "model", model, "hits", len(hits))
+		log.Debug(ctx, "Model search complete", "model", model, "hits", len(candidates))
 	}
 
 	// Merge results based on strategy

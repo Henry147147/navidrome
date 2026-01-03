@@ -203,8 +203,8 @@ func (c *Client) Count(ctx context.Context, collection string) (int64, error) {
 	}
 
 	var count int64
-	fmt.Sscanf(countStr, "%d", &count)
-	return count, nil
+	_, err = fmt.Sscanf(countStr, "%d", &count)
+	return count, err
 }
 
 // buildInFilter creates a filter expression for matching names.

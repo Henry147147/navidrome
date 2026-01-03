@@ -92,6 +92,8 @@ func cosineSimilarity(a, b []float64) float64 {
 }
 
 // euclideanDistance computes the Euclidean distance between two vectors.
+//
+//nolint:unused // reserved for future alternative distance metrics.
 func euclideanDistance(a, b []float64) float64 {
 	if len(a) != len(b) {
 		return math.MaxFloat64
