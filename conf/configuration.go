@@ -242,14 +242,26 @@ type recommendationsOptions struct {
 }
 
 type embedderOptions struct {
-	LlamaCppAudioURL    string        // llama.cpp audio embedding endpoint
-	LlamaCppDescribeURL string        // llama.cpp audio description endpoint
-	LlamaCppTextURL     string        // llama.cpp text embedding endpoint
-	BatchTimeout        time.Duration // Time to wait before processing batch
-	BatchSize           int           // Max items per batch
-	EnableLyrics        bool          // Enable lyrics text embedding
-	EnableDescription   bool          // Enable audio description embedding
-	EnableFlamingo      bool          // Enable flamingo audio embedding
+	BatchTimeout      time.Duration // Time to wait before processing batch
+	BatchSize         int           // Max items per batch
+	EnableLyrics      bool          // Enable lyrics text embedding
+	EnableDescription bool          // Enable audio description embedding
+	EnableFlamingo    bool          // Enable flamingo audio embedding
+	Llama             llamaOptions  // Local llama.cpp settings
+}
+
+type llamaOptions struct {
+	LibraryPath        string // Path to llama.cpp shared libraries
+	TextModelPath      string // Path to text embedding model
+	AudioModelPath     string // Path to audio model
+	AudioProjectorPath string // Path to audio projector (mmproj)
+	ContextSize        int    // Context size override (0 = default)
+	BatchSize          int    // Batch size override (0 = default)
+	UBatchSize         int    // Micro batch size override (0 = default)
+	Threads            int    // Threads for inference (0 = default)
+	ThreadsBatch       int    // Threads for batch processing (0 = default)
+	GPULayers          int    // Layers to offload to GPU (0 = default)
+	MainGPU            int    // Main GPU index (0 = default)
 }
 
 type milvusOptions struct {
@@ -618,13 +630,22 @@ func setViperDefaults() {
 	viper.SetDefault("recommendations.defaultlimit", 25)
 	viper.SetDefault("recommendations.diversity", 0.15)
 	// Go-native embedder options
-	viper.SetDefault("recommendations.embedder.llamacppaudiourl", "http://localhost:8080/embed/audio")
-	viper.SetDefault("recommendations.embedder.llamacppdescribeurl", "http://localhost:8081/describe")
-	viper.SetDefault("recommendations.embedder.llamacpptexturl", "http://localhost:8082/embed/text")
 	viper.SetDefault("recommendations.embedder.batchtimeout", 5*time.Second)
 	viper.SetDefault("recommendations.embedder.batchsize", 50)
-	viper.SetDefault("recommendations.embedder.enabledescriptions", true)
-	viper.SetDefault("recommendations.embedder.enabletextembed", true)
+	viper.SetDefault("recommendations.embedder.enablelyrics", true)
+	viper.SetDefault("recommendations.embedder.enabledescription", true)
+	viper.SetDefault("recommendations.embedder.enableflamingo", false)
+	viper.SetDefault("recommendations.embedder.llama.librarypath", "./llama-lib")
+	viper.SetDefault("recommendations.embedder.llama.textmodelpath", "./models/music-flamingo.gguf")
+	viper.SetDefault("recommendations.embedder.llama.audiomodelpath", "./models/music-flamingo.gguf")
+	viper.SetDefault("recommendations.embedder.llama.audioprojectorpath", "./models/mmproj-music-flamingo.gguf")
+	viper.SetDefault("recommendations.embedder.llama.contextsize", 0)
+	viper.SetDefault("recommendations.embedder.llama.batchsize", 0)
+	viper.SetDefault("recommendations.embedder.llama.ubatchsize", 0)
+	viper.SetDefault("recommendations.embedder.llama.threads", 0)
+	viper.SetDefault("recommendations.embedder.llama.threadsbatch", 0)
+	viper.SetDefault("recommendations.embedder.llama.gpulayers", 0)
+	viper.SetDefault("recommendations.embedder.llama.maingpu", 0)
 	// Milvus options
 	viper.SetDefault("recommendations.milvus.uri", "http://localhost:19530")
 	viper.SetDefault("recommendations.milvus.timeout", 30*time.Second)

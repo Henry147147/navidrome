@@ -264,7 +264,6 @@ func (e *Embedder) Close() error {
 	return nil
 }
 
-
 // buildPossibleNames generates all possible track names from a status request.
 func buildPossibleNames(req StatusRequest) []string {
 	names := make([]string, 0, 3+len(req.AlternateNames))

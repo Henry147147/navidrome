@@ -64,31 +64,34 @@ func NewMilvusClient() (*milvus.Client, func(), error) {
 }
 
 // NewLlamaCppClient creates a llama.cpp client from configuration.
-func NewLlamaCppClient() *llamacpp.Client {
+func NewLlamaCppClient() (*llamacpp.Client, func(), error) {
 	cfg := llamacpp.Config{
-		AudioEmbedURL:    conf.Server.Recommendations.Embedder.LlamaCppAudioURL,
-		AudioDescribeURL: conf.Server.Recommendations.Embedder.LlamaCppDescribeURL,
-		TextEmbedURL:     conf.Server.Recommendations.Embedder.LlamaCppTextURL,
-		Timeout:          conf.Server.Recommendations.EmbedTimeout,
-		MaxRetries:       3,
-		RetryBackoff:     2 * time.Second,
+		LibraryPath:        conf.Server.Recommendations.Embedder.Llama.LibraryPath,
+		TextModelPath:      conf.Server.Recommendations.Embedder.Llama.TextModelPath,
+		AudioModelPath:     conf.Server.Recommendations.Embedder.Llama.AudioModelPath,
+		AudioProjectorPath: conf.Server.Recommendations.Embedder.Llama.AudioProjectorPath,
+		ContextSize:        uint32(conf.Server.Recommendations.Embedder.Llama.ContextSize),
+		BatchSize:          uint32(conf.Server.Recommendations.Embedder.Llama.BatchSize),
+		UBatchSize:         uint32(conf.Server.Recommendations.Embedder.Llama.UBatchSize),
+		Threads:            conf.Server.Recommendations.Embedder.Llama.Threads,
+		ThreadsBatch:       conf.Server.Recommendations.Embedder.Llama.ThreadsBatch,
+		GPULayers:          conf.Server.Recommendations.Embedder.Llama.GPULayers,
+		MainGPU:            conf.Server.Recommendations.Embedder.Llama.MainGPU,
+		Timeout:            conf.Server.Recommendations.EmbedTimeout,
+		MaxRetries:         3,
+		RetryBackoff:       2 * time.Second,
 	}
 
-	// Use defaults if not configured
-	if cfg.AudioEmbedURL == "" {
-		cfg.AudioEmbedURL = "http://localhost:8080/embed/audio"
-	}
-	if cfg.AudioDescribeURL == "" {
-		cfg.AudioDescribeURL = "http://localhost:8081/describe"
-	}
-	if cfg.TextEmbedURL == "" {
-		cfg.TextEmbedURL = "http://localhost:8082/embed/text"
-	}
-	if cfg.Timeout <= 0 {
-		cfg.Timeout = 10 * time.Minute
+	client, err := llamacpp.NewClient(cfg)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	return llamacpp.NewClient(cfg)
+	cleanup := func() {
+		_ = client.Close()
+	}
+
+	return client, cleanup, nil
 }
 
 // NewEmbedder creates the main embedder.

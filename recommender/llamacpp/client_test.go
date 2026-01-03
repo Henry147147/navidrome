@@ -2,6 +2,7 @@ package llamacpp
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -9,214 +10,249 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type fakeBackend struct {
+	initErr   error
+	healthErr error
+	closed    bool
+
+	audioReqs []AudioEmbedRequest
+	descReqs  []AudioDescribeRequest
+	textReqs  []TextEmbedRequest
+
+	audioResp []AudioEmbedResponse
+	descResp  []AudioDescribeResponse
+	textResp  []TextEmbedResponse
+}
+
+func (f *fakeBackend) Init(ctx context.Context) error {
+	return f.initErr
+}
+
+func (f *fakeBackend) Close() error {
+	f.closed = true
+	return nil
+}
+
+func (f *fakeBackend) EmbedAudioBatch(ctx context.Context, reqs []AudioEmbedRequest) ([]AudioEmbedResponse, error) {
+	f.audioReqs = append([]AudioEmbedRequest(nil), reqs...)
+	return f.audioResp, nil
+}
+
+func (f *fakeBackend) DescribeAudioBatch(ctx context.Context, reqs []AudioDescribeRequest) ([]AudioDescribeResponse, error) {
+	f.descReqs = append([]AudioDescribeRequest(nil), reqs...)
+	return f.descResp, nil
+}
+
+func (f *fakeBackend) EmbedTextBatch(ctx context.Context, reqs []TextEmbedRequest) ([]TextEmbedResponse, error) {
+	f.textReqs = append([]TextEmbedRequest(nil), reqs...)
+	return f.textResp, nil
+}
+
+func (f *fakeBackend) HealthCheck(ctx context.Context) error {
+	return f.healthErr
+}
+
 func TestConfig(t *testing.T) {
 	cfg := Config{
-		AudioEmbedURL:    "http://localhost:8080/embed/audio",
-		AudioDescribeURL: "http://localhost:8081/describe",
-		TextEmbedURL:     "http://localhost:8082/embed/text",
-		Timeout:          10 * time.Minute,
-		MaxRetries:       3,
-		RetryBackoff:     2 * time.Second,
+		LibraryPath:        "/llama",
+		TextModelPath:      "/models/text.gguf",
+		AudioModelPath:     "/models/audio.gguf",
+		AudioProjectorPath: "/models/audio.mmproj",
+		ContextSize:        4096,
+		BatchSize:          512,
+		UBatchSize:         128,
+		Threads:            8,
+		ThreadsBatch:       4,
+		GPULayers:          40,
+		MainGPU:            1,
+		Timeout:            10 * time.Minute,
+		MaxRetries:         3,
+		RetryBackoff:       2 * time.Second,
 	}
 
-	assert.Equal(t, "http://localhost:8080/embed/audio", cfg.AudioEmbedURL)
-	assert.Equal(t, "http://localhost:8081/describe", cfg.AudioDescribeURL)
-	assert.Equal(t, "http://localhost:8082/embed/text", cfg.TextEmbedURL)
+	assert.Equal(t, "/llama", cfg.LibraryPath)
+	assert.Equal(t, "/models/text.gguf", cfg.TextModelPath)
+	assert.Equal(t, "/models/audio.gguf", cfg.AudioModelPath)
+	assert.Equal(t, "/models/audio.mmproj", cfg.AudioProjectorPath)
+	assert.Equal(t, uint32(4096), cfg.ContextSize)
+	assert.Equal(t, uint32(512), cfg.BatchSize)
+	assert.Equal(t, uint32(128), cfg.UBatchSize)
+	assert.Equal(t, 8, cfg.Threads)
+	assert.Equal(t, 4, cfg.ThreadsBatch)
+	assert.Equal(t, 40, cfg.GPULayers)
+	assert.Equal(t, 1, cfg.MainGPU)
 	assert.Equal(t, 10*time.Minute, cfg.Timeout)
 	assert.Equal(t, 3, cfg.MaxRetries)
 	assert.Equal(t, 2*time.Second, cfg.RetryBackoff)
 }
 
 func TestNewClientDefaults(t *testing.T) {
-	cfg := Config{} // Zero values
-	c := NewClient(cfg)
+	backend := &fakeBackend{}
+	c, err := NewClient(Config{}, WithBackend(backend))
+	require.NoError(t, err)
+	defer func() { _ = c.Close() }()
 
-	assert.NotNil(t, c)
-	assert.Equal(t, "http://localhost:8080/embed/audio", c.config.AudioEmbedURL)
-	assert.Equal(t, "http://localhost:8081/describe", c.config.AudioDescribeURL)
-	assert.Equal(t, "http://localhost:8082/embed/text", c.config.TextEmbedURL)
-	assert.Equal(t, 10*time.Minute, c.config.Timeout)
-	assert.Equal(t, 3, c.config.MaxRetries)
-	assert.Equal(t, 2*time.Second, c.config.RetryBackoff)
+	defaults := DefaultConfig()
+	assert.Equal(t, defaults.LibraryPath, c.config.LibraryPath)
+	assert.Equal(t, defaults.TextModelPath, c.config.TextModelPath)
+	assert.Equal(t, defaults.AudioModelPath, c.config.AudioModelPath)
+	assert.Equal(t, defaults.AudioProjectorPath, c.config.AudioProjectorPath)
+	assert.Equal(t, defaults.Timeout, c.config.Timeout)
+	assert.Equal(t, defaults.MaxRetries, c.config.MaxRetries)
+	assert.Equal(t, defaults.RetryBackoff, c.config.RetryBackoff)
 }
 
 func TestNewClientWithConfig(t *testing.T) {
+	backend := &fakeBackend{}
 	cfg := Config{
-		AudioEmbedURL:    "http://custom:8080/embed/audio",
-		AudioDescribeURL: "http://custom:8081/describe",
-		TextEmbedURL:     "http://custom:8082/embed/text",
-		Timeout:          5 * time.Minute,
-		MaxRetries:       5,
-		RetryBackoff:     3 * time.Second,
+		LibraryPath:    "/custom/lib",
+		TextModelPath:  "/custom/text.gguf",
+		AudioModelPath: "/custom/audio.gguf",
+		Timeout:        5 * time.Minute,
+		MaxRetries:     5,
+		RetryBackoff:   3 * time.Second,
 	}
-	c := NewClient(cfg)
 
-	assert.NotNil(t, c)
-	assert.Equal(t, "http://custom:8080/embed/audio", c.config.AudioEmbedURL)
-	assert.Equal(t, "http://custom:8081/describe", c.config.AudioDescribeURL)
-	assert.Equal(t, "http://custom:8082/embed/text", c.config.TextEmbedURL)
+	c, err := NewClient(cfg, WithBackend(backend))
+	require.NoError(t, err)
+	defer func() { _ = c.Close() }()
+
+	assert.Equal(t, "/custom/lib", c.config.LibraryPath)
+	assert.Equal(t, "/custom/text.gguf", c.config.TextModelPath)
+	assert.Equal(t, "/custom/audio.gguf", c.config.AudioModelPath)
+	assert.Equal(t, DefaultAudioProjectorPath, c.config.AudioProjectorPath)
 	assert.Equal(t, 5*time.Minute, c.config.Timeout)
 	assert.Equal(t, 5, c.config.MaxRetries)
 	assert.Equal(t, 3*time.Second, c.config.RetryBackoff)
 }
 
-func TestAudioEmbedRequest(t *testing.T) {
-	req := AudioEmbedRequest{
-		AudioPath:  "/path/to/audio.mp3",
-		SampleRate: 48000,
-		BatchID:    "batch123",
-	}
-
-	assert.Equal(t, "/path/to/audio.mp3", req.AudioPath)
-	assert.Equal(t, 48000, req.SampleRate)
-	assert.Equal(t, "batch123", req.BatchID)
-}
-
-func TestAudioEmbedResponse(t *testing.T) {
-	resp := AudioEmbedResponse{
-		Embedding: []float64{0.1, 0.2, 0.3},
-		ModelID:   "flamingo",
-		Duration:  180.5,
-		Error:     "",
-	}
-
-	assert.Equal(t, []float64{0.1, 0.2, 0.3}, resp.Embedding)
-	assert.Equal(t, "flamingo", resp.ModelID)
-	assert.Equal(t, 180.5, resp.Duration)
-	assert.Empty(t, resp.Error)
-}
-
-func TestAudioDescribeRequest(t *testing.T) {
-	req := AudioDescribeRequest{
-		AudioPath: "/path/to/audio.mp3",
-		Prompt:    "Describe this music",
-	}
-
-	assert.Equal(t, "/path/to/audio.mp3", req.AudioPath)
-	assert.Equal(t, "Describe this music", req.Prompt)
-}
-
-func TestAudioDescribeResponse(t *testing.T) {
-	resp := AudioDescribeResponse{
-		Description:    "An upbeat electronic track",
-		AudioEmbedding: []float64{0.1, 0.2, 0.3},
-		ModelID:        "qwen",
-		Error:          "",
-	}
-
-	assert.Equal(t, "An upbeat electronic track", resp.Description)
-	assert.Equal(t, []float64{0.1, 0.2, 0.3}, resp.AudioEmbedding)
-	assert.Equal(t, "qwen", resp.ModelID)
-	assert.Empty(t, resp.Error)
-}
-
-func TestTextEmbedRequest(t *testing.T) {
-	req := TextEmbedRequest{
-		Text:    "Some text to embed",
-		ModelID: "lyrics",
-	}
-
-	assert.Equal(t, "Some text to embed", req.Text)
-	assert.Equal(t, "lyrics", req.ModelID)
-}
-
-func TestTextEmbedResponse(t *testing.T) {
-	resp := TextEmbedResponse{
-		Embedding: []float64{0.1, 0.2, 0.3},
-		ModelID:   "lyrics",
-		Dimension: 4096,
-		Error:     "",
-	}
-
-	assert.Equal(t, []float64{0.1, 0.2, 0.3}, resp.Embedding)
-	assert.Equal(t, "lyrics", resp.ModelID)
-	assert.Equal(t, 4096, resp.Dimension)
-	assert.Empty(t, resp.Error)
-}
-
-func TestEmbedAudioBatchStub(t *testing.T) {
-	c := NewClient(Config{})
-	ctx := context.Background()
-
-	// Empty batch should return nil
-	result, err := c.EmbedAudioBatch(ctx, nil)
-	assert.NoError(t, err)
-	assert.Nil(t, result)
-
-	result, err = c.EmbedAudioBatch(ctx, []AudioEmbedRequest{})
-	assert.NoError(t, err)
-	assert.Nil(t, result)
-
-	// Non-empty batch should return stub error
-	_, err = c.EmbedAudioBatch(ctx, []AudioEmbedRequest{{AudioPath: "/test.mp3"}})
+func TestNewClientInitError(t *testing.T) {
+	backend := &fakeBackend{initErr: errors.New("boom")}
+	_, err := NewClient(Config{}, WithBackend(backend))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not yet implemented")
+	assert.Contains(t, err.Error(), "boom")
 }
 
-func TestDescribeAudioBatchStub(t *testing.T) {
-	c := NewClient(Config{})
-	ctx := context.Background()
+func TestEmbedAudioBatchDelegates(t *testing.T) {
+	backend := &fakeBackend{
+		audioResp: []AudioEmbedResponse{{Embedding: []float64{0.1, 0.2}, ModelID: "audio"}},
+	}
+	c, err := NewClient(Config{}, WithBackend(backend))
+	require.NoError(t, err)
+	defer func() { _ = c.Close() }()
 
-	// Empty batch should return nil
-	result, err := c.DescribeAudioBatch(ctx, nil)
+	ctx := context.Background()
+	reqs := []AudioEmbedRequest{{AudioPath: "/test.mp3"}}
+	resp, err := c.EmbedAudioBatch(ctx, reqs)
+	require.NoError(t, err)
+
+	assert.Equal(t, reqs, backend.audioReqs)
+	assert.Equal(t, backend.audioResp, resp)
+}
+
+func TestDescribeAudioBatchDelegates(t *testing.T) {
+	backend := &fakeBackend{
+		descResp: []AudioDescribeResponse{{Description: "desc", ModelID: "audio"}},
+	}
+	c, err := NewClient(Config{}, WithBackend(backend))
+	require.NoError(t, err)
+	defer func() { _ = c.Close() }()
+
+	ctx := context.Background()
+	reqs := []AudioDescribeRequest{{AudioPath: "/test.mp3"}}
+	resp, err := c.DescribeAudioBatch(ctx, reqs)
+	require.NoError(t, err)
+
+	assert.Equal(t, reqs, backend.descReqs)
+	assert.Equal(t, backend.descResp, resp)
+}
+
+func TestEmbedTextBatchDelegates(t *testing.T) {
+	backend := &fakeBackend{
+		textResp: []TextEmbedResponse{{Embedding: []float64{0.1, 0.2}, ModelID: "text"}},
+	}
+	c, err := NewClient(Config{}, WithBackend(backend))
+	require.NoError(t, err)
+	defer func() { _ = c.Close() }()
+
+	ctx := context.Background()
+	reqs := []TextEmbedRequest{{Text: "hello"}}
+	resp, err := c.EmbedTextBatch(ctx, reqs)
+	require.NoError(t, err)
+
+	assert.Equal(t, reqs, backend.textReqs)
+	assert.Equal(t, backend.textResp, resp)
+}
+
+func TestEmbedAudioSingle(t *testing.T) {
+	backend := &fakeBackend{
+		audioResp: []AudioEmbedResponse{{Embedding: []float64{0.1, 0.2}, ModelID: "audio"}},
+	}
+	c, err := NewClient(Config{}, WithBackend(backend))
+	require.NoError(t, err)
+	defer func() { _ = c.Close() }()
+
+	ctx := context.Background()
+	resp, err := c.EmbedAudio(ctx, AudioEmbedRequest{AudioPath: "/test.mp3"})
+	require.NoError(t, err)
+	assert.Equal(t, backend.audioResp[0], *resp)
+}
+
+func TestDescribeAudioSingle(t *testing.T) {
+	backend := &fakeBackend{
+		descResp: []AudioDescribeResponse{{Description: "desc", ModelID: "audio"}},
+	}
+	c, err := NewClient(Config{}, WithBackend(backend))
+	require.NoError(t, err)
+	defer func() { _ = c.Close() }()
+
+	ctx := context.Background()
+	resp, err := c.DescribeAudio(ctx, AudioDescribeRequest{AudioPath: "/test.mp3"})
+	require.NoError(t, err)
+	assert.Equal(t, backend.descResp[0], *resp)
+}
+
+func TestEmbedTextSingle(t *testing.T) {
+	backend := &fakeBackend{
+		textResp: []TextEmbedResponse{{Embedding: []float64{0.1, 0.2}, ModelID: "text"}},
+	}
+	c, err := NewClient(Config{}, WithBackend(backend))
+	require.NoError(t, err)
+	defer func() { _ = c.Close() }()
+
+	ctx := context.Background()
+	resp, err := c.EmbedText(ctx, TextEmbedRequest{Text: "hello"})
+	require.NoError(t, err)
+	assert.Equal(t, backend.textResp[0], *resp)
+}
+
+func TestEmptyBatchesReturnNil(t *testing.T) {
+	backend := &fakeBackend{}
+	c, err := NewClient(Config{}, WithBackend(backend))
+	require.NoError(t, err)
+	defer func() { _ = c.Close() }()
+
+	ctx := context.Background()
+	audioResp, err := c.EmbedAudioBatch(ctx, nil)
 	assert.NoError(t, err)
-	assert.Nil(t, result)
+	assert.Nil(t, audioResp)
 
-	result, err = c.DescribeAudioBatch(ctx, []AudioDescribeRequest{})
+	descResp, err := c.DescribeAudioBatch(ctx, []AudioDescribeRequest{})
 	assert.NoError(t, err)
-	assert.Nil(t, result)
+	assert.Nil(t, descResp)
 
-	// Non-empty batch should return stub error
-	_, err = c.DescribeAudioBatch(ctx, []AudioDescribeRequest{{AudioPath: "/test.mp3"}})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not yet implemented")
-}
-
-func TestEmbedTextBatchStub(t *testing.T) {
-	c := NewClient(Config{})
-	ctx := context.Background()
-
-	// Empty batch should return nil
-	result, err := c.EmbedTextBatch(ctx, nil)
+	textResp, err := c.EmbedTextBatch(ctx, []TextEmbedRequest{})
 	assert.NoError(t, err)
-	assert.Nil(t, result)
-
-	result, err = c.EmbedTextBatch(ctx, []TextEmbedRequest{})
-	assert.NoError(t, err)
-	assert.Nil(t, result)
-
-	// Non-empty batch should return stub error
-	_, err = c.EmbedTextBatch(ctx, []TextEmbedRequest{{Text: "test"}})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not yet implemented")
+	assert.Nil(t, textResp)
 }
 
-func TestEmbedAudioStub(t *testing.T) {
-	c := NewClient(Config{})
-	ctx := context.Background()
+func TestHealthCheckDelegates(t *testing.T) {
+	backend := &fakeBackend{healthErr: errors.New("unhealthy")}
+	c, err := NewClient(Config{}, WithBackend(backend))
+	require.NoError(t, err)
+	defer func() { _ = c.Close() }()
 
-	// Should return stub error
-	_, err := c.EmbedAudio(ctx, AudioEmbedRequest{AudioPath: "/test.mp3"})
+	err = c.HealthCheck(context.Background())
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not yet implemented")
-}
-
-func TestDescribeAudioStub(t *testing.T) {
-	c := NewClient(Config{})
-	ctx := context.Background()
-
-	// Should return stub error
-	_, err := c.DescribeAudio(ctx, AudioDescribeRequest{AudioPath: "/test.mp3"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not yet implemented")
-}
-
-func TestEmbedTextStub(t *testing.T) {
-	c := NewClient(Config{})
-	ctx := context.Background()
-
-	// Should return stub error
-	_, err := c.EmbedText(ctx, TextEmbedRequest{Text: "test"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not yet implemented")
+	assert.Contains(t, err.Error(), "unhealthy")
 }

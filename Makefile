@@ -264,6 +264,14 @@ download-deps:
 	@go mod tidy # To revert any changes made by the `go mod download` command
 .PHONY: download-deps
 
+build-llama-bindings:
+	@echo "Building Llama bindings..."
+	@go install github.com/hybridgroup/yzma/cmd/yzma@latest
+	@echo "library installing to $(shell pwd)/llama-lib"
+	@chmod +x ./scripts/build-llama-cpp.sh
+	@./scripts/build-llama-cpp.sh
+.PHONY: build-llama-bindings
+
 check_env: check_go_env check_node_env
 .PHONY: check_env
 

@@ -59,7 +59,7 @@ type VectorStore interface {
 	Close() error
 }
 
-// LLMClient handles communication with the llama.cpp inference server.
+// LLMClient handles communication with the llama.cpp inference backend.
 type LLMClient interface {
 	// EmbedAudioBatch generates audio embeddings for multiple files.
 	EmbedAudioBatch(ctx context.Context, reqs []AudioEmbedRequest) ([]AudioEmbedResponse, error)

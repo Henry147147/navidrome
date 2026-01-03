@@ -10,15 +10,23 @@ type MilvusConfig struct {
 	MaxRetries int           // Max retry attempts
 }
 
-// LLMConfig holds llama.cpp server configuration.
+// LLMConfig holds llama.cpp configuration.
 // Note: This is re-exported from llamacpp subpackage for external use.
 type LLMConfig struct {
-	AudioEmbedURL    string        // Audio embedding endpoint
-	AudioDescribeURL string        // Audio description endpoint
-	TextEmbedURL     string        // Text embedding endpoint
-	Timeout          time.Duration // Request timeout
-	MaxRetries       int           // Max retry attempts
-	RetryBackoff     time.Duration // Initial backoff between retries
+	LibraryPath        string        // Path to llama.cpp shared libraries
+	TextModelPath      string        // Path to text embedding model
+	AudioModelPath     string        // Path to audio model
+	AudioProjectorPath string        // Path to audio projector (mmproj)
+	ContextSize        uint32        // Context size override (0 = default)
+	BatchSize          uint32        // Batch size override (0 = default)
+	UBatchSize         uint32        // Micro batch size override (0 = default)
+	Threads            int           // Threads for inference (0 = default)
+	ThreadsBatch       int           // Threads for batch processing (0 = default)
+	GPULayers          int           // Layers to offload to GPU (0 = default)
+	MainGPU            int           // Main GPU index (0 = default)
+	Timeout            time.Duration // Request timeout
+	MaxRetries         int           // Max retry attempts
+	RetryBackoff       time.Duration // Initial backoff between retries
 }
 
 // EmbedderConfig holds embedder pipeline configuration.

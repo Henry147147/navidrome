@@ -238,19 +238,19 @@ func TestRecommendationRequest(t *testing.T) {
 			{TrackID: "seed1", Weight: 1.0, Source: "history"},
 			{TrackID: "seed2", Weight: 0.5, Source: "liked", PlayedAt: &now},
 		},
-		Diversity:         0.3,
-		ExcludeTrackIDs:   []string{"exclude1"},
-		LibraryIDs:        []int{1, 2},
-		DislikedTrackIDs:  []string{"dislike1"},
-		DislikedArtistIDs: []string{"artist1"},
-		DislikeStrength:   0.5,
-		Models:            []string{"lyrics", "description"},
-		MergeStrategy:     "union",
-		ModelPriorities:   map[string]int{"lyrics": 1, "description": 2},
-		MinModelAgreement: 1,
-		NegativePrompts:   []string{"sad", "slow"},
+		Diversity:             0.3,
+		ExcludeTrackIDs:       []string{"exclude1"},
+		LibraryIDs:            []int{1, 2},
+		DislikedTrackIDs:      []string{"dislike1"},
+		DislikedArtistIDs:     []string{"artist1"},
+		DislikeStrength:       0.5,
+		Models:                []string{"lyrics", "description"},
+		MergeStrategy:         "union",
+		ModelPriorities:       map[string]int{"lyrics": 1, "description": 2},
+		MinModelAgreement:     1,
+		NegativePrompts:       []string{"sad", "slow"},
 		NegativePromptPenalty: 0.2,
-		NegativeEmbeddings:   map[string][][]float64{"lyrics": {{0.1, 0.2}}},
+		NegativeEmbeddings:    map[string][][]float64{"lyrics": {{0.1, 0.2}}},
 	}
 
 	assert.Equal(t, "user-123", req.UserID)
@@ -335,7 +335,7 @@ func TestRecommendationResponseTrackIDs(t *testing.T) {
 	resp := RecommendationResponse{
 		Tracks: []RecommendationItem{
 			{TrackID: "track1", Score: 0.9},
-			{TrackID: "", Score: 0.85},      // Empty should be filtered
+			{TrackID: "", Score: 0.85}, // Empty should be filtered
 			{TrackID: "track3", Score: 0.8},
 		},
 	}
@@ -396,17 +396,33 @@ func TestMilvusConfigStruct(t *testing.T) {
 
 func TestLLMConfigStruct(t *testing.T) {
 	cfg := LLMConfig{
-		AudioEmbedURL:    "http://localhost:8080/embed/audio",
-		AudioDescribeURL: "http://localhost:8081/describe",
-		TextEmbedURL:     "http://localhost:8082/embed/text",
-		Timeout:          10 * time.Minute,
-		MaxRetries:       3,
-		RetryBackoff:     2 * time.Second,
+		LibraryPath:        "/llama",
+		TextModelPath:      "/models/text.gguf",
+		AudioModelPath:     "/models/audio.gguf",
+		AudioProjectorPath: "/models/audio.mmproj",
+		ContextSize:        4096,
+		BatchSize:          512,
+		UBatchSize:         128,
+		Threads:            8,
+		ThreadsBatch:       4,
+		GPULayers:          40,
+		MainGPU:            1,
+		Timeout:            10 * time.Minute,
+		MaxRetries:         3,
+		RetryBackoff:       2 * time.Second,
 	}
 
-	assert.Equal(t, "http://localhost:8080/embed/audio", cfg.AudioEmbedURL)
-	assert.Equal(t, "http://localhost:8081/describe", cfg.AudioDescribeURL)
-	assert.Equal(t, "http://localhost:8082/embed/text", cfg.TextEmbedURL)
+	assert.Equal(t, "/llama", cfg.LibraryPath)
+	assert.Equal(t, "/models/text.gguf", cfg.TextModelPath)
+	assert.Equal(t, "/models/audio.gguf", cfg.AudioModelPath)
+	assert.Equal(t, "/models/audio.mmproj", cfg.AudioProjectorPath)
+	assert.Equal(t, uint32(4096), cfg.ContextSize)
+	assert.Equal(t, uint32(512), cfg.BatchSize)
+	assert.Equal(t, uint32(128), cfg.UBatchSize)
+	assert.Equal(t, 8, cfg.Threads)
+	assert.Equal(t, 4, cfg.ThreadsBatch)
+	assert.Equal(t, 40, cfg.GPULayers)
+	assert.Equal(t, 1, cfg.MainGPU)
 	assert.Equal(t, 10*time.Minute, cfg.Timeout)
 	assert.Equal(t, 3, cfg.MaxRetries)
 	assert.Equal(t, 2*time.Second, cfg.RetryBackoff)
