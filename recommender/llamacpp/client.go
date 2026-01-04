@@ -495,11 +495,16 @@ func (b *localBackend) EmbedAudioBatch(ctx context.Context, reqs []AudioEmbedReq
 			continue
 		}
 
-		// Use batch size from config, fallback to 2048 for audio
-		batchSize := int32(b.cfg.BatchSize)
-		if batchSize == 0 {
-			batchSize = 2048
+		tokenCount := countChunkTokens(chunks)
+		posCount := countChunkPositions(chunks)
+		if err := b.ensureAudioEvalCapacity(ctx, audio, tokenCount, posCount, true); err != nil {
+			mtmd.InputChunksFree(chunks)
+			mtmd.BitmapFree(bitmap)
+			responses[i] = AudioEmbedResponse{Error: fmt.Sprintf("ensure batch size failed: %v", err)}
+			continue
 		}
+
+		batchSize := int32(llama.NBatch(audio.embedCtx))
 
 		// Evaluate chunks through the embedding context
 		var newNPast llama.Pos
@@ -587,7 +592,7 @@ func (b *localBackend) DescribeAudioBatch(ctx context.Context, reqs []AudioDescr
 		// First call: Extract lyrics from the audio
 		lyrics, err := b.generateFromAudio(ctx, audio, bitmap, lyricsPrompt)
 		if err != nil {
-			log.Warn(ctx, "Lyrics extraction failed", err, "path", req.AudioPath)
+			log.Warn(ctx, "Lyrics extraction failed", "error", err, "path", req.AudioPath)
 			lyrics = ""
 		}
 
@@ -640,11 +645,14 @@ func (b *localBackend) generateFromAudio(ctx context.Context, audio *modelResour
 		return "", fmt.Errorf("tokenization failed: %d", result)
 	}
 
-	// Use batch size from config, fallback to 2048 for audio (needs to handle large audio chunks)
-	batchSize := int32(b.cfg.BatchSize)
-	if batchSize == 0 {
-		batchSize = 2048
+	tokenCount := countChunkTokens(chunks)
+	posCount := countChunkPositions(chunks)
+	if err := b.ensureAudioEvalCapacity(ctx, audio, tokenCount, posCount, false); err != nil {
+		mtmd.InputChunksFree(chunks)
+		return "", fmt.Errorf("ensure batch size failed: %w", err)
 	}
+
+	batchSize := int32(llama.NBatch(audio.ctx))
 
 	// Evaluate chunks through the generation context
 	var nPast llama.Pos
@@ -767,6 +775,10 @@ func (b *localBackend) EmbedTextBatch(ctx context.Context, reqs []TextEmbedReque
 		tokens := llama.Tokenize(text.vocab, req.Text, true, true)
 		if len(tokens) == 0 {
 			responses[i] = TextEmbedResponse{Error: "tokenization produced no tokens"}
+			continue
+		}
+		if err := b.ensureTextEvalCapacity(ctx, text, uint32(len(tokens))); err != nil {
+			responses[i] = TextEmbedResponse{Error: fmt.Sprintf("ensure batch size failed: %v", err)}
 			continue
 		}
 
@@ -970,9 +982,147 @@ func (b *localBackend) releaseAudio() {
 	b.freeAudioResources(audio)
 }
 
+func (b *localBackend) ensureTextEvalCapacity(ctx context.Context, text *modelResources, requiredTokens uint32) error {
+	if requiredTokens == 0 {
+		return nil
+	}
+	if text.embedCtx == 0 {
+		return fmt.Errorf("text embedding context not initialized")
+	}
+
+	currentBatch := llama.NBatch(text.embedCtx)
+	currentCtx := llama.NCtx(text.embedCtx)
+	newBatch := nextBatchSize(requiredTokens, currentBatch, uint32(b.cfg.BatchSize))
+	newCtx := nextContextSize(requiredTokens, currentCtx, uint32(b.cfg.ContextSize))
+	if currentBatch >= newBatch && currentCtx >= newCtx {
+		return nil
+	}
+
+	log.Warn(ctx, "Resizing llama.cpp context to fit text tokens",
+		"requiredTokens", requiredTokens,
+		"batchFrom", currentBatch,
+		"batchTo", newBatch,
+		"ctxFrom", currentCtx,
+		"ctxTo", newCtx,
+	)
+
+	b.textLoadMu.Lock()
+	defer b.textLoadMu.Unlock()
+
+	currentBatch = llama.NBatch(text.embedCtx)
+	currentCtx = llama.NCtx(text.embedCtx)
+	if currentBatch >= newBatch && currentCtx >= newCtx {
+		return nil
+	}
+
+	params := b.contextParams(true)
+	params.NBatch = newBatch
+	params.NCtx = newCtx
+	newCtxHandle, err := llama.InitFromModel(text.model, params)
+	if err != nil {
+		return fmt.Errorf("init text embedding context: %w", err)
+	}
+
+	old := text.embedCtx
+	text.embedCtx = newCtxHandle
+	if old != 0 {
+		_ = llama.Free(old)
+	}
+
+	return nil
+}
+
+func (b *localBackend) ensureAudioEvalCapacity(ctx context.Context, audio *modelResources, requiredTokens, requiredPositions uint32, embeddings bool) error {
+	if requiredTokens == 0 {
+		return nil
+	}
+
+	var targetCtx llama.Context
+	kind := "audio generation"
+	requiredCtx := requiredPositions
+	if requiredCtx == 0 {
+		requiredCtx = requiredTokens
+	}
+	if embeddings {
+		targetCtx = audio.embedCtx
+		kind = "audio embedding"
+	} else {
+		targetCtx = audio.ctx
+		requiredCtx += uint32(maxGenerationTokens)
+	}
+	const audioCtxMargin = 256
+	requiredCtx += audioCtxMargin
+	if targetCtx == 0 {
+		return fmt.Errorf("%s context not initialized", kind)
+	}
+
+	currentBatch := llama.NBatch(targetCtx)
+	currentCtx := llama.NCtx(targetCtx)
+	newBatch := nextBatchSize(requiredTokens, currentBatch, uint32(b.cfg.BatchSize))
+	newCtx := nextContextSize(requiredCtx, currentCtx, uint32(b.cfg.ContextSize))
+
+	if currentBatch >= newBatch && currentCtx >= newCtx {
+		return nil
+	}
+
+	log.Warn(ctx, "Resizing llama.cpp context to fit audio tokens",
+		"kind", kind,
+		"requiredTokens", requiredTokens,
+		"requiredCtx", requiredCtx,
+		"batchFrom", currentBatch,
+		"batchTo", newBatch,
+		"ctxFrom", currentCtx,
+		"ctxTo", newCtx,
+	)
+
+	b.audioLoadMu.Lock()
+	defer b.audioLoadMu.Unlock()
+
+	// Re-check under lock in case another goroutine already resized.
+	if embeddings {
+		targetCtx = audio.embedCtx
+	} else {
+		targetCtx = audio.ctx
+	}
+	currentBatch = llama.NBatch(targetCtx)
+	currentCtx = llama.NCtx(targetCtx)
+	if currentBatch >= newBatch && currentCtx >= newCtx {
+		return nil
+	}
+
+	params := b.contextParams(embeddings)
+	params.NBatch = newBatch
+	params.NCtx = newCtx
+	newEvalCtx, err := llama.InitFromModel(audio.model, params)
+	if err != nil {
+		return fmt.Errorf("init %s context: %w", kind, err)
+	}
+
+	if embeddings {
+		old := audio.embedCtx
+		audio.embedCtx = newEvalCtx
+		if old != 0 {
+			_ = llama.Free(old)
+		}
+	} else {
+		old := audio.ctx
+		audio.ctx = newEvalCtx
+		if old != 0 {
+			_ = llama.Free(old)
+		}
+	}
+
+	return nil
+}
+
 func (b *localBackend) loadTextModel(ctx context.Context) (*modelResources, error) {
 	log.Info(ctx, "Loading llama.cpp text model", "path", b.cfg.TextModelPath)
-	model, err := llama.ModelLoadFromFile(b.cfg.TextModelPath, b.modelParams())
+	var model llama.Model
+	err := withSilentLlamaLogs(func() error {
+		var loadErr error
+		model, loadErr = llama.ModelLoadFromFile(b.cfg.TextModelPath, b.modelParams())
+		return loadErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("load text model: %w", err)
 	}
@@ -992,7 +1142,12 @@ func (b *localBackend) loadTextModel(ctx context.Context) (*modelResources, erro
 
 func (b *localBackend) loadAudioModel(ctx context.Context) (*modelResources, error) {
 	log.Info(ctx, "Loading llama.cpp audio model", "path", b.cfg.AudioModelPath)
-	model, err := llama.ModelLoadFromFile(b.cfg.AudioModelPath, b.modelParams())
+	var model llama.Model
+	err := withSilentLlamaLogs(func() error {
+		var loadErr error
+		model, loadErr = llama.ModelLoadFromFile(b.cfg.AudioModelPath, b.modelParams())
+		return loadErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("load audio model: %w", err)
 	}
@@ -1013,7 +1168,11 @@ func (b *localBackend) loadAudioModel(ctx context.Context) (*modelResources, err
 
 	var mtmdCtx mtmd.Context
 	if b.cfg.AudioProjectorPath != "" {
-		mtmdCtx, err = mtmd.InitFromFile(b.cfg.AudioProjectorPath, model, b.mtmdParams())
+		err = withSilentLlamaLogs(func() error {
+			var initErr error
+			mtmdCtx, initErr = mtmd.InitFromFile(b.cfg.AudioProjectorPath, model, b.mtmdParams())
+			return initErr
+		})
 		if err != nil {
 			_ = llama.Free(embedCtx)
 			_ = llama.Free(lctx)
@@ -1137,6 +1296,7 @@ var (
 	mtmdLoadOnce sync.Once
 	mtmdLoadErr  error
 	mtmdLoadPath string
+	mtmdLogReady bool
 )
 
 func loadLlamaLibraries(path string) error {
@@ -1150,6 +1310,7 @@ func loadLlamaLibraries(path string) error {
 			llamaLoadErr = llama.Load(path)
 		}
 		if llamaLoadErr == nil {
+			configureLlamaLogging()
 			llama.Init()
 		}
 	})
@@ -1168,6 +1329,10 @@ func loadMTMDLibraries(path string) error {
 		mtmdLoadErr = ensureLibraryPath(path)
 		if mtmdLoadErr == nil {
 			mtmdLoadErr = mtmd.Load(path)
+			if mtmdLoadErr == nil {
+				mtmdLogReady = true
+				configureLlamaLogging()
+			}
 		}
 	})
 	if mtmdLoadErr != nil {
@@ -1219,6 +1384,93 @@ func prependEnvPath(envKey, path string) error {
 	}
 	log.Debug(context.Background(), "Prepending library search path", "env", envKey, "path", path)
 	return os.Setenv(envKey, path+string(os.PathListSeparator)+current)
+}
+
+func countChunkTokens(chunks mtmd.InputChunks) uint32 {
+	var total uint32
+	size := mtmd.InputChunksSize(chunks)
+	for i := uint32(0); i < size; i++ {
+		chunk := mtmd.InputChunksGet(chunks, i)
+		total += mtmd.InputChunkGetNTokens(chunk)
+	}
+	return total
+}
+
+func countChunkPositions(chunks mtmd.InputChunks) uint32 {
+	var total uint32
+	size := mtmd.InputChunksSize(chunks)
+	for i := uint32(0); i < size; i++ {
+		chunk := mtmd.InputChunksGet(chunks, i)
+		pos := uint32(mtmd.InputChunkGetNPos(chunk))
+		if pos == 0 {
+			pos = mtmd.InputChunkGetNTokens(chunk)
+		}
+		total += pos
+	}
+	return total
+}
+
+func nextBatchSize(required, current, configured uint32) uint32 {
+	desired := required
+	if configured > desired {
+		desired = configured
+	}
+	if desired <= current {
+		return current
+	}
+	const minBatch = 2048
+	if desired < minBatch {
+		desired = minBatch
+	}
+	const step = 256
+	if remainder := desired % step; remainder != 0 {
+		desired += step - remainder
+	}
+	return desired
+}
+
+func nextContextSize(required, current, configured uint32) uint32 {
+	desired := required
+	if configured > desired {
+		desired = configured
+	}
+	if desired <= current {
+		return current
+	}
+	const minCtx = 2048
+	if desired < minCtx {
+		desired = minCtx
+	}
+	const step = 256
+	if remainder := desired % step; remainder != 0 {
+		desired += step - remainder
+	}
+	return desired
+}
+
+func withSilentLlamaLogs(fn func() error) error {
+	llama.LogSet(llama.LogSilent())
+	if mtmdLogReady {
+		mtmd.LogSet(llama.LogSilent())
+	}
+	defer configureLlamaLogging()
+	return fn()
+}
+
+func configureLlamaLogging() {
+	mode := strings.TrimSpace(strings.ToLower(os.Getenv("ND_LLAMA_LOG")))
+	switch mode {
+	case "1", "true", "yes", "normal", "info", "debug":
+		llama.LogSet(llama.LogNormal)
+		if mtmdLogReady {
+			mtmd.LogSet(llama.LogNormal)
+		}
+	default:
+		llama.LogSet(llama.LogSilent())
+		if mtmdLogReady {
+			mtmd.LogSet(llama.LogSilent())
+		}
+	}
 }
 
 func preloadGGMLDeps(path string) error {

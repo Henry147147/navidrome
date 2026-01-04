@@ -121,6 +121,48 @@ func TestApplyDefaultsResolvesLibraryPath(t *testing.T) {
 	assert.Equal(t, expected, updated.LibraryPath)
 }
 
+func TestNextBatchSizeRoundsUp(t *testing.T) {
+	t.Run("uses min batch", func(t *testing.T) {
+		assert.Equal(t, uint32(2048), nextBatchSize(10, 0, 0))
+	})
+
+	t.Run("respects configured", func(t *testing.T) {
+		assert.Equal(t, uint32(4096), nextBatchSize(3000, 0, 4096))
+	})
+
+	t.Run("rounds to step", func(t *testing.T) {
+		assert.Equal(t, uint32(2304), nextBatchSize(2201, 0, 0))
+	})
+
+	t.Run("keeps current when sufficient", func(t *testing.T) {
+		assert.Equal(t, uint32(4096), nextBatchSize(1024, 4096, 0))
+	})
+}
+
+func TestNextContextSizeRoundsUp(t *testing.T) {
+	t.Run("uses min ctx", func(t *testing.T) {
+		assert.Equal(t, uint32(2048), nextContextSize(10, 0, 0))
+	})
+
+	t.Run("respects configured", func(t *testing.T) {
+		assert.Equal(t, uint32(4096), nextContextSize(3000, 0, 4096))
+	})
+
+	t.Run("rounds to step", func(t *testing.T) {
+		assert.Equal(t, uint32(2304), nextContextSize(2201, 0, 0))
+	})
+
+	t.Run("keeps current when sufficient", func(t *testing.T) {
+		assert.Equal(t, uint32(4096), nextContextSize(1024, 4096, 0))
+	})
+}
+
+func TestCountChunkPositionsFallbacksToTokens(t *testing.T) {
+	// This test ensures the helper behaves predictably when there are no chunks.
+	// It should return 0 without panicking, which is the same behavior as tokens.
+	assert.Equal(t, uint32(0), countChunkPositions(0))
+}
+
 func TestNewClientWithConfig(t *testing.T) {
 	backend := &fakeBackend{}
 	cfg := Config{
