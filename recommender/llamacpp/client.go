@@ -3,19 +3,22 @@ package llamacpp
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
+	"github.com/hybridgroup/yzma/pkg/loader"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 	"github.com/navidrome/navidrome/log"
 )
 
-const (
-	DefaultLibraryPath        = "./llama-lib"
+var (
+	DefaultLibraryPath        = defaultLibraryPath()
 	DefaultTextModelPath      = "./models/qwen-embedder.gguf"
 	DefaultAudioModelPath     = "./models/music-flamingo.gguf"
 	DefaultAudioProjectorPath = "./models/mmproj-music-flamingo.gguf"
@@ -35,10 +38,20 @@ Output only the lyrics or transcription, nothing else.`
 Format as a single cohesive paragraph.`
 
 	// Maximum tokens to generate for each response
-	maxGenerationTokens = 512
+	maxGenerationTokens = 2048
 )
 
-var ErrNotImplemented = errors.New("llama.cpp inference not yet implemented")
+func defaultLibraryPath() string {
+	path := os.Getenv("YZMA_LIB")
+	if path == "" {
+		path = "./llama-lib"
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	return absPath
+}
 
 // Config holds local llama.cpp configuration.
 type Config struct {
@@ -303,6 +316,11 @@ func applyDefaults(cfg Config) Config {
 	if cfg.LibraryPath == "" {
 		cfg.LibraryPath = defaults.LibraryPath
 	}
+	if cfg.LibraryPath != "" {
+		if absPath, err := filepath.Abs(cfg.LibraryPath); err == nil {
+			cfg.LibraryPath = absPath
+		}
+	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = defaults.Timeout
 	}
@@ -332,12 +350,16 @@ type modelResources struct {
 }
 
 type localBackend struct {
-	cfg    Config
-	mu     sync.RWMutex
-	ready  bool
-	closed bool
-	text   *modelResources
-	audio  *modelResources
+	cfg         Config
+	mu          sync.RWMutex
+	ready       bool
+	closed      bool
+	text        *modelResources
+	audio       *modelResources
+	textRefs    int
+	audioRefs   int
+	textLoadMu  sync.Mutex
+	audioLoadMu sync.Mutex
 }
 
 func newLocalBackend(cfg Config) *localBackend {
@@ -372,29 +394,7 @@ func (b *localBackend) Init(ctx context.Context) error {
 		}
 	}
 
-	var text *modelResources
-	var audio *modelResources
-	var err error
-
-	if b.cfg.TextModelPath != "" {
-		text, err = b.loadTextModel(ctx)
-		if err != nil {
-			b.closeResources()
-			return err
-		}
-	}
-
-	if b.cfg.AudioModelPath != "" {
-		audio, err = b.loadAudioModel(ctx)
-		if err != nil {
-			b.closeResources()
-			return err
-		}
-	}
-
 	b.mu.Lock()
-	b.text = text
-	b.audio = audio
 	b.ready = true
 	b.mu.Unlock()
 
@@ -426,7 +426,10 @@ func (b *localBackend) HealthCheck(ctx context.Context) error {
 		return fmt.Errorf("llama.cpp backend not initialized")
 	}
 	if b.text == nil && b.audio == nil {
-		return fmt.Errorf("llama.cpp backend has no loaded models")
+		if b.cfg.TextModelPath == "" && b.cfg.AudioModelPath == "" {
+			return fmt.Errorf("llama.cpp backend has no configured models")
+		}
+		return nil
 	}
 	if b.audio != nil && b.audio.mtmdCtx != 0 {
 		if !mtmd.SupportAudio(b.audio.mtmdCtx) {
@@ -441,13 +444,12 @@ func (b *localBackend) EmbedAudioBatch(ctx context.Context, reqs []AudioEmbedReq
 		return nil, nil
 	}
 
-	b.mu.RLock()
-	audio := b.audio
-	b.mu.RUnlock()
-
-	if audio == nil {
-		return nil, fmt.Errorf("audio model not loaded")
+	audio, release, err := b.acquireAudio(ctx)
+	if err != nil {
+		return nil, err
 	}
+	defer release()
+
 	if audio.mtmdCtx == 0 {
 		return nil, fmt.Errorf("audio projector not loaded")
 	}
@@ -555,13 +557,12 @@ func (b *localBackend) DescribeAudioBatch(ctx context.Context, reqs []AudioDescr
 		return nil, nil
 	}
 
-	b.mu.RLock()
-	audio := b.audio
-	b.mu.RUnlock()
-
-	if audio == nil {
-		return nil, fmt.Errorf("audio model not loaded")
+	audio, release, err := b.acquireAudio(ctx)
+	if err != nil {
+		return nil, err
 	}
+	defer release()
+
 	if audio.mtmdCtx == 0 {
 		return nil, fmt.Errorf("audio projector not loaded")
 	}
@@ -740,13 +741,11 @@ func (b *localBackend) EmbedTextBatch(ctx context.Context, reqs []TextEmbedReque
 		return nil, nil
 	}
 
-	b.mu.RLock()
-	text := b.text
-	b.mu.RUnlock()
-
-	if text == nil {
-		return nil, fmt.Errorf("text model not loaded")
+	text, release, err := b.acquireText(ctx)
+	if err != nil {
+		return nil, err
 	}
+	defer release()
 
 	log.Debug(ctx, "EmbedTextBatch processing", "count", len(reqs))
 	responses := make([]TextEmbedResponse, len(reqs))
@@ -807,6 +806,168 @@ func (b *localBackend) EmbedTextBatch(ctx context.Context, reqs []TextEmbedReque
 	}
 
 	return responses, nil
+}
+
+func (b *localBackend) acquireText(ctx context.Context) (*modelResources, func(), error) {
+	if b.cfg.TextModelPath == "" {
+		return nil, nil, fmt.Errorf("text model not configured")
+	}
+
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return nil, nil, fmt.Errorf("llama.cpp backend is closed")
+	}
+	if b.text != nil {
+		log.Debug(ctx, "llama.cpp text model already loaded")
+		b.textRefs++
+		text := b.text
+		b.mu.Unlock()
+		return text, b.releaseText, nil
+	}
+	b.mu.Unlock()
+
+	b.textLoadMu.Lock()
+	defer b.textLoadMu.Unlock()
+
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return nil, nil, fmt.Errorf("llama.cpp backend is closed")
+	}
+	if b.text != nil {
+		log.Debug(ctx, "llama.cpp text model already loaded")
+		b.textRefs++
+		text := b.text
+		b.mu.Unlock()
+		return text, b.releaseText, nil
+	}
+	b.mu.Unlock()
+
+	log.Info(ctx, "Loading llama.cpp text model (lazy)", "path", b.cfg.TextModelPath)
+	text, err := b.loadTextModel(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		b.freeTextResources(text)
+		return nil, nil, fmt.Errorf("llama.cpp backend is closed")
+	}
+	if b.text != nil {
+		log.Debug(ctx, "llama.cpp text model already loaded")
+		b.textRefs++
+		existing := b.text
+		b.mu.Unlock()
+		b.freeTextResources(text)
+		return existing, b.releaseText, nil
+	}
+	b.text = text
+	b.textRefs = 1
+	b.mu.Unlock()
+
+	log.Info(ctx, "Loaded llama.cpp text model")
+	return text, b.releaseText, nil
+}
+
+func (b *localBackend) acquireAudio(ctx context.Context) (*modelResources, func(), error) {
+	if b.cfg.AudioModelPath == "" {
+		return nil, nil, fmt.Errorf("audio model not configured")
+	}
+
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return nil, nil, fmt.Errorf("llama.cpp backend is closed")
+	}
+	if b.audio != nil {
+		log.Debug(ctx, "llama.cpp audio model already loaded")
+		b.audioRefs++
+		audio := b.audio
+		b.mu.Unlock()
+		return audio, b.releaseAudio, nil
+	}
+	b.mu.Unlock()
+
+	b.audioLoadMu.Lock()
+	defer b.audioLoadMu.Unlock()
+
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return nil, nil, fmt.Errorf("llama.cpp backend is closed")
+	}
+	if b.audio != nil {
+		log.Debug(ctx, "llama.cpp audio model already loaded")
+		b.audioRefs++
+		audio := b.audio
+		b.mu.Unlock()
+		return audio, b.releaseAudio, nil
+	}
+	b.mu.Unlock()
+
+	log.Info(ctx, "Loading llama.cpp audio model (lazy)", "path", b.cfg.AudioModelPath)
+	audio, err := b.loadAudioModel(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		b.freeAudioResources(audio)
+		return nil, nil, fmt.Errorf("llama.cpp backend is closed")
+	}
+	if b.audio != nil {
+		log.Debug(ctx, "llama.cpp audio model already loaded")
+		b.audioRefs++
+		existing := b.audio
+		b.mu.Unlock()
+		b.freeAudioResources(audio)
+		return existing, b.releaseAudio, nil
+	}
+	b.audio = audio
+	b.audioRefs = 1
+	b.mu.Unlock()
+
+	log.Info(ctx, "Loaded llama.cpp audio model")
+	return audio, b.releaseAudio, nil
+}
+
+func (b *localBackend) releaseText() {
+	b.mu.Lock()
+	if b.textRefs > 0 {
+		b.textRefs--
+	}
+	if b.textRefs != 0 || b.text == nil {
+		b.mu.Unlock()
+		return
+	}
+	text := b.text
+	b.text = nil
+	b.mu.Unlock()
+
+	log.Info(context.Background(), "Unloading llama.cpp text model")
+	b.freeTextResources(text)
+}
+
+func (b *localBackend) releaseAudio() {
+	b.mu.Lock()
+	if b.audioRefs > 0 {
+		b.audioRefs--
+	}
+	if b.audioRefs != 0 || b.audio == nil {
+		b.mu.Unlock()
+		return
+	}
+	audio := b.audio
+	b.audio = nil
+	b.mu.Unlock()
+
+	log.Info(context.Background(), "Unloading llama.cpp audio model")
+	b.freeAudioResources(audio)
 }
 
 func (b *localBackend) loadTextModel(ctx context.Context) (*modelResources, error) {
@@ -876,33 +1037,49 @@ func (b *localBackend) closeResources() {
 	audio := b.audio
 	b.text = nil
 	b.audio = nil
+	b.textRefs = 0
+	b.audioRefs = 0
 	b.mu.Unlock()
 
 	if text != nil {
-		if text.embedCtx != 0 {
-			_ = llama.Free(text.embedCtx)
-		}
-		if text.ctx != 0 {
-			_ = llama.Free(text.ctx)
-		}
-		if text.model != 0 {
-			_ = llama.ModelFree(text.model)
-		}
+		b.freeTextResources(text)
 	}
 
 	if audio != nil {
-		if audio.mtmdCtx != 0 {
-			_ = mtmd.Free(audio.mtmdCtx)
-		}
-		if audio.embedCtx != 0 {
-			_ = llama.Free(audio.embedCtx)
-		}
-		if audio.ctx != 0 {
-			_ = llama.Free(audio.ctx)
-		}
-		if audio.model != 0 {
-			_ = llama.ModelFree(audio.model)
-		}
+		b.freeAudioResources(audio)
+	}
+}
+
+func (b *localBackend) freeTextResources(text *modelResources) {
+	if text == nil {
+		return
+	}
+	if text.embedCtx != 0 {
+		_ = llama.Free(text.embedCtx)
+	}
+	if text.ctx != 0 {
+		_ = llama.Free(text.ctx)
+	}
+	if text.model != 0 {
+		_ = llama.ModelFree(text.model)
+	}
+}
+
+func (b *localBackend) freeAudioResources(audio *modelResources) {
+	if audio == nil {
+		return
+	}
+	if audio.mtmdCtx != 0 {
+		_ = mtmd.Free(audio.mtmdCtx)
+	}
+	if audio.embedCtx != 0 {
+		_ = llama.Free(audio.embedCtx)
+	}
+	if audio.ctx != 0 {
+		_ = llama.Free(audio.ctx)
+	}
+	if audio.model != 0 {
+		_ = llama.ModelFree(audio.model)
 	}
 }
 
@@ -965,7 +1142,13 @@ var (
 func loadLlamaLibraries(path string) error {
 	llamaLoadOnce.Do(func() {
 		llamaLoadPath = path
-		llamaLoadErr = llama.Load(path)
+		llamaLoadErr = ensureLibraryPath(path)
+		if llamaLoadErr == nil {
+			llamaLoadErr = preloadGGMLDeps(path)
+		}
+		if llamaLoadErr == nil {
+			llamaLoadErr = llama.Load(path)
+		}
 		if llamaLoadErr == nil {
 			llama.Init()
 		}
@@ -982,13 +1165,84 @@ func loadLlamaLibraries(path string) error {
 func loadMTMDLibraries(path string) error {
 	mtmdLoadOnce.Do(func() {
 		mtmdLoadPath = path
-		mtmdLoadErr = mtmd.Load(path)
+		mtmdLoadErr = ensureLibraryPath(path)
+		if mtmdLoadErr == nil {
+			mtmdLoadErr = mtmd.Load(path)
+		}
 	})
 	if mtmdLoadErr != nil {
 		return mtmdLoadErr
 	}
 	if mtmdLoadPath != path {
 		return fmt.Errorf("mtmd already loaded from %s", mtmdLoadPath)
+	}
+	return nil
+}
+
+func ensureLibraryPath(path string) error {
+	if path == "" {
+		return nil
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		log.Warn(context.Background(), "Failed to resolve llama.cpp library path", "path", path, "err", err)
+		return err
+	}
+	var envKey string
+	switch runtime.GOOS {
+	case "windows":
+		envKey = "PATH"
+	case "darwin":
+		envKey = "DYLD_LIBRARY_PATH"
+	default:
+		envKey = "LD_LIBRARY_PATH"
+	}
+	log.Info(context.Background(), "Setting llama.cpp library search path", "env", envKey, "path", absPath)
+	return prependEnvPath(envKey, absPath)
+}
+
+func prependEnvPath(envKey, path string) error {
+	if envKey == "" || path == "" {
+		return nil
+	}
+	current := os.Getenv(envKey)
+	parts := strings.Split(current, string(os.PathListSeparator))
+	for _, part := range parts {
+		if part == path {
+			log.Debug(context.Background(), "Library search path already contains path", "env", envKey, "path", path)
+			return nil
+		}
+	}
+	if current == "" {
+		log.Debug(context.Background(), "Setting library search path", "env", envKey, "path", path)
+		return os.Setenv(envKey, path)
+	}
+	log.Debug(context.Background(), "Prepending library search path", "env", envKey, "path", path)
+	return os.Setenv(envKey, path+string(os.PathListSeparator)+current)
+}
+
+func preloadGGMLDeps(path string) error {
+	deps := []string{
+		"ggml-base",
+		"ggml-cpu",
+		"ggml-cuda",
+		"ggml-rpc",
+	}
+	for _, dep := range deps {
+		filename := loader.GetLibraryFilename(path, dep)
+		log.Debug(context.Background(), "Checking ggml dependency", "lib", dep, "path", filename)
+		if _, err := os.Stat(filename); err != nil {
+			if os.IsNotExist(err) {
+				log.Debug(context.Background(), "Skipping missing ggml dependency", "lib", dep, "path", filename)
+				continue
+			}
+			log.Warn(context.Background(), "Failed to stat ggml dependency", "lib", dep, "path", filename, "err", err)
+			return err
+		}
+		log.Info(context.Background(), "Preloading ggml dependency", "lib", dep, "path", filename)
+		if _, err := loader.LoadLibrary(path, dep); err != nil {
+			return fmt.Errorf("preload %s: %w", dep, err)
+		}
 	}
 	return nil
 }

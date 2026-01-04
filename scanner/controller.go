@@ -68,9 +68,16 @@ func CallScan(ctx context.Context, ds model.DataStore, pls core.Playlists, fullS
 
 	ctx = auth.WithAdminUser(ctx, ds)
 	progress := make(chan *ProgressInfo, 100)
+	embedWorker, embedCleanup, err := scanEmbedWorkerFactory(ctx)
+	if err != nil {
+		log.Warn(ctx, "Failed to initialize embedding worker", err)
+	}
 	go func() {
 		defer close(progress)
-		scanner := &scannerImpl{ds: ds, cw: artwork.NoopCacheWarmer(), pls: pls}
+		if embedCleanup != nil {
+			defer embedCleanup()
+		}
+		scanner := &scannerImpl{ds: ds, cw: artwork.NoopCacheWarmer(), pls: pls, embedWorker: embedWorker}
 		scanner.scanFolders(ctx, fullScan, targets, progress)
 	}()
 	return progress, nil

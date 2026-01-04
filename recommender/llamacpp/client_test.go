@@ -3,6 +3,7 @@ package llamacpp
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -100,6 +101,24 @@ func TestNewClientDefaults(t *testing.T) {
 	assert.Equal(t, defaults.Timeout, c.config.Timeout)
 	assert.Equal(t, defaults.MaxRetries, c.config.MaxRetries)
 	assert.Equal(t, defaults.RetryBackoff, c.config.RetryBackoff)
+}
+
+func TestDefaultLibraryPathUsesEnv(t *testing.T) {
+	t.Setenv("YZMA_LIB", "relative/lib")
+	expected, err := filepath.Abs("relative/lib")
+	require.NoError(t, err)
+
+	got := defaultLibraryPath()
+	assert.Equal(t, expected, got)
+}
+
+func TestApplyDefaultsResolvesLibraryPath(t *testing.T) {
+	cfg := Config{LibraryPath: "relative/lib"}
+	expected, err := filepath.Abs("relative/lib")
+	require.NoError(t, err)
+
+	updated := applyDefaults(cfg)
+	assert.Equal(t, expected, updated.LibraryPath)
 }
 
 func TestNewClientWithConfig(t *testing.T) {
