@@ -1,0 +1,7 @@
+llama-lib/
+models/
+.idea/
+llama
+test_llama_bin
+test_music
+build/
