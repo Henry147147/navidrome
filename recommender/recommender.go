@@ -1,6 +1,6 @@
 // Package recommender provides music recommendation and embedding services.
 // It replaces the Python-based embedding services with a pure Go implementation
-// using llama.cpp for model inference and Milvus for vector storage.
+// using musicembed (llama.cpp bindings) for model inference and Milvus for vector storage.
 package recommender
 
 import (
@@ -82,6 +82,7 @@ type EmbedRequest struct {
 	Artist    string
 	Title     string
 	Album     string
+	Lyrics    string
 }
 
 // EmbedResult contains the results of embedding a track.

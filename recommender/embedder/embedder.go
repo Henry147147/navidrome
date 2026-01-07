@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/navidrome/navidrome/log"
-	"github.com/navidrome/navidrome/recommender/llamacpp"
 	"github.com/navidrome/navidrome/recommender/milvus"
 )
 
@@ -29,6 +28,7 @@ type EmbedRequest struct {
 	Artist    string
 	Title     string
 	Album     string
+	Lyrics    string
 }
 
 // EmbedResult contains the results of embedding a track.
@@ -57,33 +57,36 @@ type StatusResult struct {
 	CanonicalName     string
 }
 
-// Embedder implements the embedding pipeline using llama.cpp and Milvus.
+// MusicClient describes the music embedding client behavior used by the embedder.
+type MusicClient interface {
+	EmbedText(text string) ([]float32, error)
+	EmbedAudio(path string) ([]float32, error)
+	GenerateDescription(path string) (string, error)
+	Close()
+}
+
+// VectorStore describes the vector database operations used by the embedder.
+type VectorStore interface {
+	Upsert(ctx context.Context, collection string, data []milvus.EmbeddingData) error
+	Exists(ctx context.Context, collection string, names []string) (map[string]bool, error)
+}
+
+// Embedder implements the embedding pipeline using musicembed and Milvus.
 type Embedder struct {
 	config      Config
-	llmClient   *llamacpp.Client
-	vectorStore *milvus.Client
-	pipeline    *Pipeline
+	musicClient MusicClient
+	vectorStore VectorStore
 	mu          sync.RWMutex
 	closed      bool
 }
 
 // New creates a new Embedder with the given configuration and clients.
-func New(cfg Config, llm *llamacpp.Client, milvus *milvus.Client) *Embedder {
-	e := &Embedder{
+func New(cfg Config, musicClient MusicClient, store VectorStore) *Embedder {
+	return &Embedder{
 		config:      cfg,
-		llmClient:   llm,
-		vectorStore: milvus,
+		musicClient: musicClient,
+		vectorStore: store,
 	}
-
-	e.pipeline = NewPipeline(PipelineConfig{
-		BatchTimeout:      cfg.BatchTimeout,
-		BatchSize:         cfg.BatchSize,
-		EnableLyrics:      cfg.EnableLyrics,
-		EnableDescription: cfg.EnableDescription,
-		EnableFlamingo:    cfg.EnableFlamingo,
-	}, llm, milvus)
-
-	return e
 }
 
 // EmbedAudio processes an audio file through all enabled stages.
@@ -93,56 +96,76 @@ func (e *Embedder) EmbedAudio(ctx context.Context, req EmbedRequest) (*EmbedResu
 		e.mu.RUnlock()
 		return nil, fmt.Errorf("embedder is closed")
 	}
+	musicClient := e.musicClient
+	store := e.vectorStore
 	e.mu.RUnlock()
 
+	if musicClient == nil {
+		return nil, fmt.Errorf("music embedder is not configured")
+	}
+	if store == nil {
+		return nil, fmt.Errorf("vector store is not configured")
+	}
 	if req.FilePath == "" {
 		return nil, fmt.Errorf("file path is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	trackName := req.TrackName
 	if trackName == "" {
 		trackName = canonicalName(req.Artist, req.Title)
 	}
+	if trackName == "" {
+		trackName = req.TrackID
+	}
 
-	log.Debug(ctx, "Queueing audio for embedding",
+	log.Debug(ctx, "Embedding audio track",
 		"file", req.FilePath,
 		"name", trackName,
 		"trackId", req.TrackID,
 	)
 
-	// Create track context and enqueue
-	trackCtx := &TrackContext{
-		FilePath:  req.FilePath,
-		TrackName: trackName,
-		TrackID:   req.TrackID,
-		Artist:    req.Artist,
-		Title:     req.Title,
-		Album:     req.Album,
-		Done:      make(chan struct{}),
+	result := &EmbedResult{TrackName: trackName}
+
+	if e.config.EnableLyrics && req.Lyrics != "" {
+		embedding, err := musicClient.EmbedText(req.Lyrics)
+		if err != nil {
+			log.Warn(ctx, "Lyrics embedding failed (non-fatal)", err)
+		} else {
+			result.LyricsEmbedding = float32sToFloat64s(embedding)
+		}
 	}
 
-	if err := e.pipeline.Enqueue(ctx, trackCtx); err != nil {
-		return nil, fmt.Errorf("enqueue track: %w", err)
+	if e.config.EnableDescription {
+		description, err := musicClient.GenerateDescription(req.FilePath)
+		if err != nil {
+			log.Warn(ctx, "Audio description failed (non-fatal)", err)
+		} else {
+			result.Description = description
+		}
+		if result.Description != "" {
+			embedding, err := musicClient.EmbedText(result.Description)
+			if err != nil {
+				log.Warn(ctx, "Description embedding failed (non-fatal)", err)
+			} else {
+				result.DescriptionEmbedding = float32sToFloat64s(embedding)
+			}
+		}
 	}
 
-	// Wait for processing to complete
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-trackCtx.Done:
+	if e.config.EnableFlamingo {
+		embedding, err := musicClient.EmbedAudio(req.FilePath)
+		if err != nil {
+			log.Warn(ctx, "Audio embedding failed (non-fatal)", err)
+		} else {
+			result.FlamingoEmbedding = float32sToFloat64s(embedding)
+		}
 	}
 
-	if trackCtx.Error != nil {
-		return nil, trackCtx.Error
-	}
-
-	return &EmbedResult{
-		TrackName:            trackCtx.TrackName,
-		LyricsEmbedding:      trackCtx.LyricsEmbedding,
-		DescriptionEmbedding: trackCtx.DescriptionEmbedding,
-		FlamingoEmbedding:    trackCtx.FlamingoEmbedding,
-		Description:          trackCtx.Description,
-	}, nil
+	e.storeResults(ctx, store, trackName, result)
+	return result, nil
 }
 
 // EmbedText generates text embeddings directly (for query-time use).
@@ -152,22 +175,25 @@ func (e *Embedder) EmbedText(ctx context.Context, text string) ([]float64, error
 		e.mu.RUnlock()
 		return nil, fmt.Errorf("embedder is closed")
 	}
+	musicClient := e.musicClient
 	e.mu.RUnlock()
 
+	if musicClient == nil {
+		return nil, fmt.Errorf("music embedder is not configured")
+	}
 	if text == "" {
 		return nil, fmt.Errorf("text is required")
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
-	// For query-time text embedding, we bypass the batch pipeline
-	// and call llama.cpp directly for lower latency
-	resp, err := e.llmClient.EmbedText(ctx, llamacpp.TextEmbedRequest{
-		Text: text,
-	})
+	embedding, err := musicClient.EmbedText(text)
 	if err != nil {
 		return nil, fmt.Errorf("embed text: %w", err)
 	}
 
-	return resp.Embedding, nil
+	return float32sToFloat64s(embedding), nil
 }
 
 // CheckStatus checks if embeddings already exist for a track.
@@ -177,7 +203,12 @@ func (e *Embedder) CheckStatus(ctx context.Context, req StatusRequest) (*StatusR
 		e.mu.RUnlock()
 		return nil, fmt.Errorf("embedder is closed")
 	}
+	store := e.vectorStore
 	e.mu.RUnlock()
+
+	if store == nil {
+		return nil, fmt.Errorf("vector store is not configured")
+	}
 
 	// Build list of possible names to check
 	names := buildPossibleNames(req)
@@ -186,17 +217,17 @@ func (e *Embedder) CheckStatus(ctx context.Context, req StatusRequest) (*StatusR
 	}
 
 	// Check existence in each collection
-	lyricsExists, err := e.vectorStore.Exists(ctx, milvus.CollectionLyrics, names)
+	lyricsExists, err := store.Exists(ctx, milvus.CollectionLyrics, names)
 	if err != nil {
 		return nil, fmt.Errorf("check lyrics embeddings: %w", err)
 	}
 
-	descExists, err := e.vectorStore.Exists(ctx, milvus.CollectionDescription, names)
+	descExists, err := store.Exists(ctx, milvus.CollectionDescription, names)
 	if err != nil {
 		return nil, fmt.Errorf("check description embeddings: %w", err)
 	}
 
-	flamingoExists, err := e.vectorStore.Exists(ctx, milvus.CollectionFlamingo, names)
+	flamingoExists, err := store.Exists(ctx, milvus.CollectionFlamingo, names)
 	if err != nil {
 		return nil, fmt.Errorf("check flamingo embeddings: %w", err)
 	}
@@ -241,27 +272,60 @@ func (e *Embedder) CheckStatus(ctx context.Context, req StatusRequest) (*StatusR
 // FlushBatch forces processing of any pending batch items.
 func (e *Embedder) FlushBatch(ctx context.Context) error {
 	e.mu.RLock()
+	defer e.mu.RUnlock()
 	if e.closed {
-		e.mu.RUnlock()
 		return fmt.Errorf("embedder is closed")
 	}
-	e.mu.RUnlock()
-
-	return e.pipeline.Flush(ctx)
+	return nil
 }
 
 // Close releases resources.
 func (e *Embedder) Close() error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	if e.closed {
+		e.mu.Unlock()
 		return nil
 	}
-
 	e.closed = true
-	e.pipeline.Close()
+	musicClient := e.musicClient
+	e.mu.Unlock()
+
+	if musicClient != nil {
+		musicClient.Close()
+	}
 	return nil
+}
+
+func (e *Embedder) storeResults(ctx context.Context, store VectorStore, trackName string, result *EmbedResult) {
+	if trackName == "" {
+		log.Warn(ctx, "Skipping embedding storage: missing track name")
+		return
+	}
+
+	if len(result.LyricsEmbedding) > 0 {
+		e.storeEmbedding(ctx, store, milvus.CollectionLyrics, trackName, result.LyricsEmbedding, "", ModelLyrics)
+	}
+	if len(result.DescriptionEmbedding) > 0 {
+		e.storeEmbedding(ctx, store, milvus.CollectionDescription, trackName, result.DescriptionEmbedding, result.Description, ModelDescription)
+	}
+	if len(result.FlamingoEmbedding) > 0 {
+		e.storeEmbedding(ctx, store, milvus.CollectionFlamingo, trackName, result.FlamingoEmbedding, "", ModelFlamingo)
+	}
+}
+
+func (e *Embedder) storeEmbedding(ctx context.Context, store VectorStore, collection, name string, embedding []float64, description, modelID string) {
+	data := []milvus.EmbeddingData{{
+		Name:        name,
+		Embedding:   embedding,
+		ModelID:     modelID,
+		Description: description,
+	}}
+
+	if err := store.Upsert(ctx, collection, data); err != nil {
+		log.Error(ctx, "Failed to store embeddings", err, "collection", collection, "track", name)
+		return
+	}
+	log.Debug(ctx, "Stored embeddings", "collection", collection, "track", name)
 }
 
 // buildPossibleNames generates all possible track names from a status request.

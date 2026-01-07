@@ -9,15 +9,15 @@ import (
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/recommender/embedder"
 	"github.com/navidrome/navidrome/recommender/engine"
-	"github.com/navidrome/navidrome/recommender/llamacpp"
 	"github.com/navidrome/navidrome/recommender/milvus"
 	"github.com/navidrome/navidrome/recommender/resolver"
+	"test/llama/musicembed"
 )
 
 // Set provides all recommender dependencies for Wire.
 var Set = wire.NewSet(
 	NewMilvusClient,
-	NewLlamaCppClient,
+	NewMusicEmbedClient,
 	NewEmbedder,
 	NewRecommendationEngine,
 	NewResolver,
@@ -63,39 +63,50 @@ func NewMilvusClient() (*milvus.Client, func(), error) {
 	return client, cleanup, nil
 }
 
-// NewLlamaCppClient creates a llama.cpp client from configuration.
-func NewLlamaCppClient() (*llamacpp.Client, func(), error) {
-	cfg := llamacpp.Config{
-		LibraryPath:        conf.Server.Recommendations.Embedder.Llama.LibraryPath,
-		TextModelPath:      conf.Server.Recommendations.Embedder.Llama.TextModelPath,
-		AudioModelPath:     conf.Server.Recommendations.Embedder.Llama.AudioModelPath,
-		AudioProjectorPath: conf.Server.Recommendations.Embedder.Llama.AudioProjectorPath,
-		ContextSize:        uint32(conf.Server.Recommendations.Embedder.Llama.ContextSize),
-		BatchSize:          uint32(conf.Server.Recommendations.Embedder.Llama.BatchSize),
-		UBatchSize:         uint32(conf.Server.Recommendations.Embedder.Llama.UBatchSize),
-		Threads:            conf.Server.Recommendations.Embedder.Llama.Threads,
-		ThreadsBatch:       conf.Server.Recommendations.Embedder.Llama.ThreadsBatch,
-		GPULayers:          conf.Server.Recommendations.Embedder.Llama.GPULayers,
-		MainGPU:            conf.Server.Recommendations.Embedder.Llama.MainGPU,
-		Timeout:            conf.Server.Recommendations.EmbedTimeout,
-		MaxRetries:         3,
-		RetryBackoff:       2 * time.Second,
+// NewMusicEmbedClient creates a musicembed client from configuration.
+func NewMusicEmbedClient() (*musicembed.Client, func(), error) {
+	cfg := musicembed.DefaultConfig()
+	llamaCfg := conf.Server.Recommendations.Embedder.Llama
+
+	if llamaCfg.LibraryPath != "" {
+		cfg.LibraryPath = llamaCfg.LibraryPath
+	}
+	if llamaCfg.TextModelPath != "" {
+		cfg.EmbeddingModelFile = llamaCfg.TextModelPath
+	}
+	if llamaCfg.AudioProjectorPath != "" {
+		cfg.MmprojFile = llamaCfg.AudioProjectorPath
+	}
+	if llamaCfg.AudioModelPath != "" {
+		cfg.ModelFile = llamaCfg.AudioModelPath
+	}
+	if llamaCfg.ContextSize > 0 {
+		cfg.ContextSize = llamaCfg.ContextSize
+	}
+	if llamaCfg.BatchSize > 0 {
+		cfg.BatchSize = llamaCfg.BatchSize
+	}
+	if llamaCfg.Threads > 0 {
+		cfg.Threads = llamaCfg.Threads
+	}
+	if llamaCfg.GPULayers > 0 {
+		cfg.GPULayers = llamaCfg.GPULayers
 	}
 
-	client, err := llamacpp.NewClient(cfg)
+	client, err := musicembed.New(cfg)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	cleanup := func() {
-		_ = client.Close()
+		client.Close()
 	}
 
 	return client, cleanup, nil
 }
 
 // NewEmbedder creates the main embedder.
-func NewEmbedder(llama *llamacpp.Client, milvusClient *milvus.Client) *embedder.Embedder {
+func NewEmbedder(musicClient *musicembed.Client, milvusClient *milvus.Client) *embedder.Embedder {
 	cfg := embedder.Config{
 		BatchTimeout:      conf.Server.Recommendations.Embedder.BatchTimeout,
 		BatchSize:         conf.Server.Recommendations.Embedder.BatchSize,
@@ -112,7 +123,7 @@ func NewEmbedder(llama *llamacpp.Client, milvusClient *milvus.Client) *embedder.
 		cfg.BatchSize = 50
 	}
 
-	return embedder.New(cfg, llama, milvusClient)
+	return embedder.New(cfg, musicClient, milvusClient)
 }
 
 // NewRecommendationEngine creates the recommendation engine.

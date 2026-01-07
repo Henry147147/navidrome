@@ -1,9 +1,11 @@
 module github.com/navidrome/navidrome
 
-go 1.25
+go 1.25.5
 
 // Fork to fix https://github.com/navidrome/navidrome/issues/3254
 replace github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8 => github.com/deluan/tag v0.0.0-20241002021117-dfe5e6ea396d
+
+replace test/llama => ./musicembed
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
@@ -33,6 +35,7 @@ require (
 	github.com/google/wire v0.7.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/go-multierror v1.1.1
+	github.com/hybridgroup/yzma v1.4.0
 	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/kardianos/service v1.2.4
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
@@ -71,6 +74,7 @@ require (
 	golang.org/x/time v0.14.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
+	test/llama v0.0.0
 )
 
 require (
@@ -103,7 +107,6 @@ require (
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
-	github.com/hybridgroup/yzma v1.4.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jupiterrider/ffi v0.5.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect

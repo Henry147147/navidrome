@@ -19,23 +19,23 @@ func defaultEmbedWorkerFactory(ctx context.Context) (*embeddingWorker, func(), e
 		return nil, nil, nil
 	}
 
-	llamaClient, llamaCleanup, err := recommender.NewLlamaCppClient()
+	musicClient, musicCleanup, err := recommender.NewMusicEmbedClient()
 	if err != nil {
 		return nil, nil, err
 	}
 
 	milvusClient, milvusCleanup, err := recommender.NewMilvusClient()
 	if err != nil {
-		llamaCleanup()
+		musicCleanup()
 		return nil, nil, err
 	}
 
-	emb := recommender.NewEmbedder(llamaClient, milvusClient)
+	emb := recommender.NewEmbedder(musicClient, milvusClient)
 	worker := newEmbeddingWorker(newGoEmbeddingClient(emb))
 	cleanup := func() {
 		_ = emb.Close()
 		milvusCleanup()
-		llamaCleanup()
+		musicCleanup()
 	}
 
 	return worker, cleanup, nil

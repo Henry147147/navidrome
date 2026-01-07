@@ -2,12 +2,100 @@ package embedder
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/navidrome/navidrome/recommender/milvus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type fakeMusicClient struct {
+	textEmbeddings  map[string][]float32
+	audioEmbeddings map[string][]float32
+	descriptions    map[string]string
+
+	textErr  error
+	audioErr error
+	descErr  error
+
+	textCalls  []string
+	audioCalls []string
+	descCalls  []string
+	closed     bool
+}
+
+func (f *fakeMusicClient) EmbedText(text string) ([]float32, error) {
+	f.textCalls = append(f.textCalls, text)
+	if f.textErr != nil {
+		return nil, f.textErr
+	}
+	if embedding, ok := f.textEmbeddings[text]; ok {
+		out := make([]float32, len(embedding))
+		copy(out, embedding)
+		return out, nil
+	}
+	return nil, nil
+}
+
+func (f *fakeMusicClient) EmbedAudio(path string) ([]float32, error) {
+	f.audioCalls = append(f.audioCalls, path)
+	if f.audioErr != nil {
+		return nil, f.audioErr
+	}
+	if embedding, ok := f.audioEmbeddings[path]; ok {
+		out := make([]float32, len(embedding))
+		copy(out, embedding)
+		return out, nil
+	}
+	return nil, nil
+}
+
+func (f *fakeMusicClient) GenerateDescription(path string) (string, error) {
+	f.descCalls = append(f.descCalls, path)
+	if f.descErr != nil {
+		return "", f.descErr
+	}
+	if desc, ok := f.descriptions[path]; ok {
+		return desc, nil
+	}
+	return "", nil
+}
+
+func (f *fakeMusicClient) Close() {
+	f.closed = true
+}
+
+type upsertCall struct {
+	collection string
+	data       []milvus.EmbeddingData
+}
+
+type fakeVectorStore struct {
+	upserts            []upsertCall
+	existsByCollection map[string]map[string]bool
+	upsertErr          error
+	existsErr          error
+}
+
+func (f *fakeVectorStore) Upsert(ctx context.Context, collection string, data []milvus.EmbeddingData) error {
+	f.upserts = append(f.upserts, upsertCall{collection: collection, data: data})
+	return f.upsertErr
+}
+
+func (f *fakeVectorStore) Exists(ctx context.Context, collection string, names []string) (map[string]bool, error) {
+	if f.existsErr != nil {
+		return nil, f.existsErr
+	}
+	if f.existsByCollection == nil {
+		return map[string]bool{}, nil
+	}
+	if entries, ok := f.existsByCollection[collection]; ok {
+		return entries, nil
+	}
+	return map[string]bool{}, nil
+}
 
 func TestCanonicalName(t *testing.T) {
 	tests := []struct {
@@ -92,6 +180,7 @@ func TestEmbedRequest(t *testing.T) {
 		Artist:    "Test Artist",
 		Title:     "Test Title",
 		Album:     "Test Album",
+		Lyrics:    "Some lyrics",
 	}
 
 	assert.Equal(t, "/path/to/audio.mp3", req.FilePath)
@@ -100,6 +189,7 @@ func TestEmbedRequest(t *testing.T) {
 	assert.Equal(t, "Test Artist", req.Artist)
 	assert.Equal(t, "Test Title", req.Title)
 	assert.Equal(t, "Test Album", req.Album)
+	assert.Equal(t, "Some lyrics", req.Lyrics)
 }
 
 func TestEmbedResult(t *testing.T) {
@@ -133,14 +223,10 @@ func TestStatusResult(t *testing.T) {
 }
 
 func TestEmbedderClosed(t *testing.T) {
-	// Create embedder with nil clients (will fail on actual calls but can test closed state)
-	e := &Embedder{
-		closed: true,
-	}
+	e := &Embedder{closed: true}
 
 	ctx := context.Background()
 
-	// Test that operations fail when embedder is closed
 	_, err := e.EmbedAudio(ctx, EmbedRequest{FilePath: "/test.mp3"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "closed")
@@ -159,9 +245,9 @@ func TestEmbedderClosed(t *testing.T) {
 }
 
 func TestEmbedAudioRequiresFilePath(t *testing.T) {
-	e := &Embedder{
-		closed: false,
-	}
+	music := &fakeMusicClient{}
+	store := &fakeVectorStore{}
+	e := New(Config{}, music, store)
 
 	ctx := context.Background()
 
@@ -171,13 +257,108 @@ func TestEmbedAudioRequiresFilePath(t *testing.T) {
 }
 
 func TestEmbedTextRequiresText(t *testing.T) {
-	e := &Embedder{
-		closed: false,
-	}
+	music := &fakeMusicClient{}
+	e := New(Config{}, music, &fakeVectorStore{})
 
 	ctx := context.Background()
 
 	_, err := e.EmbedText(ctx, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "text is required")
+}
+
+func TestEmbedAudioStoresEmbeddings(t *testing.T) {
+	music := &fakeMusicClient{
+		textEmbeddings: map[string][]float32{
+			"lyrics": {0.1, 0.2},
+			"desc":   {0.3, 0.4},
+		},
+		audioEmbeddings: map[string][]float32{
+			"/test.mp3": {0.5, 0.6},
+		},
+		descriptions: map[string]string{
+			"/test.mp3": "desc",
+		},
+	}
+	store := &fakeVectorStore{}
+	e := New(Config{EnableLyrics: true, EnableDescription: true, EnableFlamingo: true}, music, store)
+
+	ctx := context.Background()
+	result, err := e.EmbedAudio(ctx, EmbedRequest{FilePath: "/test.mp3", TrackName: "Track", Lyrics: "lyrics"})
+	require.NoError(t, err)
+
+	assert.Equal(t, "Track", result.TrackName)
+	assert.InDeltaSlice(t, []float64{0.1, 0.2}, result.LyricsEmbedding, 1e-6)
+	assert.InDeltaSlice(t, []float64{0.3, 0.4}, result.DescriptionEmbedding, 1e-6)
+	assert.InDeltaSlice(t, []float64{0.5, 0.6}, result.FlamingoEmbedding, 1e-6)
+	assert.Equal(t, "desc", result.Description)
+
+	require.Len(t, store.upserts, 3)
+	assert.Equal(t, milvus.CollectionLyrics, store.upserts[0].collection)
+	assert.Equal(t, ModelLyrics, store.upserts[0].data[0].ModelID)
+	assert.Equal(t, milvus.CollectionDescription, store.upserts[1].collection)
+	assert.Equal(t, ModelDescription, store.upserts[1].data[0].ModelID)
+	assert.Equal(t, milvus.CollectionFlamingo, store.upserts[2].collection)
+	assert.Equal(t, ModelFlamingo, store.upserts[2].data[0].ModelID)
+}
+
+func TestEmbedAudioSkipsFailedStages(t *testing.T) {
+	music := &fakeMusicClient{
+		descErr:  errors.New("desc boom"),
+		audioErr: errors.New("audio boom"),
+	}
+	store := &fakeVectorStore{}
+	e := New(Config{EnableDescription: true, EnableFlamingo: true}, music, store)
+
+	ctx := context.Background()
+	result, err := e.EmbedAudio(ctx, EmbedRequest{FilePath: "/test.mp3", TrackName: "Track"})
+	require.NoError(t, err)
+
+	assert.Empty(t, result.Description)
+	assert.Nil(t, result.DescriptionEmbedding)
+	assert.Nil(t, result.FlamingoEmbedding)
+	assert.Empty(t, store.upserts)
+}
+
+func TestEmbedTextDelegates(t *testing.T) {
+	music := &fakeMusicClient{
+		textEmbeddings: map[string][]float32{
+			"hello": {0.9, 0.8},
+		},
+	}
+	e := New(Config{}, music, &fakeVectorStore{})
+
+	ctx := context.Background()
+	embedding, err := e.EmbedText(ctx, "hello")
+	require.NoError(t, err)
+	assert.InDeltaSlice(t, []float64{0.9, 0.8}, embedding, 1e-6)
+	assert.Equal(t, []string{"hello"}, music.textCalls)
+}
+
+func TestCheckStatusUsesStore(t *testing.T) {
+	store := &fakeVectorStore{
+		existsByCollection: map[string]map[string]bool{
+			milvus.CollectionLyrics:      {"Artist - Title": true},
+			milvus.CollectionDescription: {"Artist - Title": false},
+			milvus.CollectionFlamingo:    {"Artist - Title": true},
+		},
+	}
+	e := New(Config{}, &fakeMusicClient{}, store)
+
+	ctx := context.Background()
+	result, err := e.CheckStatus(ctx, StatusRequest{Artist: "Artist", Title: "Title"})
+	require.NoError(t, err)
+
+	assert.True(t, result.Embedded)
+	assert.True(t, result.HasAudioEmbedding)
+	assert.False(t, result.HasDescription)
+	assert.Equal(t, "Artist - Title", result.CanonicalName)
+}
+
+func TestCloseClosesMusicClient(t *testing.T) {
+	music := &fakeMusicClient{}
+	e := New(Config{}, music, &fakeVectorStore{})
+
+	require.NoError(t, e.Close())
+	assert.True(t, music.closed)
 }

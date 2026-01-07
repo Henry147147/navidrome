@@ -37,6 +37,7 @@ func TestEmbedRequest(t *testing.T) {
 		Artist:    "Artist",
 		Title:     "Track",
 		Album:     "Album",
+		Lyrics:    "Sample lyrics",
 	}
 
 	assert.Equal(t, "/music/artist/album/track.flac", req.FilePath)
@@ -45,6 +46,7 @@ func TestEmbedRequest(t *testing.T) {
 	assert.Equal(t, "Artist", req.Artist)
 	assert.Equal(t, "Track", req.Title)
 	assert.Equal(t, "Album", req.Album)
+	assert.Equal(t, "Sample lyrics", req.Lyrics)
 }
 
 func TestEmbedResult(t *testing.T) {

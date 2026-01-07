@@ -21,7 +21,6 @@ import (
 	"github.com/navidrome/navidrome/persistence"
 	"github.com/navidrome/navidrome/plugins"
 	"github.com/navidrome/navidrome/recommender/embedder"
-	"github.com/navidrome/navidrome/recommender/llamacpp"
 	"github.com/navidrome/navidrome/recommender/milvus"
 	"github.com/navidrome/navidrome/scanner"
 	"github.com/navidrome/navidrome/server"
@@ -29,6 +28,7 @@ import (
 	"github.com/navidrome/navidrome/server/nativeapi"
 	"github.com/navidrome/navidrome/server/public"
 	"github.com/navidrome/navidrome/server/subsonic"
+	"test/llama/musicembed"
 )
 
 var allProviders = wire.NewSet(
@@ -68,12 +68,12 @@ func newScanner(ctx context.Context, ds model.DataStore, cw artwork.CacheWarmer,
 func initializeEmbedder(ctx context.Context) *embedder.Embedder {
 	// Check if embedder should be enabled (using default paths as indicator)
 	// In production, you might want to add a config flag to explicitly enable/disable
-	llamaCfg := llamacpp.DefaultConfig()
+	musicCfg := musicembed.DefaultConfig()
 
-	// Try to initialize llama.cpp client
-	llamaClient, err := llamacpp.NewClient(llamaCfg)
+	// Try to initialize music embedding client
+	musicClient, err := musicembed.New(musicCfg)
 	if err != nil {
-		log.Warn(ctx, "Failed to initialize llama.cpp client, embedder disabled", err)
+		log.Warn(ctx, "Failed to initialize music embedding client, embedder disabled", err)
 		return nil
 	}
 
@@ -82,7 +82,7 @@ func initializeEmbedder(ctx context.Context) *embedder.Embedder {
 	milvusClient, err := milvus.NewClient(ctx, milvusCfg)
 	if err != nil {
 		log.Warn(ctx, "Failed to initialize Milvus client, embedder disabled", err)
-		_ = llamaClient.Close()
+		musicClient.Close()
 		return nil
 	}
 
@@ -95,7 +95,7 @@ func initializeEmbedder(ctx context.Context) *embedder.Embedder {
 		EnableFlamingo:    true,
 	}
 
-	emb := embedder.New(embedCfg, llamaClient, milvusClient)
+	emb := embedder.New(embedCfg, musicClient, milvusClient)
 	log.Info(ctx, "Embedder service initialized successfully")
 	return emb
 }

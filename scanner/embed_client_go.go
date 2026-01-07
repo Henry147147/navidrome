@@ -36,7 +36,7 @@ func newGoEmbeddingClient(e *embedder.Embedder) embeddingClient {
 // HealthCheck verifies the embedder is ready.
 func (c *goEmbeddingClient) HealthCheck(ctx context.Context) error {
 	// The Go embedder is always "healthy" if it exists.
-	// Actual health depends on llama.cpp server availability which is checked on demand.
+	// Model availability is checked on demand when embeddings are generated.
 	return nil
 }
 
