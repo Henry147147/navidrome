@@ -13,15 +13,15 @@ import (
 
 // Collection names for Milvus.
 const (
-	CollectionLyrics      = "lyrics_embedding"       // Lyrics text embedding
-	CollectionDescription = "description_embedding"  // Audio description text embedding
+	CollectionLyrics      = "lyrics_embedding"         // Lyrics text embedding
+	CollectionDescription = "description_embedding"    // Audio description text embedding
 	CollectionFlamingo    = "flamingo_audio_embedding" // Flamingo audio embedding
 )
 
 // Embedding dimensions.
 const (
-	DimLyrics      = 4096 // Lyrics text embedding dimension
-	DimDescription = 4096 // Description text embedding dimension
+	DimLyrics      = 3584 // Lyrics text embedding dimension
+	DimDescription = 3584 // Description text embedding dimension
 	DimFlamingo    = 1024 // Flamingo audio embedding dimension
 )
 
