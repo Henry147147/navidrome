@@ -93,6 +93,7 @@ func NewMusicEmbedClient() (*musicembed.Client, func(), error) {
 	if llamaCfg.GPULayers > 0 {
 		cfg.GPULayers = llamaCfg.GPULayers
 	}
+	cfg.MainGPU = llamaCfg.MainGPU
 
 	client, err := musicembed.New(cfg)
 	if err != nil {

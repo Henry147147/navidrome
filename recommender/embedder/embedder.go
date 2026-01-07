@@ -322,7 +322,7 @@ func (e *Embedder) storeEmbedding(ctx context.Context, store VectorStore, collec
 	}}
 
 	if err := store.Upsert(ctx, collection, data); err != nil {
-		log.Error(ctx, "Failed to store embeddings", err, "collection", collection, "track", name)
+		log.Error(ctx, "Failed to store embeddings", "error", err, "collection", collection, "track", name)
 		return
 	}
 	log.Debug(ctx, "Stored embeddings", "collection", collection, "track", name)

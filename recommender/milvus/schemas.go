@@ -3,6 +3,7 @@ package milvus
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"github.com/navidrome/navidrome/log"
@@ -16,8 +17,24 @@ func (c *Client) ensureCollection(ctx context.Context, name string, dim int) err
 	}
 
 	if exists {
-		log.Debug(ctx, "Collection already exists", "collection", name)
-		return nil
+		collection, err := c.milvusClient.DescribeCollection(ctx, name)
+		if err != nil {
+			return fmt.Errorf("describe collection %s: %w", name, err)
+		}
+		existingDim, ok := collectionEmbeddingDim(collection)
+		if ok && existingDim != dim {
+			log.Warn(ctx, "Collection dimension mismatch, recreating",
+				"collection", name,
+				"expected", dim,
+				"actual", existingDim,
+			)
+			if err := c.DropCollection(ctx, name); err != nil {
+				return fmt.Errorf("drop collection %s: %w", name, err)
+			}
+		} else {
+			log.Debug(ctx, "Collection already exists", "collection", name)
+			return nil
+		}
 	}
 
 	log.Info(ctx, "Creating collection", "collection", name, "dimension", dim)
@@ -33,6 +50,30 @@ func (c *Client) ensureCollection(ctx context.Context, name string, dim int) err
 	}
 
 	return nil
+}
+
+func collectionEmbeddingDim(collection *entity.Collection) (int, bool) {
+	if collection == nil || collection.Schema == nil {
+		return 0, false
+	}
+	for _, field := range collection.Schema.Fields {
+		if field.Name != "embedding" {
+			continue
+		}
+		if field.TypeParams == nil {
+			return 0, false
+		}
+		dimStr, ok := field.TypeParams[entity.TypeParamDim]
+		if !ok {
+			return 0, false
+		}
+		dim, err := strconv.Atoi(dimStr)
+		if err != nil {
+			return 0, false
+		}
+		return dim, true
+	}
+	return 0, false
 }
 
 // buildSchema constructs the schema for a collection.

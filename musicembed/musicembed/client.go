@@ -48,6 +48,7 @@ func New(config Config) (*Client, error) {
 	// Load embedding model
 	embedParams := llama.ModelDefaultParams()
 	embedParams.NGpuLayers = int32(config.GPULayers)
+	embedParams.MainGpu = int32(config.MainGPU)
 
 	c.embeddingModel, err = llama.ModelLoadFromFile(config.EmbeddingModelFile, embedParams)
 	if err != nil {
@@ -60,6 +61,7 @@ func New(config Config) (*Client, error) {
 	// Load music model
 	musicParams := llama.ModelDefaultParams()
 	musicParams.NGpuLayers = int32(config.GPULayers)
+	musicParams.MainGpu = int32(config.MainGPU)
 
 	c.musicModel, err = llama.ModelLoadFromFile(config.ModelFile, musicParams)
 	if err != nil {
