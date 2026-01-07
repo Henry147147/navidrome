@@ -992,8 +992,8 @@ func (b *localBackend) ensureTextEvalCapacity(ctx context.Context, text *modelRe
 
 	currentBatch := llama.NBatch(text.embedCtx)
 	currentCtx := llama.NCtx(text.embedCtx)
-	newBatch := nextBatchSize(requiredTokens, currentBatch, uint32(b.cfg.BatchSize))
-	newCtx := nextContextSize(requiredTokens, currentCtx, uint32(b.cfg.ContextSize))
+	newBatch := nextBatchSize(requiredTokens, currentBatch, b.cfg.BatchSize)
+	newCtx := nextContextSize(requiredTokens, currentCtx, b.cfg.ContextSize)
 	if currentBatch >= newBatch && currentCtx >= newCtx {
 		return nil
 	}
@@ -1058,8 +1058,8 @@ func (b *localBackend) ensureAudioEvalCapacity(ctx context.Context, audio *model
 
 	currentBatch := llama.NBatch(targetCtx)
 	currentCtx := llama.NCtx(targetCtx)
-	newBatch := nextBatchSize(requiredTokens, currentBatch, uint32(b.cfg.BatchSize))
-	newCtx := nextContextSize(requiredCtx, currentCtx, uint32(b.cfg.ContextSize))
+	newBatch := nextBatchSize(requiredTokens, currentBatch, b.cfg.BatchSize)
+	newCtx := nextContextSize(requiredCtx, currentCtx, b.cfg.ContextSize)
 
 	if currentBatch >= newBatch && currentCtx >= newCtx {
 		return nil
