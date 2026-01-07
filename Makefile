@@ -267,7 +267,7 @@ download-deps:
 build-llama-bindings:
 	@echo "Building Llama bindings..."
 	@go install github.com/hybridgroup/yzma/cmd/yzma@latest
-	@echo "library installing to $(shell pwd)/llama-lib"
+	@echo "library installing to $(shell pwd)/musicembed/llama-lib"
 	@chmod +x ./scripts/build-llama-cpp.sh
 	@./scripts/build-llama-cpp.sh
 .PHONY: build-llama-bindings

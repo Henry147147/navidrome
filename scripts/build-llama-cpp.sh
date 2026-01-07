@@ -1,3 +1,4 @@
+root_dir="$(cd "$(dirname "$0")/.." && pwd)"
 git clone https://github.com/ggml-org/llama.cpp.git
 cd ./llama.cpp || (echo "Failed to enter to llama cpp directory" && exit)
 cmake -B build \
@@ -11,7 +12,7 @@ cmake -B build \
 -DCMAKE_BUILD_TYPE=Debug \
 -DGGML_CCACHE=OFF
 cmake --build build --config Debug -j $(nproc)
-mkdir -p ../llama-lib
-cp build/bin/* ../llama-lib/
+mkdir -p "$root_dir/musicembed/llama-lib"
+cp build/bin/* "$root_dir/musicembed/llama-lib/"
 cd ..
 rm -rf ./llama.cpp

@@ -19,9 +19,9 @@ import (
 
 var (
 	DefaultLibraryPath        = defaultLibraryPath()
-	DefaultTextModelPath      = "./models/qwen-embedder.gguf"
-	DefaultAudioModelPath     = "./models/music-flamingo.gguf"
-	DefaultAudioProjectorPath = "./models/mmproj-music-flamingo.gguf"
+	DefaultTextModelPath      = "./musicembed/models/qwen-embedder-4b.gguf"
+	DefaultAudioModelPath     = "./musicembed/models/music-flamingo.gguf"
+	DefaultAudioProjectorPath = "./musicembed/models/mmproj-music-flamingo.gguf"
 
 	// Prompts for Music Flamingo audio description
 	lyricsPrompt = `Listen to this audio and transcribe any lyrics or vocal content you hear.
@@ -44,7 +44,7 @@ Format as a single cohesive paragraph.`
 func defaultLibraryPath() string {
 	path := os.Getenv("YZMA_LIB")
 	if path == "" {
-		path = "./llama-lib"
+		path = "./musicembed/llama-lib"
 	}
 	absPath, err := filepath.Abs(path)
 	if err != nil {

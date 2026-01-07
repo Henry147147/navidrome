@@ -23,10 +23,10 @@ const integrationTimeout = 10 * time.Minute
 func TestIntegration_MusicEmbedPipeline(t *testing.T) {
 	root := projectRoot(t)
 
-	llamaLib := filepath.Join(root, "llama-lib")
-	embedModel := filepath.Join(root, "models/qwen-embedder.gguf")
-	mmproj := filepath.Join(root, "models/mmproj-music-flamingo.gguf")
-	musicModel := filepath.Join(root, "models/music-flamingo.gguf")
+	llamaLib := filepath.Join(root, "musicembed/llama-lib")
+	embedModel := filepath.Join(root, "musicembed/models/qwen-embedder-4b.gguf")
+	mmproj := filepath.Join(root, "musicembed/models/mmproj-music-flamingo.gguf")
+	musicModel := filepath.Join(root, "musicembed/models/music-flamingo.gguf")
 	audio := filepath.Join(root, "test/music/Beach Bunny - Deadweight.flac")
 
 	skipIfMissing(t, llamaLib)

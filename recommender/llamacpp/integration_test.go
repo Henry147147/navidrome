@@ -44,9 +44,9 @@ func getProjectRoot() string {
 func skipIfNoModels(t *testing.T) {
 	root := getProjectRoot()
 	paths := []string{
-		filepath.Join(root, "models/qwen-embedder.gguf"),
-		filepath.Join(root, "models/music-flamingo.gguf"),
-		filepath.Join(root, "models/mmproj-music-flamingo.gguf"),
+		filepath.Join(root, "musicembed/models/qwen-embedder-4b.gguf"),
+		filepath.Join(root, "musicembed/models/music-flamingo.gguf"),
+		filepath.Join(root, "musicembed/models/mmproj-music-flamingo.gguf"),
 	}
 	for _, p := range paths {
 		if _, err := os.Stat(p); os.IsNotExist(err) {
@@ -57,7 +57,7 @@ func skipIfNoModels(t *testing.T) {
 
 func skipIfNoLlamaLib(t *testing.T) {
 	root := getProjectRoot()
-	libPath := filepath.Join(root, "llama-lib")
+	libPath := filepath.Join(root, "musicembed/llama-lib")
 	if _, err := os.Stat(libPath); os.IsNotExist(err) {
 		t.Skipf("Llama library not found: %s", libPath)
 	}
@@ -77,8 +77,8 @@ func TestIntegration_EmbedTextBatch(t *testing.T) {
 
 	root := getProjectRoot()
 	cfg := Config{
-		TextModelPath: filepath.Join(root, "models/qwen-embedder.gguf"),
-		LibraryPath:   filepath.Join(root, "llama-lib"),
+		TextModelPath: filepath.Join(root, "musicembed/models/qwen-embedder-4b.gguf"),
+		LibraryPath:   filepath.Join(root, "musicembed/llama-lib"),
 		Timeout:       testTimeout,
 		GPULayers:     99, // Offload all layers to GPU if available
 	}
@@ -123,9 +123,9 @@ func TestIntegration_EmbedAudioBatch(t *testing.T) {
 
 	root := getProjectRoot()
 	cfg := Config{
-		AudioModelPath:     filepath.Join(root, "models/music-flamingo.gguf"),
-		AudioProjectorPath: filepath.Join(root, "models/mmproj-music-flamingo.gguf"),
-		LibraryPath:        filepath.Join(root, "llama-lib"),
+		AudioModelPath:     filepath.Join(root, "musicembed/models/music-flamingo.gguf"),
+		AudioProjectorPath: filepath.Join(root, "musicembed/models/mmproj-music-flamingo.gguf"),
+		LibraryPath:        filepath.Join(root, "musicembed/llama-lib"),
 		Timeout:            testTimeout,
 		GPULayers:          99,
 		ContextSize:        8192, // Audio processing needs larger context
@@ -172,9 +172,9 @@ func TestIntegration_DescribeAudioBatch(t *testing.T) {
 
 	root := getProjectRoot()
 	cfg := Config{
-		AudioModelPath:     filepath.Join(root, "models/music-flamingo.gguf"),
-		AudioProjectorPath: filepath.Join(root, "models/mmproj-music-flamingo.gguf"),
-		LibraryPath:        filepath.Join(root, "llama-lib"),
+		AudioModelPath:     filepath.Join(root, "musicembed/models/music-flamingo.gguf"),
+		AudioProjectorPath: filepath.Join(root, "musicembed/models/mmproj-music-flamingo.gguf"),
+		LibraryPath:        filepath.Join(root, "musicembed/llama-lib"),
 		Timeout:            testTimeout,
 		GPULayers:          99,
 		ContextSize:        8192, // Audio processing needs larger context
@@ -227,10 +227,10 @@ func TestIntegration_FullPipeline(t *testing.T) {
 
 	root := getProjectRoot()
 	cfg := Config{
-		TextModelPath:      filepath.Join(root, "models/qwen-embedder.gguf"),
-		AudioModelPath:     filepath.Join(root, "models/music-flamingo.gguf"),
-		AudioProjectorPath: filepath.Join(root, "models/mmproj-music-flamingo.gguf"),
-		LibraryPath:        filepath.Join(root, "llama-lib"),
+		TextModelPath:      filepath.Join(root, "musicembed/models/qwen-embedder-4b.gguf"),
+		AudioModelPath:     filepath.Join(root, "musicembed/models/music-flamingo.gguf"),
+		AudioProjectorPath: filepath.Join(root, "musicembed/models/mmproj-music-flamingo.gguf"),
+		LibraryPath:        filepath.Join(root, "musicembed/llama-lib"),
 		Timeout:            testTimeout,
 		GPULayers:          99,
 		ContextSize:        8192, // Audio processing needs larger context
