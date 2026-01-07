@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"test/llama/musicembed"
+
 	"github.com/google/wire"
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/model"
@@ -11,7 +13,6 @@ import (
 	"github.com/navidrome/navidrome/recommender/engine"
 	"github.com/navidrome/navidrome/recommender/milvus"
 	"github.com/navidrome/navidrome/recommender/resolver"
-	"test/llama/musicembed"
 )
 
 // Set provides all recommender dependencies for Wire.

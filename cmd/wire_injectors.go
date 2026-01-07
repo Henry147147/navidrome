@@ -6,6 +6,8 @@ import (
 	"context"
 	"time"
 
+	"test/llama/musicembed"
+
 	"github.com/google/wire"
 	"github.com/navidrome/navidrome/core"
 	"github.com/navidrome/navidrome/core/agents"
@@ -28,7 +30,6 @@ import (
 	"github.com/navidrome/navidrome/server/nativeapi"
 	"github.com/navidrome/navidrome/server/public"
 	"github.com/navidrome/navidrome/server/subsonic"
-	"test/llama/musicembed"
 )
 
 var allProviders = wire.NewSet(
