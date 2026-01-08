@@ -23,10 +23,12 @@ type fakeMusicClient struct {
 	textCalls  []string
 	audioCalls []string
 	descCalls  []string
+	callOrder  []string
 	closed     bool
 }
 
 func (f *fakeMusicClient) EmbedText(text string) ([]float32, error) {
+	f.callOrder = append(f.callOrder, "text:"+text)
 	f.textCalls = append(f.textCalls, text)
 	if f.textErr != nil {
 		return nil, f.textErr
@@ -40,6 +42,7 @@ func (f *fakeMusicClient) EmbedText(text string) ([]float32, error) {
 }
 
 func (f *fakeMusicClient) EmbedAudio(path string) ([]float32, error) {
+	f.callOrder = append(f.callOrder, "audio:"+path)
 	f.audioCalls = append(f.audioCalls, path)
 	if f.audioErr != nil {
 		return nil, f.audioErr
@@ -53,6 +56,7 @@ func (f *fakeMusicClient) EmbedAudio(path string) ([]float32, error) {
 }
 
 func (f *fakeMusicClient) GenerateDescription(path string) (string, error) {
+	f.callOrder = append(f.callOrder, "desc:"+path)
 	f.descCalls = append(f.descCalls, path)
 	if f.descErr != nil {
 		return "", f.descErr
@@ -300,6 +304,34 @@ func TestEmbedAudioStoresEmbeddings(t *testing.T) {
 	assert.Equal(t, ModelDescription, store.upserts[1].data[0].ModelID)
 	assert.Equal(t, milvus.CollectionFlamingo, store.upserts[2].collection)
 	assert.Equal(t, ModelFlamingo, store.upserts[2].data[0].ModelID)
+}
+
+func TestEmbedAudioGroupsModelStages(t *testing.T) {
+	ctx := context.Background()
+	music := &fakeMusicClient{
+		textEmbeddings: map[string][]float32{
+			"lyrics":      {0.1, 0.2},
+			"description": {0.3, 0.4},
+		},
+		audioEmbeddings: map[string][]float32{
+			"/test.mp3": {0.5, 0.6},
+		},
+		descriptions: map[string]string{
+			"/test.mp3": "description",
+		},
+	}
+	store := &fakeVectorStore{}
+	e := New(Config{EnableLyrics: true, EnableDescription: true, EnableFlamingo: true}, music, store)
+
+	_, err := e.EmbedAudio(ctx, EmbedRequest{FilePath: "/test.mp3", TrackName: "Track", Lyrics: "lyrics"})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		"audio:/test.mp3",
+		"desc:/test.mp3",
+		"text:lyrics",
+		"text:description",
+	}, music.callOrder)
 }
 
 func TestEmbedAudioSkipsFailedStages(t *testing.T) {

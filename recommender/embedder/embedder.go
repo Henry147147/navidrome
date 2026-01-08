@@ -129,12 +129,12 @@ func (e *Embedder) EmbedAudio(ctx context.Context, req EmbedRequest) (*EmbedResu
 
 	result := &EmbedResult{TrackName: trackName}
 
-	if e.config.EnableLyrics && req.Lyrics != "" {
-		embedding, err := musicClient.EmbedText(req.Lyrics)
+	if e.config.EnableFlamingo {
+		embedding, err := musicClient.EmbedAudio(req.FilePath)
 		if err != nil {
-			log.Warn(ctx, "Lyrics embedding failed (non-fatal)", err)
+			log.Warn(ctx, "Audio embedding failed (non-fatal)", err)
 		} else {
-			result.LyricsEmbedding = float32sToFloat64s(embedding)
+			result.FlamingoEmbedding = float32sToFloat64s(embedding)
 		}
 	}
 
@@ -145,22 +145,23 @@ func (e *Embedder) EmbedAudio(ctx context.Context, req EmbedRequest) (*EmbedResu
 		} else {
 			result.Description = description
 		}
-		if result.Description != "" {
-			embedding, err := musicClient.EmbedText(result.Description)
-			if err != nil {
-				log.Warn(ctx, "Description embedding failed (non-fatal)", err)
-			} else {
-				result.DescriptionEmbedding = float32sToFloat64s(embedding)
-			}
+	}
+
+	if e.config.EnableLyrics && req.Lyrics != "" {
+		embedding, err := musicClient.EmbedText(req.Lyrics)
+		if err != nil {
+			log.Warn(ctx, "Lyrics embedding failed (non-fatal)", err)
+		} else {
+			result.LyricsEmbedding = float32sToFloat64s(embedding)
 		}
 	}
 
-	if e.config.EnableFlamingo {
-		embedding, err := musicClient.EmbedAudio(req.FilePath)
+	if result.Description != "" {
+		embedding, err := musicClient.EmbedText(result.Description)
 		if err != nil {
-			log.Warn(ctx, "Audio embedding failed (non-fatal)", err)
+			log.Warn(ctx, "Description embedding failed (non-fatal)", err)
 		} else {
-			result.FlamingoEmbedding = float32sToFloat64s(embedding)
+			result.DescriptionEmbedding = float32sToFloat64s(embedding)
 		}
 	}
 

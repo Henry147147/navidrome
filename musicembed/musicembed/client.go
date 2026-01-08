@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/loader"
@@ -16,6 +17,10 @@ var soundMarker = []byte("<sound>\x00")
 // Client provides access to music embedding functionality.
 type Client struct {
 	config Config
+
+	mu          sync.Mutex
+	activeModel modelKind
+	closed      bool
 
 	// Models
 	embeddingModel llama.Model
@@ -32,6 +37,14 @@ type Client struct {
 	chatTemplate string
 }
 
+type modelKind int
+
+const (
+	modelNone modelKind = iota
+	modelEmbedding
+	modelMusic
+)
+
 // New creates a new Client and initializes all required libraries and models.
 func New(config Config) (*Client, error) {
 	absPath, err := filepath.Abs(config.LibraryPath)
@@ -39,71 +52,143 @@ func New(config Config) (*Client, error) {
 		return nil, fmt.Errorf("failed to resolve library path: %w", err)
 	}
 
+	if err := validateModelFiles(config); err != nil {
+		return nil, err
+	}
+
 	if err := initLibraries(absPath); err != nil {
 		return nil, fmt.Errorf("failed to initialize libraries: %w", err)
 	}
 
-	c := &Client{config: config}
+	return &Client{config: config}, nil
+}
 
-	// Load embedding model
+// Close releases all resources held by the client.
+func (c *Client) Close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return
+	}
+	c.closed = true
+	c.unloadMusicLocked()
+	c.unloadEmbeddingLocked()
+	c.activeModel = modelNone
+}
+
+func (c *Client) withEmbeddingModel(fn func() error) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.ensureEmbeddingModelLocked(); err != nil {
+		return err
+	}
+	return fn()
+}
+
+func (c *Client) withMusicModel(fn func() error) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.ensureMusicModelLocked(); err != nil {
+		return err
+	}
+	return fn()
+}
+
+func (c *Client) ensureEmbeddingModelLocked() error {
+	if c.closed {
+		return fmt.Errorf("musicembed client is closed")
+	}
+	if c.activeModel == modelEmbedding && c.embeddingModel != 0 {
+		return nil
+	}
+
+	c.unloadMusicLocked()
+
 	embedParams := llama.ModelDefaultParams()
-	embedParams.NGpuLayers = int32(config.GPULayers)
-	embedParams.MainGpu = int32(config.MainGPU)
+	embedParams.NGpuLayers = int32(c.config.GPULayers)
+	embedParams.MainGpu = int32(c.config.MainGPU)
 
-	c.embeddingModel, err = llama.ModelLoadFromFile(config.EmbeddingModelFile, embedParams)
+	model, err := llama.ModelLoadFromFile(c.config.EmbeddingModelFile, embedParams)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load embedding model: %w", err)
+		return fmt.Errorf("failed to load embedding model: %w", err)
 	}
-	if c.embeddingModel == 0 {
-		return nil, fmt.Errorf("failed to load embedding model from %s", config.EmbeddingModelFile)
+	if model == 0 {
+		return fmt.Errorf("failed to load embedding model from %s", c.config.EmbeddingModelFile)
 	}
 
-	// Load music model
+	c.embeddingModel = model
+	c.activeModel = modelEmbedding
+	return nil
+}
+
+func (c *Client) ensureMusicModelLocked() error {
+	if c.closed {
+		return fmt.Errorf("musicembed client is closed")
+	}
+	if c.activeModel == modelMusic && c.musicModel != 0 && c.mmprojCtx != 0 && c.sampler != 0 {
+		return nil
+	}
+
+	c.unloadEmbeddingLocked()
+
 	musicParams := llama.ModelDefaultParams()
-	musicParams.NGpuLayers = int32(config.GPULayers)
-	musicParams.MainGpu = int32(config.MainGPU)
+	musicParams.NGpuLayers = int32(c.config.GPULayers)
+	musicParams.MainGpu = int32(c.config.MainGPU)
 
-	c.musicModel, err = llama.ModelLoadFromFile(config.ModelFile, musicParams)
+	model, err := llama.ModelLoadFromFile(c.config.ModelFile, musicParams)
 	if err != nil {
-		c.Close()
-		return nil, fmt.Errorf("failed to load music model: %w", err)
+		return fmt.Errorf("failed to load music model: %w", err)
 	}
-	if c.musicModel == 0 {
-		c.Close()
-		return nil, fmt.Errorf("failed to load music model from %s", config.ModelFile)
+	if model == 0 {
+		return fmt.Errorf("failed to load music model from %s", c.config.ModelFile)
 	}
 
-	c.vocab = llama.ModelGetVocab(c.musicModel)
-	c.chatTemplate = llama.ModelChatTemplate(c.musicModel, "")
-	c.sampler = newMusicSampler(c.musicModel)
-	if c.sampler == 0 {
-		c.Close()
-		return nil, fmt.Errorf("failed to create sampler")
+	vocab := llama.ModelGetVocab(model)
+	chatTemplate := llama.ModelChatTemplate(model, "")
+	sampler := newMusicSampler(model)
+	if sampler == 0 {
+		llama.ModelFree(model)
+		return fmt.Errorf("failed to create sampler")
 	}
 
-	// Initialize mmproj context
 	mtmd.LogSet(llama.LogSilent())
 	ctxParams := mtmd.ContextParamsDefault()
-	ctxParams.UseGPU = config.UseGPU
+	ctxParams.UseGPU = c.config.UseGPU
 	ctxParams.PrintTimings = false
-	ctxParams.Threads = int32(config.Threads)
+	ctxParams.Threads = int32(c.config.Threads)
 	ctxParams.MediaMarker = &soundMarker[0]
 	ctxParams.FlashAttentionType = llama.FlashAttentionTypeAuto
 	ctxParams.Warmup = false
 	ctxParams.ImageMinTokens = 0
 	ctxParams.ImageMaxTokens = 0
 
-	c.mmprojCtx, err = mtmd.InitFromFile(config.MmprojFile, c.musicModel, ctxParams)
+	mmprojCtx, err := mtmd.InitFromFile(c.config.MmprojFile, model, ctxParams)
 	if err != nil {
-		c.Close()
-		return nil, fmt.Errorf("failed to initialize mmproj context: %w", err)
+		llama.SamplerFree(sampler)
+		llama.ModelFree(model)
+		return fmt.Errorf("failed to initialize mmproj context: %w", err)
 	}
 
-	return c, nil
+	c.musicModel = model
+	c.vocab = vocab
+	c.chatTemplate = chatTemplate
+	c.sampler = sampler
+	c.mmprojCtx = mmprojCtx
+	c.activeModel = modelMusic
+	return nil
 }
 
-// Close releases all resources held by the client.
-func (c *Client) Close() {
+func (c *Client) unloadEmbeddingLocked() {
+	if c.embeddingModel != 0 {
+		llama.ModelFree(c.embeddingModel)
+		c.embeddingModel = 0
+	}
+	if c.activeModel == modelEmbedding {
+		c.activeModel = modelNone
+	}
+}
+
+func (c *Client) unloadMusicLocked() {
 	if c.mmprojCtx != 0 {
 		mtmd.Free(c.mmprojCtx)
 		c.mmprojCtx = 0
@@ -116,9 +201,10 @@ func (c *Client) Close() {
 		llama.ModelFree(c.musicModel)
 		c.musicModel = 0
 	}
-	if c.embeddingModel != 0 {
-		llama.ModelFree(c.embeddingModel)
-		c.embeddingModel = 0
+	c.vocab = 0
+	c.chatTemplate = ""
+	if c.activeModel == modelMusic {
+		c.activeModel = modelNone
 	}
 }
 
@@ -149,6 +235,28 @@ func initLibraries(absPath string) error {
 	llama.LogSet(llama.LogSilent())
 	llama.Init()
 
+	return nil
+}
+
+func validateModelFiles(config Config) error {
+	if config.EmbeddingModelFile == "" {
+		return fmt.Errorf("embedding model file path is required")
+	}
+	if config.ModelFile == "" {
+		return fmt.Errorf("music model file path is required")
+	}
+	if config.MmprojFile == "" {
+		return fmt.Errorf("mmproj file path is required")
+	}
+	if _, err := os.Stat(config.EmbeddingModelFile); err != nil {
+		return fmt.Errorf("embedding model file not found: %w", err)
+	}
+	if _, err := os.Stat(config.ModelFile); err != nil {
+		return fmt.Errorf("music model file not found: %w", err)
+	}
+	if _, err := os.Stat(config.MmprojFile); err != nil {
+		return fmt.Errorf("mmproj file not found: %w", err)
+	}
 	return nil
 }
 
