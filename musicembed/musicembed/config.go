@@ -58,7 +58,7 @@ func DefaultConfig() Config {
 		BatchSize:          2048,
 		GenerationMargin:   512,
 		MaxOutputTokens:    8192,
-		GPULayers:          25,
+		GPULayers:          99,
 		MainGPU:            0,
 		UseGPU:             true,
 		Threads:            8,
