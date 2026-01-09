@@ -21,7 +21,7 @@ const (
 // Embedding dimensions.
 const (
 	DimLyrics      = 3584 // Lyrics text embedding dimension
-	DimDescription = 3584 // Description text embedding dimension
+	DimDescription = 2560 // Description text embedding dimension
 	DimFlamingo    = 1024 // Flamingo audio embedding dimension
 )
 

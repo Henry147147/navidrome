@@ -15,7 +15,7 @@ func TestCollectionConstants(t *testing.T) {
 
 func TestDimensionConstants(t *testing.T) {
 	assert.Equal(t, 3584, DimLyrics)
-	assert.Equal(t, 3584, DimDescription)
+	assert.Equal(t, 2560, DimDescription)
 	assert.Equal(t, 1024, DimFlamingo)
 }
 
