@@ -60,6 +60,8 @@ func New(config Config) (*Client, error) {
 		return nil, fmt.Errorf("failed to initialize libraries: %w", err)
 	}
 
+	logDiagnostics(config, absPath)
+
 	return &Client{config: config}, nil
 }
 
@@ -108,6 +110,9 @@ func (c *Client) ensureEmbeddingModelLocked() error {
 	embedParams.NGpuLayers = int32(c.config.GPULayers)
 	embedParams.MainGpu = int32(c.config.MainGPU)
 
+	diagf("musicembed: loading embedding model path=%q gpuLayers=%d mainGpu=%d",
+		c.config.EmbeddingModelFile, c.config.GPULayers, c.config.MainGPU)
+
 	model, err := llama.ModelLoadFromFile(c.config.EmbeddingModelFile, embedParams)
 	if err != nil {
 		return fmt.Errorf("failed to load embedding model: %w", err)
@@ -134,6 +139,9 @@ func (c *Client) ensureMusicModelLocked() error {
 	musicParams := llama.ModelDefaultParams()
 	musicParams.NGpuLayers = int32(c.config.GPULayers)
 	musicParams.MainGpu = int32(c.config.MainGPU)
+
+	diagf("musicembed: loading music model path=%q gpuLayers=%d mainGpu=%d useGpu=%t",
+		c.config.ModelFile, c.config.GPULayers, c.config.MainGPU, c.config.UseGPU)
 
 	model, err := llama.ModelLoadFromFile(c.config.ModelFile, musicParams)
 	if err != nil {

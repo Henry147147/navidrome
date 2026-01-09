@@ -680,7 +680,7 @@ func setViperDefaults() {
 	viper.SetDefault("recommendations.embedder.enabledescription", true)
 	viper.SetDefault("recommendations.embedder.enableflamingo", false)
 	viper.SetDefault("recommendations.embedder.llama.librarypath", "./musicembed/llama-lib")
-	viper.SetDefault("recommendations.embedder.llama.textmodelpath", "./musicembed/models/music-flamingo.gguf")
+	viper.SetDefault("recommendations.embedder.llama.textmodelpath", "./musicembed/models/qwen-embedder-4b.gguf")
 	viper.SetDefault("recommendations.embedder.llama.audiomodelpath", "./musicembed/models/music-flamingo.gguf")
 	viper.SetDefault("recommendations.embedder.llama.audioprojectorpath", "./musicembed/models/mmproj-music-flamingo.gguf")
 	viper.SetDefault("recommendations.embedder.llama.contextsize", 0)

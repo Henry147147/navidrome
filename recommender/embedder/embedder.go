@@ -78,95 +78,39 @@ type Embedder struct {
 	vectorStore VectorStore
 	mu          sync.RWMutex
 	closed      bool
+	batchCh     chan batchItem
+	stopCh      chan struct{}
 }
 
 // New creates a new Embedder with the given configuration and clients.
 func New(cfg Config, musicClient MusicClient, store VectorStore) *Embedder {
-	return &Embedder{
+	e := &Embedder{
 		config:      cfg,
 		musicClient: musicClient,
 		vectorStore: store,
 	}
+	e.startBatcher()
+	return e
 }
 
 // EmbedAudio processes an audio file through all enabled stages.
 func (e *Embedder) EmbedAudio(ctx context.Context, req EmbedRequest) (*EmbedResult, error) {
-	e.mu.RLock()
-	if e.closed {
-		e.mu.RUnlock()
-		return nil, fmt.Errorf("embedder is closed")
+	if !e.batchingEnabled() {
+		return e.processSingle(ctx, req)
 	}
-	musicClient := e.musicClient
-	store := e.vectorStore
-	e.mu.RUnlock()
 
-	if musicClient == nil {
-		return nil, fmt.Errorf("music embedder is not configured")
-	}
-	if store == nil {
-		return nil, fmt.Errorf("vector store is not configured")
-	}
-	if req.FilePath == "" {
-		return nil, fmt.Errorf("file path is required")
-	}
-	if err := ctx.Err(); err != nil {
+	response := make(chan batchResult, 1)
+	item := batchItem{ctx: ctx, req: req, resp: response}
+	if err := e.enqueueBatch(item); err != nil {
 		return nil, err
 	}
 
-	trackName := req.TrackName
-	if trackName == "" {
-		trackName = canonicalName(req.Artist, req.Title)
+	select {
+	case result := <-response:
+		return result.result, result.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-	if trackName == "" {
-		trackName = req.TrackID
-	}
-
-	log.Debug(ctx, "Embedding audio track",
-		"file", req.FilePath,
-		"name", trackName,
-		"trackId", req.TrackID,
-	)
-
-	result := &EmbedResult{TrackName: trackName}
-
-	if e.config.EnableFlamingo {
-		embedding, err := musicClient.EmbedAudio(req.FilePath)
-		if err != nil {
-			log.Warn(ctx, "Audio embedding failed (non-fatal)", err)
-		} else {
-			result.FlamingoEmbedding = float32sToFloat64s(embedding)
-		}
-	}
-
-	if e.config.EnableDescription {
-		description, err := musicClient.GenerateDescription(req.FilePath)
-		if err != nil {
-			log.Warn(ctx, "Audio description failed (non-fatal)", err)
-		} else {
-			result.Description = description
-		}
-	}
-
-	if e.config.EnableLyrics && req.Lyrics != "" {
-		embedding, err := musicClient.EmbedText(req.Lyrics)
-		if err != nil {
-			log.Warn(ctx, "Lyrics embedding failed (non-fatal)", err)
-		} else {
-			result.LyricsEmbedding = float32sToFloat64s(embedding)
-		}
-	}
-
-	if result.Description != "" {
-		embedding, err := musicClient.EmbedText(result.Description)
-		if err != nil {
-			log.Warn(ctx, "Description embedding failed (non-fatal)", err)
-		} else {
-			result.DescriptionEmbedding = float32sToFloat64s(embedding)
-		}
-	}
-
-	e.storeResults(ctx, store, trackName, result)
-	return result, nil
 }
 
 // EmbedText generates text embeddings directly (for query-time use).
@@ -273,10 +217,11 @@ func (e *Embedder) CheckStatus(ctx context.Context, req StatusRequest) (*StatusR
 // FlushBatch forces processing of any pending batch items.
 func (e *Embedder) FlushBatch(ctx context.Context) error {
 	e.mu.RLock()
-	defer e.mu.RUnlock()
 	if e.closed {
+		e.mu.RUnlock()
 		return fmt.Errorf("embedder is closed")
 	}
+	e.mu.RUnlock()
 	return nil
 }
 
@@ -289,11 +234,240 @@ func (e *Embedder) Close() error {
 	}
 	e.closed = true
 	musicClient := e.musicClient
+	stopCh := e.stopCh
 	e.mu.Unlock()
 
+	if stopCh != nil {
+		close(stopCh)
+	}
 	if musicClient != nil {
 		musicClient.Close()
 	}
+	return nil
+}
+
+type batchItem struct {
+	ctx  context.Context
+	req  EmbedRequest
+	resp chan batchResult
+}
+
+type batchResult struct {
+	result *EmbedResult
+	err    error
+}
+
+func (e *Embedder) batchingEnabled() bool {
+	return e.config.BatchSize > 1
+}
+
+func (e *Embedder) startBatcher() {
+	if !e.batchingEnabled() {
+		return
+	}
+	e.batchCh = make(chan batchItem, e.config.BatchSize)
+	e.stopCh = make(chan struct{})
+	go e.runBatcher()
+}
+
+func (e *Embedder) enqueueBatch(item batchItem) error {
+	e.mu.RLock()
+	if e.closed {
+		e.mu.RUnlock()
+		return fmt.Errorf("embedder is closed")
+	}
+	batchCh := e.batchCh
+	stopCh := e.stopCh
+	e.mu.RUnlock()
+
+	if batchCh == nil {
+		return e.processBatch([]batchItem{item})
+	}
+
+	select {
+	case batchCh <- item:
+		return nil
+	case <-stopCh:
+		return fmt.Errorf("embedder is closed")
+	}
+}
+
+func (e *Embedder) runBatcher() {
+	var batch []batchItem
+
+	for {
+		select {
+		case item := <-e.batchCh:
+			if item.ctx != nil {
+				if err := item.ctx.Err(); err != nil {
+					item.resp <- batchResult{err: err}
+					continue
+				}
+			}
+			batch = append(batch, item)
+		drain:
+			for len(batch) < e.config.BatchSize {
+				select {
+				case next := <-e.batchCh:
+					batch = append(batch, next)
+				default:
+					break drain
+				}
+			}
+			if len(batch) > 0 {
+				_ = e.processBatch(batch)
+				batch = nil
+			}
+		case <-e.stopCh:
+			if len(batch) > 0 {
+				_ = e.processBatch(batch)
+			}
+			return
+		}
+	}
+}
+
+func (e *Embedder) processSingle(ctx context.Context, req EmbedRequest) (*EmbedResult, error) {
+	response := make(chan batchResult, 1)
+	item := batchItem{ctx: ctx, req: req, resp: response}
+	if err := e.processBatch([]batchItem{item}); err != nil {
+		return nil, err
+	}
+	result := <-response
+	return result.result, result.err
+}
+
+func (e *Embedder) processBatch(items []batchItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	e.mu.RLock()
+	if e.closed {
+		e.mu.RUnlock()
+		for _, item := range items {
+			item.resp <- batchResult{err: fmt.Errorf("embedder is closed")}
+		}
+		return fmt.Errorf("embedder is closed")
+	}
+	musicClient := e.musicClient
+	store := e.vectorStore
+	e.mu.RUnlock()
+
+	if musicClient == nil {
+		err := fmt.Errorf("music embedder is not configured")
+		for _, item := range items {
+			item.resp <- batchResult{err: err}
+		}
+		return err
+	}
+	if store == nil {
+		err := fmt.Errorf("vector store is not configured")
+		for _, item := range items {
+			item.resp <- batchResult{err: err}
+		}
+		return err
+	}
+
+	type workItem struct {
+		item      batchItem
+		trackName string
+		result    *EmbedResult
+		err       error
+	}
+	works := make([]*workItem, 0, len(items))
+
+	for _, item := range items {
+		if item.req.FilePath == "" {
+			item.resp <- batchResult{err: fmt.Errorf("file path is required")}
+			continue
+		}
+		if err := item.ctx.Err(); err != nil {
+			item.resp <- batchResult{err: err}
+			continue
+		}
+
+		trackName := item.req.TrackName
+		if trackName == "" {
+			trackName = canonicalName(item.req.Artist, item.req.Title)
+		}
+		if trackName == "" {
+			trackName = item.req.TrackID
+		}
+
+		log.Debug(item.ctx, "Embedding audio track",
+			"file", item.req.FilePath,
+			"name", trackName,
+			"trackId", item.req.TrackID,
+		)
+
+		works = append(works, &workItem{
+			item:      item,
+			trackName: trackName,
+			result:    &EmbedResult{TrackName: trackName},
+		})
+	}
+
+	for _, work := range works {
+		if err := work.item.ctx.Err(); err != nil {
+			work.err = err
+			continue
+		}
+
+		if e.config.EnableFlamingo {
+			embedding, err := musicClient.EmbedAudio(work.item.req.FilePath)
+			if err != nil {
+				log.Warn(work.item.ctx, "Audio embedding failed (non-fatal)", err)
+			} else {
+				work.result.FlamingoEmbedding = float32sToFloat64s(embedding)
+			}
+		}
+
+		if e.config.EnableDescription {
+			description, err := musicClient.GenerateDescription(work.item.req.FilePath)
+			if err != nil {
+				log.Warn(work.item.ctx, "Audio description failed (non-fatal)", err)
+			} else {
+				work.result.Description = description
+			}
+		}
+	}
+
+	for _, work := range works {
+		if work.err != nil {
+			continue
+		}
+		if err := work.item.ctx.Err(); err != nil {
+			work.err = err
+			continue
+		}
+
+		if e.config.EnableLyrics && work.item.req.Lyrics != "" {
+			embedding, err := musicClient.EmbedText(work.item.req.Lyrics)
+			if err != nil {
+				log.Warn(work.item.ctx, "Lyrics embedding failed (non-fatal)", err)
+			} else {
+				work.result.LyricsEmbedding = float32sToFloat64s(embedding)
+			}
+		}
+
+		if work.result.Description != "" {
+			embedding, err := musicClient.EmbedText(work.result.Description)
+			if err != nil {
+				log.Warn(work.item.ctx, "Description embedding failed (non-fatal)", err)
+			} else {
+				work.result.DescriptionEmbedding = float32sToFloat64s(embedding)
+			}
+		}
+	}
+
+	for _, work := range works {
+		if work.err == nil {
+			e.storeResults(work.item.ctx, store, work.trackName, work.result)
+		}
+		work.item.resp <- batchResult{result: work.result, err: work.err}
+	}
+
 	return nil
 }
 
