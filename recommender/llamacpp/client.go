@@ -67,7 +67,6 @@ type Config struct {
 	ThreadsBatch int
 
 	GPULayers int
-	MainGPU   int
 
 	Timeout      time.Duration
 	MaxRetries   int
@@ -1246,7 +1245,6 @@ func (b *localBackend) modelParams() llama.ModelParams {
 	params := llama.ModelDefaultParams()
 	if b.cfg.GPULayers > 0 {
 		params.NGpuLayers = int32(b.cfg.GPULayers)
-		params.MainGpu = int32(b.cfg.MainGPU)
 	}
 	return params
 }

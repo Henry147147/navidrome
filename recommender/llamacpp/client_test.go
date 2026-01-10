@@ -65,7 +65,6 @@ func TestConfig(t *testing.T) {
 		Threads:            8,
 		ThreadsBatch:       4,
 		GPULayers:          40,
-		MainGPU:            1,
 		Timeout:            10 * time.Minute,
 		MaxRetries:         3,
 		RetryBackoff:       2 * time.Second,
@@ -81,7 +80,6 @@ func TestConfig(t *testing.T) {
 	assert.Equal(t, 8, cfg.Threads)
 	assert.Equal(t, 4, cfg.ThreadsBatch)
 	assert.Equal(t, 40, cfg.GPULayers)
-	assert.Equal(t, 1, cfg.MainGPU)
 	assert.Equal(t, 10*time.Minute, cfg.Timeout)
 	assert.Equal(t, 3, cfg.MaxRetries)
 	assert.Equal(t, 2*time.Second, cfg.RetryBackoff)

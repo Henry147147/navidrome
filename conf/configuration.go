@@ -261,7 +261,6 @@ type llamaOptions struct {
 	Threads            int    // Threads for inference (0 = default)
 	ThreadsBatch       int    // Threads for batch processing (0 = default)
 	GPULayers          int    // Layers to offload to GPU (0 = default)
-	MainGPU            int    // Main GPU index (0 = default)
 }
 
 type milvusOptions struct {
@@ -688,8 +687,7 @@ func setViperDefaults() {
 	viper.SetDefault("recommendations.embedder.llama.ubatchsize", 0)
 	viper.SetDefault("recommendations.embedder.llama.threads", 0)
 	viper.SetDefault("recommendations.embedder.llama.threadsbatch", 0)
-	viper.SetDefault("recommendations.embedder.llama.gpulayers", 0)
-	viper.SetDefault("recommendations.embedder.llama.maingpu", 0)
+	viper.SetDefault("recommendations.embedder.llama.gpulayers", 99)
 	// Milvus options
 	viper.SetDefault("recommendations.milvus.uri", "http://localhost:19530")
 	viper.SetDefault("recommendations.milvus.timeout", 30*time.Second)

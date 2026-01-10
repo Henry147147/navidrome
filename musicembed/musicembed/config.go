@@ -34,9 +34,6 @@ type Config struct {
 	// GPULayers is the number of layers to offload to GPU.
 	GPULayers int
 
-	// MainGPU is the GPU index to use when offloading.
-	MainGPU int
-
 	// UseGPU enables GPU acceleration for mmproj processing.
 	UseGPU bool
 
@@ -62,7 +59,6 @@ func DefaultConfig() Config {
 		GenerationMargin:   512,
 		MaxOutputTokens:    8192,
 		GPULayers:          99,
-		MainGPU:            0,
 		UseGPU:             true,
 		Threads:            8,
 		DescriptionPrompt:  "Describe this track in full detail - tell me the genre, tempo, and key, then dive into the instruments, production style, and overall mood it creates.",

@@ -41,7 +41,7 @@ func logDiagnostics(cfg Config, libraryPath string) {
 		diagf("musicembed: diagnostics enabled")
 		diagf("musicembed: libraryPath=%q", libraryPath)
 		diagf("musicembed: models embed=%q music=%q mmproj=%q", cfg.EmbeddingModelFile, cfg.ModelFile, cfg.MmprojFile)
-		diagf("musicembed: gpu layers=%d main gpu=%d use gpu=%t", cfg.GPULayers, cfg.MainGPU, cfg.UseGPU)
+		diagf("musicembed: gpu layers=%d use gpu=%t", cfg.GPULayers, cfg.UseGPU)
 		diagf("musicembed: context size=%d batch size=%d generation margin=%d max output=%d threads=%d",
 			cfg.ContextSize, cfg.BatchSize, cfg.GenerationMargin, cfg.MaxOutputTokens, cfg.Threads)
 
