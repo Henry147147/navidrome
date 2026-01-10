@@ -246,6 +246,7 @@ func TestEmbeddingDataStruct(t *testing.T) {
 		Embedding:   []float64{0.1, 0.2, 0.3, 0.4},
 		Offset:      0.5,
 		ModelID:     "lyrics",
+		Lyrics:      "Some lyrics",
 		Description: "A beautiful test track",
 	}
 
@@ -253,17 +254,19 @@ func TestEmbeddingDataStruct(t *testing.T) {
 	assert.Equal(t, []float64{0.1, 0.2, 0.3, 0.4}, data.Embedding)
 	assert.Equal(t, 0.5, data.Offset)
 	assert.Equal(t, "lyrics", data.ModelID)
+	assert.Equal(t, "Some lyrics", data.Lyrics)
 	assert.Equal(t, "A beautiful test track", data.Description)
 }
 
 func TestEmbeddingDataWithEmptyFields(t *testing.T) {
-	// Description is optional (only used for description collection)
+	// Lyrics/Description are optional (collection-specific)
 	data := EmbeddingData{
 		Name:      "Track Name",
 		Embedding: []float64{0.1},
 		ModelID:   "flamingo",
 	}
 
+	assert.Empty(t, data.Lyrics)
 	assert.Empty(t, data.Description)
 	assert.Equal(t, 0.0, data.Offset)
 }

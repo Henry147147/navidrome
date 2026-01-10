@@ -117,6 +117,7 @@ type EmbeddingData struct {
 	Embedding   []float64
 	Offset      float64
 	ModelID     string
+	Lyrics      string // Only for lyrics_embedding collection
 	Description string // Only for description_embedding collection
 }
 

@@ -323,6 +323,7 @@ func TestEmbedAudioStoresEmbeddings(t *testing.T) {
 	require.Len(t, store.upserts, 3)
 	assert.Equal(t, milvus.CollectionLyrics, store.upserts[0].collection)
 	assert.Equal(t, ModelLyrics, store.upserts[0].data[0].ModelID)
+	assert.Equal(t, "generated lyrics", store.upserts[0].data[0].Lyrics)
 	assert.Equal(t, milvus.CollectionDescription, store.upserts[1].collection)
 	assert.Equal(t, ModelDescription, store.upserts[1].data[0].ModelID)
 	assert.Equal(t, milvus.CollectionFlamingo, store.upserts[2].collection)

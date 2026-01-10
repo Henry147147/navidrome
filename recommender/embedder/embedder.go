@@ -491,21 +491,22 @@ func (e *Embedder) storeResults(ctx context.Context, store VectorStore, trackNam
 	}
 
 	if len(result.LyricsEmbedding) > 0 {
-		e.storeEmbedding(ctx, store, milvus.CollectionLyrics, trackName, result.LyricsEmbedding, result.GeneratedLyrics, ModelLyrics)
+		e.storeEmbedding(ctx, store, milvus.CollectionLyrics, trackName, result.LyricsEmbedding, result.GeneratedLyrics, "", ModelLyrics)
 	}
 	if len(result.DescriptionEmbedding) > 0 {
-		e.storeEmbedding(ctx, store, milvus.CollectionDescription, trackName, result.DescriptionEmbedding, result.Description, ModelDescription)
+		e.storeEmbedding(ctx, store, milvus.CollectionDescription, trackName, result.DescriptionEmbedding, "", result.Description, ModelDescription)
 	}
 	if len(result.FlamingoEmbedding) > 0 {
-		e.storeEmbedding(ctx, store, milvus.CollectionFlamingo, trackName, result.FlamingoEmbedding, "", ModelFlamingo)
+		e.storeEmbedding(ctx, store, milvus.CollectionFlamingo, trackName, result.FlamingoEmbedding, "", "", ModelFlamingo)
 	}
 }
 
-func (e *Embedder) storeEmbedding(ctx context.Context, store VectorStore, collection, name string, embedding []float64, description, modelID string) {
+func (e *Embedder) storeEmbedding(ctx context.Context, store VectorStore, collection, name string, embedding []float64, lyrics, description, modelID string) {
 	data := []milvus.EmbeddingData{{
 		Name:        name,
 		Embedding:   embedding,
 		ModelID:     modelID,
+		Lyrics:      lyrics,
 		Description: description,
 	}}
 

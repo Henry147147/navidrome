@@ -123,6 +123,7 @@ func TestEmbeddingData(t *testing.T) {
 		Embedding:   []float64{0.1, 0.2, 0.3, 0.4},
 		Offset:      0.5,
 		ModelID:     "lyrics",
+		Lyrics:      "A generated lyric",
 		Description: "A beautiful melody",
 	}
 
@@ -130,6 +131,7 @@ func TestEmbeddingData(t *testing.T) {
 	assert.Len(t, data.Embedding, 4)
 	assert.Equal(t, 0.5, data.Offset)
 	assert.Equal(t, "lyrics", data.ModelID)
+	assert.Equal(t, "A generated lyric", data.Lyrics)
 	assert.Equal(t, "A beautiful melody", data.Description)
 }
 

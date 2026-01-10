@@ -15,7 +15,8 @@ type EmbeddingData struct {
 	Embedding   []float64
 	Offset      float64
 	ModelID     string
-	Description string
+	Lyrics      string // Only for lyrics_embedding collection
+	Description string // Only for description_embedding collection
 }
 
 // DimensionForCollection returns the default vector dimension for a collection.
@@ -51,6 +52,7 @@ func (c *Client) Upsert(ctx context.Context, collection string, data []Embedding
 	embeddings := make([][]float32, len(data))
 	offsets := make([]float32, len(data))
 	modelIDs := make([]string, len(data))
+	lyrics := make([]string, len(data))
 	descriptions := make([]string, len(data))
 
 	dim := dimensionForCollection(c.dimensions, collection)
@@ -60,6 +62,7 @@ func (c *Client) Upsert(ctx context.Context, collection string, data []Embedding
 		embeddings[i] = float64sToFloat32s(d.Embedding)
 		offsets[i] = float32(d.Offset)
 		modelIDs[i] = d.ModelID
+		lyrics[i] = d.Lyrics
 		descriptions[i] = d.Description
 
 		// Validate dimension
@@ -75,6 +78,11 @@ func (c *Client) Upsert(ctx context.Context, collection string, data []Embedding
 		entity.NewColumnFloatVector("embedding", dim, embeddings),
 		entity.NewColumnFloat("offset", offsets),
 		entity.NewColumnVarChar("model_id", modelIDs),
+	}
+
+	// Add lyrics column for lyrics collection
+	if collection == CollectionLyrics {
+		columns = append(columns, entity.NewColumnVarChar("lyrics", lyrics))
 	}
 
 	// Add description column for description collection

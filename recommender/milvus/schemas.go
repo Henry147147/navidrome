@@ -22,12 +22,36 @@ func (c *Client) ensureCollection(ctx context.Context, name string, dim int) err
 			return fmt.Errorf("describe collection %s: %w", name, err)
 		}
 		existingDim, ok := collectionEmbeddingDim(collection)
-		if ok && existingDim != dim {
-			log.Warn(ctx, "Collection dimension mismatch, recreating",
-				"collection", name,
-				"expected", dim,
-				"actual", existingDim,
-			)
+		missingField := false
+		if name == CollectionDescription {
+			missingField = !collectionHasField(collection, "description")
+		}
+		if name == CollectionLyrics {
+			missingField = !collectionHasField(collection, "lyrics")
+		}
+
+		dimensionMismatch := ok && existingDim != dim
+		needsRecreate := dimensionMismatch || missingField
+		if needsRecreate {
+			if dimensionMismatch && missingField {
+				log.Warn(ctx, "Collection schema mismatch, recreating",
+					"collection", name,
+					"expected", dim,
+					"actual", existingDim,
+					"missingField", true,
+				)
+			} else if dimensionMismatch {
+				log.Warn(ctx, "Collection schema mismatch, recreating",
+					"collection", name,
+					"expected", dim,
+					"actual", existingDim,
+				)
+			} else {
+				log.Warn(ctx, "Collection schema mismatch, recreating",
+					"collection", name,
+					"missingField", true,
+				)
+			}
 			if err := c.DropCollection(ctx, name); err != nil {
 				return fmt.Errorf("drop collection %s: %w", name, err)
 			}
@@ -76,6 +100,18 @@ func collectionEmbeddingDim(collection *entity.Collection) (int, bool) {
 	return 0, false
 }
 
+func collectionHasField(collection *entity.Collection, fieldName string) bool {
+	if collection == nil || collection.Schema == nil {
+		return false
+	}
+	for _, field := range collection.Schema.Fields {
+		if field.Name == fieldName {
+			return true
+		}
+	}
+	return false
+}
+
 // buildSchema constructs the schema for a collection.
 func (c *Client) buildSchema(name string, dim int) *entity.Schema {
 	schema := &entity.Schema{
@@ -109,6 +145,17 @@ func (c *Client) buildSchema(name string, dim int) *entity.Schema {
 				},
 			},
 		},
+	}
+
+	// Add lyrics field for the lyrics collection
+	if name == CollectionLyrics {
+		schema.Fields = append(schema.Fields, &entity.Field{
+			Name:     "lyrics",
+			DataType: entity.FieldTypeVarChar,
+			TypeParams: map[string]string{
+				"max_length": "32768",
+			},
+		})
 	}
 
 	// Add description field for the description collection
