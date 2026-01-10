@@ -4,9 +4,11 @@ import "context"
 
 // embeddingStatus represents the status of embeddings for a track.
 type embeddingStatus struct {
-	Embedded       bool   `json:"embedded"`
-	HasDescription bool   `json:"hasDescription"`
-	Name           string `json:"name"`
+	Embedded          bool   `json:"embedded"`
+	HasDescription    bool   `json:"hasDescription"`
+	HasAudioEmbedding bool   `json:"hasAudioEmbedding"`
+	HasLyrics         bool   `json:"hasLyrics"`
+	Name              string `json:"name"`
 }
 
 // embeddingClient is the interface for embedding services.

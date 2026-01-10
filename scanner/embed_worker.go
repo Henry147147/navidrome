@@ -301,11 +301,11 @@ func (w *embeddingWorker) processWithRetry(ctx context.Context, candidate embedd
 func (w *embeddingWorker) processSingle(ctx context.Context, candidate embeddingCandidate) (skipped bool, err error) {
 	status, err := w.client.CheckEmbedding(ctx, candidate)
 	if err == nil {
-		if status.Embedded && status.HasDescription {
-			log.Debug(ctx, "Embedding already present, skipping", "track", candidate.TrackPath, "name", status.Name)
+		if status.HasDescription && status.HasAudioEmbedding && status.HasLyrics {
+			log.Debug(ctx, "All embeddings present, skipping", "track", candidate.TrackPath, "name", status.Name)
 			return true, nil
 		}
-		log.Debug(ctx, "Embedding status check returned", "embedded", status.Embedded, "hasDescription", status.HasDescription, "name", status.Name)
+		log.Debug(ctx, "Embedding status check returned", "embedded", status.Embedded, "hasDescription", status.HasDescription, "hasAudioEmbedding", status.HasAudioEmbedding, "hasLyrics", status.HasLyrics, "name", status.Name)
 	} else {
 		log.Warn(ctx, "Embedding status check failed; proceeding to embed", "track", candidate.TrackPath, "error", err)
 	}

@@ -15,16 +15,19 @@ type fakeMusicClient struct {
 	textEmbeddings  map[string][]float32
 	audioEmbeddings map[string][]float32
 	descriptions    map[string]string
+	lyrics          map[string]string
 
-	textErr  error
-	audioErr error
-	descErr  error
+	textErr   error
+	audioErr  error
+	descErr   error
+	lyricsErr error
 
-	textCalls  []string
-	audioCalls []string
-	descCalls  []string
-	callOrder  []string
-	closed     bool
+	textCalls   []string
+	audioCalls  []string
+	descCalls   []string
+	lyricsCalls []string
+	callOrder   []string
+	closed      bool
 }
 
 func (f *fakeMusicClient) EmbedText(text string) ([]float32, error) {
@@ -63,6 +66,18 @@ func (f *fakeMusicClient) GenerateDescription(path string) (string, error) {
 	}
 	if desc, ok := f.descriptions[path]; ok {
 		return desc, nil
+	}
+	return "", nil
+}
+
+func (f *fakeMusicClient) GenerateLyrics(path string) (string, error) {
+	f.callOrder = append(f.callOrder, "lyrics:"+path)
+	f.lyricsCalls = append(f.lyricsCalls, path)
+	if f.lyricsErr != nil {
+		return "", f.lyricsErr
+	}
+	if lyrics, ok := f.lyrics[path]; ok {
+		return lyrics, nil
 	}
 	return "", nil
 }
@@ -203,6 +218,7 @@ func TestEmbedResult(t *testing.T) {
 		DescriptionEmbedding: []float64{0.4, 0.5, 0.6},
 		FlamingoEmbedding:    []float64{0.7, 0.8, 0.9},
 		Description:          "A beautiful song",
+		GeneratedLyrics:      "Some generated lyrics",
 	}
 
 	assert.Equal(t, "Test Track", result.TrackName)
@@ -210,6 +226,7 @@ func TestEmbedResult(t *testing.T) {
 	assert.Equal(t, []float64{0.4, 0.5, 0.6}, result.DescriptionEmbedding)
 	assert.Equal(t, []float64{0.7, 0.8, 0.9}, result.FlamingoEmbedding)
 	assert.Equal(t, "A beautiful song", result.Description)
+	assert.Equal(t, "Some generated lyrics", result.GeneratedLyrics)
 }
 
 func TestStatusResult(t *testing.T) {
@@ -217,12 +234,14 @@ func TestStatusResult(t *testing.T) {
 		Embedded:          true,
 		HasDescription:    true,
 		HasAudioEmbedding: true,
+		HasLyrics:         true,
 		CanonicalName:     "Artist - Title",
 	}
 
 	assert.True(t, result.Embedded)
 	assert.True(t, result.HasDescription)
 	assert.True(t, result.HasAudioEmbedding)
+	assert.True(t, result.HasLyrics)
 	assert.Equal(t, "Artist - Title", result.CanonicalName)
 }
 
@@ -274,8 +293,8 @@ func TestEmbedTextRequiresText(t *testing.T) {
 func TestEmbedAudioStoresEmbeddings(t *testing.T) {
 	music := &fakeMusicClient{
 		textEmbeddings: map[string][]float32{
-			"lyrics": {0.1, 0.2},
-			"desc":   {0.3, 0.4},
+			"generated lyrics": {0.1, 0.2},
+			"desc":             {0.3, 0.4},
 		},
 		audioEmbeddings: map[string][]float32{
 			"/test.mp3": {0.5, 0.6},
@@ -283,12 +302,15 @@ func TestEmbedAudioStoresEmbeddings(t *testing.T) {
 		descriptions: map[string]string{
 			"/test.mp3": "desc",
 		},
+		lyrics: map[string]string{
+			"/test.mp3": "generated lyrics",
+		},
 	}
 	store := &fakeVectorStore{}
 	e := New(Config{EnableLyrics: true, EnableDescription: true, EnableFlamingo: true}, music, store)
 
 	ctx := context.Background()
-	result, err := e.EmbedAudio(ctx, EmbedRequest{FilePath: "/test.mp3", TrackName: "Track", Lyrics: "lyrics"})
+	result, err := e.EmbedAudio(ctx, EmbedRequest{FilePath: "/test.mp3", TrackName: "Track"})
 	require.NoError(t, err)
 
 	assert.Equal(t, "Track", result.TrackName)
@@ -296,6 +318,7 @@ func TestEmbedAudioStoresEmbeddings(t *testing.T) {
 	assert.InDeltaSlice(t, []float64{0.3, 0.4}, result.DescriptionEmbedding, 1e-6)
 	assert.InDeltaSlice(t, []float64{0.5, 0.6}, result.FlamingoEmbedding, 1e-6)
 	assert.Equal(t, "desc", result.Description)
+	assert.Equal(t, "generated lyrics", result.GeneratedLyrics)
 
 	require.Len(t, store.upserts, 3)
 	assert.Equal(t, milvus.CollectionLyrics, store.upserts[0].collection)
@@ -310,8 +333,8 @@ func TestEmbedAudioGroupsModelStages(t *testing.T) {
 	ctx := context.Background()
 	music := &fakeMusicClient{
 		textEmbeddings: map[string][]float32{
-			"lyrics":      {0.1, 0.2},
-			"description": {0.3, 0.4},
+			"generated lyrics": {0.1, 0.2},
+			"description":      {0.3, 0.4},
 		},
 		audioEmbeddings: map[string][]float32{
 			"/test.mp3": {0.5, 0.6},
@@ -319,17 +342,22 @@ func TestEmbedAudioGroupsModelStages(t *testing.T) {
 		descriptions: map[string]string{
 			"/test.mp3": "description",
 		},
+		lyrics: map[string]string{
+			"/test.mp3": "generated lyrics",
+		},
 	}
 	store := &fakeVectorStore{}
 	e := New(Config{EnableLyrics: true, EnableDescription: true, EnableFlamingo: true}, music, store)
 
-	_, err := e.EmbedAudio(ctx, EmbedRequest{FilePath: "/test.mp3", TrackName: "Track", Lyrics: "lyrics"})
+	_, err := e.EmbedAudio(ctx, EmbedRequest{FilePath: "/test.mp3", TrackName: "Track"})
 	require.NoError(t, err)
 
+	// Order: audio embedding, description generation, lyrics generation, then text embeddings for lyrics and description
 	assert.Equal(t, []string{
 		"audio:/test.mp3",
 		"desc:/test.mp3",
-		"text:lyrics",
+		"lyrics:/test.mp3",
+		"text:generated lyrics",
 		"text:description",
 	}, music.callOrder)
 }
@@ -383,8 +411,30 @@ func TestCheckStatusUsesStore(t *testing.T) {
 
 	assert.True(t, result.Embedded)
 	assert.True(t, result.HasAudioEmbedding)
+	assert.True(t, result.HasLyrics)
 	assert.False(t, result.HasDescription)
 	assert.Equal(t, "Artist - Title", result.CanonicalName)
+}
+
+func TestEmbedAudioGeneratesLyrics(t *testing.T) {
+	music := &fakeMusicClient{
+		lyrics: map[string]string{
+			"/test.mp3": "generated lyrics content",
+		},
+		textEmbeddings: map[string][]float32{
+			"generated lyrics content": {0.1, 0.2},
+		},
+	}
+	store := &fakeVectorStore{}
+	e := New(Config{EnableLyrics: true}, music, store)
+
+	ctx := context.Background()
+	result, err := e.EmbedAudio(ctx, EmbedRequest{FilePath: "/test.mp3", TrackName: "Track"})
+	require.NoError(t, err)
+
+	assert.Equal(t, "generated lyrics content", result.GeneratedLyrics)
+	assert.InDeltaSlice(t, []float64{0.1, 0.2}, result.LyricsEmbedding, 1e-6)
+	assert.Contains(t, music.lyricsCalls, "/test.mp3")
 }
 
 func TestCloseClosesMusicClient(t *testing.T) {

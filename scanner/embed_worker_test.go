@@ -92,7 +92,8 @@ func newTestEmbeddingWorker(t *testing.T, client embeddingClient) *embeddingWork
 func TestEmbeddingWorkerSkipsAlreadyEmbedded(t *testing.T) {
 	client := newStubEmbeddingClient()
 	candidate := embeddingCandidate{LibraryID: 1, LibraryPath: "/music", TrackPath: "song.flac"}
-	client.statuses[candidate.key()] = embeddingStatus{Embedded: true, HasDescription: true}
+	// All three embeddings must be present to skip
+	client.statuses[candidate.key()] = embeddingStatus{Embedded: true, HasDescription: true, HasAudioEmbedding: true, HasLyrics: true}
 
 	worker := newTestEmbeddingWorker(t, client)
 	ctx := testContext(t)
@@ -108,6 +109,49 @@ func TestEmbeddingWorkerSkipsAlreadyEmbedded(t *testing.T) {
 	defer client.mu.Unlock()
 	if len(client.embedCalls) != 0 {
 		t.Fatalf("expected no embed calls, got %v", client.embedCalls)
+	}
+}
+
+func TestEmbeddingWorkerEmbedsWhenMissingAnyEmbedding(t *testing.T) {
+	tests := []struct {
+		name        string
+		status      embeddingStatus
+		shouldEmbed bool
+	}{
+		{"all three exist", embeddingStatus{Embedded: true, HasDescription: true, HasAudioEmbedding: true, HasLyrics: true}, false},
+		{"missing flamingo", embeddingStatus{Embedded: true, HasDescription: true, HasLyrics: true}, true},
+		{"missing lyrics", embeddingStatus{Embedded: true, HasDescription: true, HasAudioEmbedding: true}, true},
+		{"missing description", embeddingStatus{Embedded: true, HasAudioEmbedding: true, HasLyrics: true}, true},
+		{"only description", embeddingStatus{Embedded: true, HasDescription: true}, true},
+		{"none exist", embeddingStatus{}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newStubEmbeddingClient()
+			candidate := embeddingCandidate{LibraryID: 1, LibraryPath: "/music", TrackPath: "test.flac"}
+			client.statuses[candidate.key()] = tt.status
+
+			worker := newTestEmbeddingWorker(t, client)
+			ctx := testContext(t)
+			worker.Enqueue(ctx, []embeddingCandidate{candidate})
+
+			waitForCondition(t, time.Second, func() bool {
+				client.mu.Lock()
+				defer client.mu.Unlock()
+				return len(client.checkCalls) == 1
+			})
+
+			worker.Wait()
+
+			client.mu.Lock()
+			embedded := len(client.embedCalls) > 0
+			client.mu.Unlock()
+
+			if embedded != tt.shouldEmbed {
+				t.Fatalf("expected shouldEmbed=%v, got embedded=%v", tt.shouldEmbed, embedded)
+			}
+		})
 	}
 }
 

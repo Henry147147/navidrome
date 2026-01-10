@@ -45,6 +45,9 @@ type Config struct {
 
 	// DescriptionPrompt is the prompt template for generating song descriptions.
 	DescriptionPrompt string
+
+	// LyricsPrompt is the prompt template for generating song lyrics.
+	LyricsPrompt string
 }
 
 // DefaultConfig returns a Config with sensible default values.
@@ -63,6 +66,7 @@ func DefaultConfig() Config {
 		UseGPU:             true,
 		Threads:            8,
 		DescriptionPrompt:  "Describe this track in full detail - tell me the genre, tempo, and key, then dive into the instruments, production style, and overall mood it creates.",
+		LyricsPrompt:       "Please provide the structured lyric sheet for this song.",
 	}
 
 	// When running from the repo root, assets live under ./musicembed.

@@ -23,7 +23,6 @@ type LLMConfig struct {
 	Threads            int           // Threads for inference (0 = default)
 	ThreadsBatch       int           // Threads for batch processing (0 = default)
 	GPULayers          int           // Layers to offload to GPU (0 = default)
-	MainGPU            int           // Main GPU index (0 = default)
 	Timeout            time.Duration // Request timeout
 	MaxRetries         int           // Max retry attempts
 	RetryBackoff       time.Duration // Initial backoff between retries

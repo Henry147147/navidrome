@@ -56,9 +56,11 @@ func (c *goEmbeddingClient) CheckEmbedding(ctx context.Context, candidate embedd
 	}
 
 	return embeddingStatus{
-		Embedded:       result.Embedded,
-		HasDescription: result.HasDescription,
-		Name:           result.CanonicalName,
+		Embedded:          result.Embedded,
+		HasDescription:    result.HasDescription,
+		HasAudioEmbedding: result.HasAudioEmbedding,
+		HasLyrics:         result.HasLyrics,
+		Name:              result.CanonicalName,
 	}, nil
 }
 

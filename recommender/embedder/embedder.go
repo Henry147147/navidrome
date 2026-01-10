@@ -38,6 +38,7 @@ type EmbedResult struct {
 	DescriptionEmbedding []float64
 	FlamingoEmbedding    []float64
 	Description          string
+	GeneratedLyrics      string
 }
 
 // StatusRequest contains information for checking embedding status.
@@ -54,6 +55,7 @@ type StatusResult struct {
 	Embedded          bool
 	HasDescription    bool
 	HasAudioEmbedding bool
+	HasLyrics         bool
 	CanonicalName     string
 }
 
@@ -62,6 +64,7 @@ type MusicClient interface {
 	EmbedText(text string) ([]float32, error)
 	EmbedAudio(path string) ([]float32, error)
 	GenerateDescription(path string) (string, error)
+	GenerateLyrics(path string) (string, error)
 	Close()
 }
 
@@ -210,6 +213,7 @@ func (e *Embedder) CheckStatus(ctx context.Context, req StatusRequest) (*StatusR
 		Embedded:          hasLyrics || hasDesc || hasFlamingo,
 		HasAudioEmbedding: hasFlamingo,
 		HasDescription:    hasDesc,
+		HasLyrics:         hasLyrics,
 		CanonicalName:     canonicalNameResult,
 	}, nil
 }
@@ -431,6 +435,15 @@ func (e *Embedder) processBatch(items []batchItem) error {
 				work.result.Description = description
 			}
 		}
+
+		if e.config.EnableLyrics {
+			lyrics, err := musicClient.GenerateLyrics(work.item.req.FilePath)
+			if err != nil {
+				log.Warn(work.item.ctx, "Lyrics generation failed (non-fatal)", err)
+			} else {
+				work.result.GeneratedLyrics = lyrics
+			}
+		}
 	}
 
 	for _, work := range works {
@@ -442,8 +455,8 @@ func (e *Embedder) processBatch(items []batchItem) error {
 			continue
 		}
 
-		if e.config.EnableLyrics && work.item.req.Lyrics != "" {
-			embedding, err := musicClient.EmbedText(work.item.req.Lyrics)
+		if work.result.GeneratedLyrics != "" {
+			embedding, err := musicClient.EmbedText(work.result.GeneratedLyrics)
 			if err != nil {
 				log.Warn(work.item.ctx, "Lyrics embedding failed (non-fatal)", err)
 			} else {
@@ -478,7 +491,7 @@ func (e *Embedder) storeResults(ctx context.Context, store VectorStore, trackNam
 	}
 
 	if len(result.LyricsEmbedding) > 0 {
-		e.storeEmbedding(ctx, store, milvus.CollectionLyrics, trackName, result.LyricsEmbedding, "", ModelLyrics)
+		e.storeEmbedding(ctx, store, milvus.CollectionLyrics, trackName, result.LyricsEmbedding, result.GeneratedLyrics, ModelLyrics)
 	}
 	if len(result.DescriptionEmbedding) > 0 {
 		e.storeEmbedding(ctx, store, milvus.CollectionDescription, trackName, result.DescriptionEmbedding, result.Description, ModelDescription)
