@@ -18,17 +18,21 @@ type EmbeddingData struct {
 	Description string
 }
 
-// DimensionForCollection returns the vector dimension for a collection.
+// DimensionForCollection returns the default vector dimension for a collection.
 func DimensionForCollection(collection string) int {
+	return dimensionForCollection(DefaultDimensions(), collection)
+}
+
+func dimensionForCollection(dims Dimensions, collection string) int {
 	switch collection {
 	case CollectionLyrics:
-		return DimLyrics
+		return dims.Lyrics
 	case CollectionDescription:
-		return DimDescription
+		return dims.Description
 	case CollectionFlamingo:
-		return DimFlamingo
+		return dims.Flamingo
 	default:
-		return DimLyrics
+		return dims.Lyrics
 	}
 }
 
@@ -49,7 +53,7 @@ func (c *Client) Upsert(ctx context.Context, collection string, data []Embedding
 	modelIDs := make([]string, len(data))
 	descriptions := make([]string, len(data))
 
-	dim := DimensionForCollection(collection)
+	dim := dimensionForCollection(c.dimensions, collection)
 
 	for i, d := range data {
 		names[i] = d.Name

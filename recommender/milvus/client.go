@@ -20,16 +20,33 @@ const (
 
 // Embedding dimensions.
 const (
-	DimLyrics      = 3584 // Lyrics text embedding dimension
+	DimLyrics      = 2560 // Lyrics text embedding dimension
 	DimDescription = 2560 // Description text embedding dimension
-	DimFlamingo    = 1024 // Flamingo audio embedding dimension
+	DimFlamingo    = 3584 // Flamingo audio embedding dimension
 )
+
+// Dimensions holds embedding dimensions for Milvus collections.
+type Dimensions struct {
+	Lyrics      int
+	Description int
+	Flamingo    int
+}
+
+// DefaultDimensions returns the default embedding dimensions.
+func DefaultDimensions() Dimensions {
+	return Dimensions{
+		Lyrics:      DimLyrics,
+		Description: DimDescription,
+		Flamingo:    DimFlamingo,
+	}
+}
 
 // Config holds Milvus connection settings.
 type Config struct {
 	URI        string        // Server URI or file path for Milvus Lite
 	Timeout    time.Duration // Connection/operation timeout
 	MaxRetries int           // Max retry attempts
+	Dimensions Dimensions    // Embedding dimensions by collection
 }
 
 // DefaultConfig returns sensible defaults.
@@ -38,7 +55,37 @@ func DefaultConfig() Config {
 		URI:        "http://localhost:19530",
 		Timeout:    30 * time.Second,
 		MaxRetries: 3,
+		Dimensions: DefaultDimensions(),
 	}
+}
+
+func normalizeDimensions(dims Dimensions) Dimensions {
+	defaults := DefaultDimensions()
+	if dims.Lyrics <= 0 {
+		dims.Lyrics = defaults.Lyrics
+	}
+	if dims.Description <= 0 {
+		dims.Description = defaults.Description
+	}
+	if dims.Flamingo <= 0 {
+		dims.Flamingo = defaults.Flamingo
+	}
+	return dims
+}
+
+func normalizeConfig(cfg Config) Config {
+	defaults := DefaultConfig()
+	if cfg.URI == "" {
+		cfg.URI = defaults.URI
+	}
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = defaults.Timeout
+	}
+	if cfg.MaxRetries <= 0 {
+		cfg.MaxRetries = defaults.MaxRetries
+	}
+	cfg.Dimensions = normalizeDimensions(cfg.Dimensions)
+	return cfg
 }
 
 // Client wraps the Milvus SDK client with collection management.
@@ -47,6 +94,7 @@ type Client struct {
 	milvusClient client.Client
 	mu           sync.RWMutex
 	loaded       map[string]bool // Track loaded collections
+	dimensions   Dimensions
 }
 
 // NewClient creates a new Milvus client.
@@ -60,9 +108,7 @@ func NewClient(ctx context.Context, cfg interface{}) (*Client, error) {
 		milvusCfg = DefaultConfig()
 	}
 
-	if milvusCfg.URI == "" {
-		milvusCfg = DefaultConfig()
-	}
+	milvusCfg = normalizeConfig(milvusCfg)
 
 	log.Info(ctx, "Connecting to Milvus", "uri", milvusCfg.URI)
 
@@ -77,6 +123,7 @@ func NewClient(ctx context.Context, cfg interface{}) (*Client, error) {
 		config:       milvusCfg,
 		milvusClient: c,
 		loaded:       make(map[string]bool),
+		dimensions:   milvusCfg.Dimensions,
 	}, nil
 }
 
@@ -94,9 +141,9 @@ func (c *Client) EnsureCollections(ctx context.Context) error {
 		name string
 		dim  int
 	}{
-		{CollectionLyrics, DimLyrics},
-		{CollectionDescription, DimDescription},
-		{CollectionFlamingo, DimFlamingo},
+		{CollectionLyrics, c.dimensions.Lyrics},
+		{CollectionDescription, c.dimensions.Description},
+		{CollectionFlamingo, c.dimensions.Flamingo},
 	}
 
 	for _, col := range collections {

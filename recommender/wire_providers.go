@@ -33,6 +33,11 @@ func NewMilvusClient() (*milvus.Client, func(), error) {
 		URI:        conf.Server.Recommendations.Milvus.URI,
 		Timeout:    conf.Server.Recommendations.Milvus.Timeout,
 		MaxRetries: conf.Server.Recommendations.Milvus.MaxRetries,
+		Dimensions: milvus.Dimensions{
+			Lyrics:      conf.Server.Recommendations.Milvus.Dimensions.Lyrics,
+			Description: conf.Server.Recommendations.Milvus.Dimensions.Description,
+			Flamingo:    conf.Server.Recommendations.Milvus.Dimensions.Flamingo,
+		},
 	}
 
 	// Use defaults if not configured

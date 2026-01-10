@@ -389,11 +389,19 @@ func TestMilvusConfigStruct(t *testing.T) {
 		URI:        "http://localhost:19530",
 		Timeout:    30 * time.Second,
 		MaxRetries: 3,
+		Dimensions: MilvusDimensions{
+			Lyrics:      2560,
+			Description: 2560,
+			Flamingo:    3584,
+		},
 	}
 
 	assert.Equal(t, "http://localhost:19530", cfg.URI)
 	assert.Equal(t, 30*time.Second, cfg.Timeout)
 	assert.Equal(t, 3, cfg.MaxRetries)
+	assert.Equal(t, 2560, cfg.Dimensions.Lyrics)
+	assert.Equal(t, 2560, cfg.Dimensions.Description)
+	assert.Equal(t, 3584, cfg.Dimensions.Flamingo)
 }
 
 func TestLLMConfigStruct(t *testing.T) {

@@ -267,6 +267,13 @@ type milvusOptions struct {
 	URI        string        // Milvus server URI or file path for Milvus Lite
 	Timeout    time.Duration // Connection/operation timeout
 	MaxRetries int           // Max retry attempts
+	Dimensions milvusDimensions
+}
+
+type milvusDimensions struct {
+	Lyrics      int // Lyrics text embedding dimension
+	Description int // Description text embedding dimension
+	Flamingo    int // Flamingo audio embedding dimension
 }
 
 type pluginsOptions struct {
@@ -692,6 +699,9 @@ func setViperDefaults() {
 	viper.SetDefault("recommendations.milvus.uri", "http://localhost:19530")
 	viper.SetDefault("recommendations.milvus.timeout", 30*time.Second)
 	viper.SetDefault("recommendations.milvus.maxretries", 3)
+	viper.SetDefault("recommendations.milvus.dimensions.lyrics", 2560)
+	viper.SetDefault("recommendations.milvus.dimensions.description", 2560)
+	viper.SetDefault("recommendations.milvus.dimensions.flamingo", 3584)
 	viper.SetDefault("autotranscodedownload", false)
 	viper.SetDefault("defaultdownsamplingformat", consts.DefaultDownsamplingFormat)
 	viper.SetDefault("searchfullstring", false)

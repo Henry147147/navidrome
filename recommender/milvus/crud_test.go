@@ -7,21 +7,27 @@ import (
 )
 
 func TestDimensionForCollection(t *testing.T) {
+	dims := Dimensions{
+		Lyrics:      11,
+		Description: 22,
+		Flamingo:    33,
+	}
+
 	tests := []struct {
 		name       string
 		collection string
 		expected   int
 	}{
-		{"lyrics collection", CollectionLyrics, DimLyrics},
-		{"description collection", CollectionDescription, DimDescription},
-		{"flamingo collection", CollectionFlamingo, DimFlamingo},
-		{"unknown defaults to lyrics", "unknown_collection", DimLyrics},
-		{"empty string defaults to lyrics", "", DimLyrics},
+		{"lyrics collection", CollectionLyrics, dims.Lyrics},
+		{"description collection", CollectionDescription, dims.Description},
+		{"flamingo collection", CollectionFlamingo, dims.Flamingo},
+		{"unknown defaults to lyrics", "unknown_collection", dims.Lyrics},
+		{"empty string defaults to lyrics", "", dims.Lyrics},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := DimensionForCollection(tt.collection)
+			result := dimensionForCollection(dims, tt.collection)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -292,7 +298,7 @@ func TestSearchResultWithDistance(t *testing.T) {
 func TestBuildFilterWithUnicodeCharacters(t *testing.T) {
 	// Test Unicode handling in filters
 	values := []string{
-		"日本語トラック",      // Japanese
+		"日本語トラック",         // Japanese
 		"Трек на русском", // Russian
 		"Piste française", // French with accent
 	}

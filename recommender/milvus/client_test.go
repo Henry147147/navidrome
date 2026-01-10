@@ -14,9 +14,9 @@ func TestCollectionConstants(t *testing.T) {
 }
 
 func TestDimensionConstants(t *testing.T) {
-	assert.Equal(t, 3584, DimLyrics)
+	assert.Equal(t, 2560, DimLyrics)
 	assert.Equal(t, 2560, DimDescription)
-	assert.Equal(t, 1024, DimFlamingo)
+	assert.Equal(t, 3584, DimFlamingo)
 }
 
 func TestDefaultConfig(t *testing.T) {
@@ -25,6 +25,7 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, "http://localhost:19530", cfg.URI)
 	assert.Equal(t, 30*time.Second, cfg.Timeout)
 	assert.Equal(t, 3, cfg.MaxRetries)
+	assert.Equal(t, DefaultDimensions(), cfg.Dimensions)
 }
 
 func TestConfig(t *testing.T) {
@@ -32,11 +33,19 @@ func TestConfig(t *testing.T) {
 		URI:        "http://custom:19530",
 		Timeout:    60 * time.Second,
 		MaxRetries: 5,
+		Dimensions: Dimensions{
+			Lyrics:      111,
+			Description: 222,
+			Flamingo:    333,
+		},
 	}
 
 	assert.Equal(t, "http://custom:19530", cfg.URI)
 	assert.Equal(t, 60*time.Second, cfg.Timeout)
 	assert.Equal(t, 5, cfg.MaxRetries)
+	assert.Equal(t, 111, cfg.Dimensions.Lyrics)
+	assert.Equal(t, 222, cfg.Dimensions.Description)
+	assert.Equal(t, 333, cfg.Dimensions.Flamingo)
 }
 
 func TestEmbeddingData(t *testing.T) {
@@ -73,4 +82,16 @@ func TestSearchResult(t *testing.T) {
 
 	assert.Equal(t, "Test Track", result.Name)
 	assert.Equal(t, 0.15, result.Distance)
+}
+
+func TestNormalizeDimensions(t *testing.T) {
+	dims := normalizeDimensions(Dimensions{
+		Lyrics:      0,
+		Description: 1024,
+		Flamingo:    -1,
+	})
+
+	assert.Equal(t, DimLyrics, dims.Lyrics)
+	assert.Equal(t, 1024, dims.Description)
+	assert.Equal(t, DimFlamingo, dims.Flamingo)
 }
