@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -22,10 +21,9 @@ import (
 )
 
 type scannerImpl struct {
-	ds          model.DataStore
-	cw          artwork.CacheWarmer
-	pls         core.Playlists
-	embedWorker *embeddingWorker
+	ds  model.DataStore
+	cw  artwork.CacheWarmer
+	pls core.Playlists
 }
 
 // scanState holds the state of an in-progress scan, to be passed to the various phases
@@ -35,8 +33,6 @@ type scanState struct {
 	changesDetected atomic.Bool
 	libraries       model.Libraries  // Store libraries list for consistency across phases
 	targets         map[int][]string // Optional: map[libraryID][]folderPaths for selective scans
-	embedMu         sync.Mutex
-	embedCandidates []embeddingCandidate
 }
 
 func (s *scanState) sendProgress(info *ProgressInfo) {
@@ -55,24 +51,6 @@ func (s *scanState) sendWarning(msg string) {
 
 func (s *scanState) sendError(err error) {
 	s.sendProgress(&ProgressInfo{Error: err.Error()})
-}
-
-func (s *scanState) addEmbedCandidates(candidates ...embeddingCandidate) {
-	if len(candidates) == 0 {
-		return
-	}
-	s.embedMu.Lock()
-	s.embedCandidates = append(s.embedCandidates, candidates...)
-	s.embedMu.Unlock()
-}
-
-func (s *scanState) pendingEmbeds() []embeddingCandidate {
-	s.embedMu.Lock()
-	defer s.embedMu.Unlock()
-	out := make([]embeddingCandidate, len(s.embedCandidates))
-	copy(out, s.embedCandidates)
-	s.embedCandidates = nil
-	return out
 }
 
 func (s *scannerImpl) scanFolders(ctx context.Context, fullScan bool, targets []model.ScanTarget, progress chan<- *ProgressInfo) {
@@ -198,8 +176,6 @@ func (s *scannerImpl) scanFolders(ctx context.Context, fullScan bool, targets []
 		state.sendProgress(&ProgressInfo{ChangesDetected: true})
 	}
 
-	s.scheduleEmbeddings(ctx, &state)
-
 	if state.isSelectiveScan() {
 		log.Info(ctx, "Scanner: Finished scanning selected folders", "duration", time.Since(startTime), "numTargets", len(targets))
 	} else {
@@ -247,29 +223,6 @@ func (s *scannerImpl) prepareLibrariesForScan(ctx context.Context, state *scanSt
 	// Update state with only successfully initialized libraries
 	state.libraries = successfulLibs
 	return nil
-}
-
-func (s *scannerImpl) scheduleEmbeddings(ctx context.Context, state *scanState) {
-	candidates := state.pendingEmbeds()
-	if len(candidates) == 0 {
-		log.Info(ctx, "No embedding candidates collected during scan")
-		return
-	}
-
-	if s.embedWorker == nil {
-		log.Info(ctx, "Embedding service not configured; skipping embedding run", "count", len(candidates))
-		return
-	}
-
-	log.Info(ctx, "Scheduling embeddings", "count", len(candidates))
-	s.embedWorker.Enqueue(ctx, candidates)
-	log.Info(ctx, "Scheduled background embeddings", "count", len(candidates))
-
-	if embeddingWaitEnabled(ctx) {
-		log.Info(ctx, "Waiting for embedding worker to finish", "count", len(candidates))
-		s.embedWorker.Wait()
-		log.Info(ctx, "Embedding worker finished", "count", len(candidates))
-	}
 }
 
 func (s *scannerImpl) runGC(ctx context.Context, state *scanState) func() error {

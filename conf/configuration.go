@@ -231,36 +231,11 @@ type recommendationsOptions struct {
 	TextBaseURL  string
 	BatchBaseURL string
 	Timeout      time.Duration
-	EmbedTimeout time.Duration
 	DefaultLimit int
 	Diversity    float64
 
-	// Go-native embedder options (for llama.cpp backend)
-	Embedder embedderOptions
 	// Milvus vector database options
 	Milvus milvusOptions
-}
-
-type embedderOptions struct {
-	BatchTimeout      time.Duration // Time to wait before processing batch
-	BatchSize         int           // Max items per batch
-	EnableLyrics      bool          // Enable lyrics text embedding
-	EnableDescription bool          // Enable audio description embedding
-	EnableFlamingo    bool          // Enable flamingo audio embedding
-	Llama             llamaOptions  // Local llama.cpp settings
-}
-
-type llamaOptions struct {
-	LibraryPath        string // Path to llama.cpp shared libraries
-	TextModelPath      string // Path to text embedding model
-	AudioModelPath     string // Path to audio model
-	AudioProjectorPath string // Path to audio projector (mmproj)
-	ContextSize        int    // Context size override (0 = default)
-	BatchSize          int    // Batch size override (0 = default)
-	UBatchSize         int    // Micro batch size override (0 = default)
-	Threads            int    // Threads for inference (0 = default)
-	ThreadsBatch       int    // Threads for batch processing (0 = default)
-	GPULayers          int    // Layers to offload to GPU (0 = default)
 }
 
 type milvusOptions struct {
@@ -390,10 +365,6 @@ func ensurePaths() {
 func applyRecommendationDefaults() {
 	if Server.Recommendations.Timeout <= 0 {
 		Server.Recommendations.Timeout = 5 * time.Second
-	}
-	if Server.Recommendations.EmbedTimeout <= 0 {
-		// Embedding requests can take minutes for large files; use a generous default.
-		Server.Recommendations.EmbedTimeout = 10 * time.Minute
 	}
 	if Server.Recommendations.DefaultLimit <= 0 {
 		Server.Recommendations.DefaultLimit = 25
@@ -679,22 +650,6 @@ func setViperDefaults() {
 	viper.SetDefault("recommendations.timeout", 5*time.Second)
 	viper.SetDefault("recommendations.defaultlimit", 25)
 	viper.SetDefault("recommendations.diversity", 0.15)
-	// Go-native embedder options
-	viper.SetDefault("recommendations.embedder.batchtimeout", 5*time.Second)
-	viper.SetDefault("recommendations.embedder.batchsize", 50)
-	viper.SetDefault("recommendations.embedder.enablelyrics", true)
-	viper.SetDefault("recommendations.embedder.enabledescription", true)
-	viper.SetDefault("recommendations.embedder.enableflamingo", true)
-	viper.SetDefault("recommendations.embedder.llama.librarypath", "./musicembed/llama-lib")
-	viper.SetDefault("recommendations.embedder.llama.textmodelpath", "./musicembed/models/qwen-embedder-4b.gguf")
-	viper.SetDefault("recommendations.embedder.llama.audiomodelpath", "./musicembed/models/music-flamingo.gguf")
-	viper.SetDefault("recommendations.embedder.llama.audioprojectorpath", "./musicembed/models/mmproj-music-flamingo.gguf")
-	viper.SetDefault("recommendations.embedder.llama.contextsize", 0)
-	viper.SetDefault("recommendations.embedder.llama.batchsize", 0)
-	viper.SetDefault("recommendations.embedder.llama.ubatchsize", 0)
-	viper.SetDefault("recommendations.embedder.llama.threads", 0)
-	viper.SetDefault("recommendations.embedder.llama.threadsbatch", 0)
-	viper.SetDefault("recommendations.embedder.llama.gpulayers", 99)
 	// Milvus options
 	viper.SetDefault("recommendations.milvus.uri", "http://localhost:19530")
 	viper.SetDefault("recommendations.milvus.timeout", 30*time.Second)

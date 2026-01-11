@@ -370,22 +370,6 @@ func TestRecommendationResponseTrackIDsAllEmpty(t *testing.T) {
 	assert.Empty(t, ids)
 }
 
-func TestEmbedderConfigStruct(t *testing.T) {
-	cfg := EmbedderConfig{
-		BatchTimeout:      5 * time.Second,
-		BatchSize:         50,
-		EnableLyrics:      true,
-		EnableDescription: true,
-		EnableFlamingo:    true,
-	}
-
-	assert.Equal(t, 5*time.Second, cfg.BatchTimeout)
-	assert.Equal(t, 50, cfg.BatchSize)
-	assert.True(t, cfg.EnableLyrics)
-	assert.True(t, cfg.EnableDescription)
-	assert.True(t, cfg.EnableFlamingo)
-}
-
 func TestMilvusConfigStruct(t *testing.T) {
 	cfg := MilvusConfig{
 		URI:        "http://localhost:19530",
@@ -404,38 +388,6 @@ func TestMilvusConfigStruct(t *testing.T) {
 	assert.Equal(t, 2560, cfg.Dimensions.Lyrics)
 	assert.Equal(t, 2560, cfg.Dimensions.Description)
 	assert.Equal(t, 3584, cfg.Dimensions.Flamingo)
-}
-
-func TestLLMConfigStruct(t *testing.T) {
-	cfg := LLMConfig{
-		LibraryPath:        "/llama",
-		TextModelPath:      "/models/text.gguf",
-		AudioModelPath:     "/models/audio.gguf",
-		AudioProjectorPath: "/models/audio.mmproj",
-		ContextSize:        4096,
-		BatchSize:          512,
-		UBatchSize:         128,
-		Threads:            8,
-		ThreadsBatch:       4,
-		GPULayers:          40,
-		Timeout:            10 * time.Minute,
-		MaxRetries:         3,
-		RetryBackoff:       2 * time.Second,
-	}
-
-	assert.Equal(t, "/llama", cfg.LibraryPath)
-	assert.Equal(t, "/models/text.gguf", cfg.TextModelPath)
-	assert.Equal(t, "/models/audio.gguf", cfg.AudioModelPath)
-	assert.Equal(t, "/models/audio.mmproj", cfg.AudioProjectorPath)
-	assert.Equal(t, uint32(4096), cfg.ContextSize)
-	assert.Equal(t, uint32(512), cfg.BatchSize)
-	assert.Equal(t, uint32(128), cfg.UBatchSize)
-	assert.Equal(t, 8, cfg.Threads)
-	assert.Equal(t, 4, cfg.ThreadsBatch)
-	assert.Equal(t, 40, cfg.GPULayers)
-	assert.Equal(t, 10*time.Minute, cfg.Timeout)
-	assert.Equal(t, 3, cfg.MaxRetries)
-	assert.Equal(t, 2*time.Second, cfg.RetryBackoff)
 }
 
 func TestEngineConfigStruct(t *testing.T) {

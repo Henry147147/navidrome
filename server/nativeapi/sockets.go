@@ -8,10 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
-
-	"github.com/navidrome/navidrome/conf"
 )
 
 const embedEndpoint = "/embed/audio"
@@ -104,23 +101,4 @@ type noopEmbedClient struct{}
 
 func (noopEmbedClient) Embed(string, string, string, map[string]any) (map[string]any, error) {
 	return nil, fmt.Errorf("embed service disabled")
-}
-
-var (
-	embedClient     EmbedClient
-	embedClientOnce sync.Once
-)
-
-func getEmbedClient() EmbedClient {
-	embedClientOnce.Do(func() {
-		if embedClient == nil {
-			base := conf.Server.Recommendations.BaseURL
-			timeout := conf.Server.Recommendations.EmbedTimeout
-			if timeout <= 0 {
-				timeout = conf.Server.Recommendations.Timeout
-			}
-			embedClient = NewEmbedHTTPClient(base, timeout)
-		}
-	})
-	return embedClient
 }

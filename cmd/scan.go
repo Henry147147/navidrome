@@ -76,10 +76,6 @@ func runScanner(ctx context.Context) {
 	ds := persistence.New(sqlDB)
 	pls := core.NewPlaylists(ds)
 
-	if subprocess {
-		ctx = scanner.WithEmbeddingWait(ctx)
-	}
-
 	// Parse targets from command line or file
 	var scanTargets []model.ScanTarget
 	var err error

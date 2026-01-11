@@ -4,12 +4,9 @@ import (
 	"context"
 	"time"
 
-	"test/llama/musicembed"
-
 	"github.com/google/wire"
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/model"
-	"github.com/navidrome/navidrome/recommender/embedder"
 	"github.com/navidrome/navidrome/recommender/engine"
 	"github.com/navidrome/navidrome/recommender/milvus"
 	"github.com/navidrome/navidrome/recommender/resolver"
@@ -18,11 +15,8 @@ import (
 // Set provides all recommender dependencies for Wire.
 var Set = wire.NewSet(
 	NewMilvusClient,
-	NewMusicEmbedClient,
-	NewEmbedder,
 	NewRecommendationEngine,
 	NewResolver,
-	wire.Bind(new(Embedder), new(*embedder.Embedder)),
 	wire.Bind(new(engine.TrackNameResolver), new(*resolver.Resolver)),
 )
 
@@ -67,69 +61,6 @@ func NewMilvusClient() (*milvus.Client, func(), error) {
 	}
 
 	return client, cleanup, nil
-}
-
-// NewMusicEmbedClient creates a musicembed client from configuration.
-func NewMusicEmbedClient() (*musicembed.Client, func(), error) {
-	cfg := musicembed.DefaultConfig()
-	llamaCfg := conf.Server.Recommendations.Embedder.Llama
-
-	if llamaCfg.LibraryPath != "" {
-		cfg.LibraryPath = llamaCfg.LibraryPath
-	}
-	if llamaCfg.TextModelPath != "" {
-		cfg.EmbeddingModelFile = llamaCfg.TextModelPath
-	}
-	if llamaCfg.AudioProjectorPath != "" {
-		cfg.MmprojFile = llamaCfg.AudioProjectorPath
-	}
-	if llamaCfg.AudioModelPath != "" {
-		cfg.ModelFile = llamaCfg.AudioModelPath
-	}
-	if llamaCfg.ContextSize > 0 {
-		cfg.ContextSize = llamaCfg.ContextSize
-	}
-	if llamaCfg.BatchSize > 0 {
-		cfg.BatchSize = llamaCfg.BatchSize
-	}
-	if llamaCfg.Threads > 0 {
-		cfg.Threads = llamaCfg.Threads
-	}
-	if llamaCfg.GPULayers > 0 {
-		cfg.GPULayers = llamaCfg.GPULayers
-	}
-
-	client, err := musicembed.New(cfg)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	cleanup := func() {
-		client.Close()
-	}
-
-	return client, cleanup, nil
-}
-
-// NewEmbedder creates the main embedder.
-func NewEmbedder(musicClient *musicembed.Client, milvusClient *milvus.Client) *embedder.Embedder {
-	cfg := embedder.Config{
-		BatchTimeout:      conf.Server.Recommendations.Embedder.BatchTimeout,
-		BatchSize:         conf.Server.Recommendations.Embedder.BatchSize,
-		EnableLyrics:      conf.Server.Recommendations.Embedder.EnableLyrics,
-		EnableDescription: conf.Server.Recommendations.Embedder.EnableDescription,
-		EnableFlamingo:    conf.Server.Recommendations.Embedder.EnableFlamingo,
-	}
-
-	// Use defaults if not configured
-	if cfg.BatchTimeout <= 0 {
-		cfg.BatchTimeout = 5 * time.Second
-	}
-	if cfg.BatchSize <= 0 {
-		cfg.BatchSize = 50
-	}
-
-	return embedder.New(cfg, musicClient, milvusClient)
 }
 
 // NewRecommendationEngine creates the recommendation engine.

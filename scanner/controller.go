@@ -53,7 +53,7 @@ func (s *controller) getScanner() scanner {
 	if conf.Server.DevExternalScanner {
 		return &scannerExternal{}
 	}
-	return &scannerImpl{ds: s.ds, cw: s.cw, pls: s.pls, embedWorker: s.embedWorker}
+	return &scannerImpl{ds: s.ds, cw: s.cw, pls: s.pls}
 }
 
 // CallScan starts an in-process scan of specific library/folder pairs.
@@ -68,16 +68,9 @@ func CallScan(ctx context.Context, ds model.DataStore, pls core.Playlists, fullS
 
 	ctx = auth.WithAdminUser(ctx, ds)
 	progress := make(chan *ProgressInfo, 100)
-	embedWorker, embedCleanup, err := scanEmbedWorkerFactory(ctx)
-	if err != nil {
-		log.Warn(ctx, "Failed to initialize embedding worker", err)
-	}
 	go func() {
 		defer close(progress)
-		if embedCleanup != nil {
-			defer embedCleanup()
-		}
-		scanner := &scannerImpl{ds: ds, cw: artwork.NoopCacheWarmer(), pls: pls, embedWorker: embedWorker}
+		scanner := &scannerImpl{ds: ds, cw: artwork.NoopCacheWarmer(), pls: pls}
 		scanner.scanFolders(ctx, fullScan, targets, progress)
 	}()
 	return progress, nil
@@ -116,7 +109,6 @@ type controller struct {
 	count           atomic.Uint32
 	folderCount     atomic.Uint32
 	changesDetected bool
-	embedWorker     *embeddingWorker
 }
 
 // getLastScanTime returns the most recent scan time across all libraries
