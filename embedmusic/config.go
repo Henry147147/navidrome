@@ -65,6 +65,7 @@ type LoggingConfig struct {
 
 // CLIConfig holds command-line only options.
 type CLIConfig struct {
+	MusicDir   string // Path to music directory
 	ConfigFile string // Path to TOML config file
 	DryRun     bool   // Show what would be embedded without actually doing it
 	Force      bool   // Re-embed tracks even if embeddings exist
@@ -107,10 +108,11 @@ func DefaultConfig() Config {
 			File:  "", // Empty = stderr
 		},
 		CLI: CLIConfig{
-			DryRun: false,
-			Force:  false,
-			Limit:  0, // 0 = no limit
-			Filter: "",
+			MusicDir: "./music",
+			DryRun:   false,
+			Force:    false,
+			Limit:    0, // 0 = no limit
+			Filter:   "",
 		},
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"test/llama/musicembed"
@@ -63,6 +64,9 @@ func ProcessTrack(
 	startTime := time.Now()
 	trackName := CanonicalName(track)
 
+	// Construct full path to audio file
+	fullPath := filepath.Join(cfg.CLI.MusicDir, track.Path)
+
 	// Check if embeddings already exist (unless --force)
 	if !force {
 		exists, err := checkEmbeddingsExist(ctx, milvusClient, trackName, cfg.Embedder)
@@ -87,7 +91,7 @@ func ProcessTrack(
 		if track.Lyrics != "" {
 			lyricsText = track.Lyrics
 		} else {
-			generated, err := musicClient.GenerateLyrics(track.Path)
+			generated, err := musicClient.GenerateLyrics(fullPath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to generate lyrics: %w", err)
 			}
@@ -112,7 +116,7 @@ func ProcessTrack(
 
 	// Stage 2: Generate audio description and embed (if enabled)
 	if cfg.Embedder.EnableDescription {
-		description, err := musicClient.GenerateDescription(track.Path)
+		description, err := musicClient.GenerateDescription(fullPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate description: %w", err)
 		}
@@ -135,7 +139,7 @@ func ProcessTrack(
 
 	// Stage 3: Generate direct audio embedding (if enabled)
 	if cfg.Embedder.EnableFlamingo {
-		embedding, err := musicClient.EmbedAudio(track.Path)
+		embedding, err := musicClient.EmbedAudio(fullPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to embed audio: %w", err)
 		}

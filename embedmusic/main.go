@@ -91,6 +91,7 @@ func parseFlags() Config {
 	flag.StringVar(&cfg.Logging.File, "log-file", cfg.Logging.File, "Log file path (empty = stderr)")
 
 	// CLI flags
+	flag.StringVar(&cfg.CLI.MusicDir, "music-dir", cfg.CLI.MusicDir, "Path to music directory")
 	flag.BoolVar(&cfg.CLI.DryRun, "dry-run", false, "Show what would be embedded without actually doing it")
 	flag.BoolVar(&cfg.CLI.Force, "force", false, "Re-embed tracks even if embeddings exist")
 	flag.IntVar(&cfg.CLI.Limit, "limit", 0, "Max tracks to process (0 = all)")
