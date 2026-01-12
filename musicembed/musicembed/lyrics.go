@@ -128,3 +128,116 @@ func (c *Client) GenerateLyrics(audioFile string) (string, error) {
 	}
 	return lyrics, nil
 }
+
+// HasLyrics checks if an audio file contains lyrics by asking the model.
+// Returns true if lyrics are detected, false if instrumental or uncertain.
+func (c *Client) HasLyrics(audioFile string) (bool, error) {
+	var hasLyrics bool
+	err := c.withMusicModel(func() error {
+		llama.SamplerReset(c.sampler)
+
+		bitmap := mtmd.BitmapInitFromFile(c.mmprojCtx, audioFile)
+		if bitmap == 0 {
+			return fmt.Errorf("failed to load audio file: %s", audioFile)
+		}
+		defer mtmd.BitmapFree(bitmap)
+
+		prompt := "\n" + c.config.LyricsCheckPrompt
+		messages := []llama.ChatMessage{llama.NewChatMessage("user", "<sound>"+prompt)}
+		input := mtmd.NewInputText(applyChatTemplate(true, c.chatTemplate, messages), true, true)
+
+		tokenizedOutput := mtmd.InputChunksInit()
+		defer mtmd.InputChunksFree(tokenizedOutput)
+
+		status := mtmd.Tokenize(c.mmprojCtx, tokenizedOutput, input, []mtmd.Bitmap{bitmap})
+		if status != 0 {
+			return fmt.Errorf("tokenization failed: error code=%d", status)
+		}
+
+		// Calculate context size requirements
+		modelContextParams := llama.ContextDefaultParams()
+		var maxChunkTokens uint32
+		var totalNPos uint32
+
+		for i := uint32(0); i < mtmd.InputChunksSize(tokenizedOutput); i++ {
+			chunk := mtmd.InputChunksGet(tokenizedOutput, i)
+			var nTokens uint32
+			switch mtmd.InputChunkGetType(chunk) {
+			case mtmd.InputChunkTypeText:
+				nTokens = mtmd.InputChunkGetNTokens(chunk)
+			case mtmd.InputChunkTypeImage, mtmd.InputChunkTypeAudio:
+				nTokens = mtmd.ImageTokensGetNTokens(mtmd.InputChunkGetTokensImage(chunk))
+			default:
+				nTokens = mtmd.InputChunkGetNTokens(chunk)
+			}
+			if nTokens > maxChunkTokens {
+				maxChunkTokens = nTokens
+			}
+			nPos := mtmd.InputChunkGetNPos(chunk)
+			if nPos > 0 {
+				totalNPos += uint32(nPos)
+			}
+		}
+
+		if totalNPos > 0 {
+			requiredCtx := totalNPos + 10 + uint32(c.config.GenerationMargin) // Only need 10 tokens for YES/NO
+			if ctxTrain := uint32(llama.ModelNCtxTrain(c.musicModel)); ctxTrain > 0 && requiredCtx > ctxTrain {
+				requiredCtx = ctxTrain
+			}
+			if modelContextParams.NCtx == 0 || requiredCtx > modelContextParams.NCtx {
+				modelContextParams.NCtx = requiredCtx
+			}
+		}
+
+		if maxChunkTokens > modelContextParams.NBatch {
+			modelContextParams.NBatch = maxChunkTokens
+		}
+
+		modelCtx, err := llama.InitFromModel(c.musicModel, modelContextParams)
+		if err != nil {
+			return fmt.Errorf("unable to initialize context from model: %w", err)
+		}
+		defer llama.Free(modelCtx)
+
+		var n llama.Pos
+		nBatch := int32(llama.NBatch(modelCtx))
+		if status := mtmd.HelperEvalChunks(c.mmprojCtx, modelCtx, tokenizedOutput, 0, 0, nBatch, true, &n); status != 0 {
+			return fmt.Errorf("HelperEvalChunks failed: error code=%d", status)
+		}
+
+		// Generate only a few tokens (enough for YES/NO response)
+		var sb strings.Builder
+		maxTokens := 10 // Only need a few tokens for YES/NO
+
+		for i := 0; i < maxTokens; i++ {
+			token := llama.SamplerSample(c.sampler, modelCtx, -1)
+			llama.SamplerAccept(c.sampler, token)
+
+			if llama.VocabIsEOG(c.vocab, token) {
+				break
+			}
+
+			buf := make([]byte, 128)
+			l := llama.TokenToPiece(c.vocab, token, buf, 0, true)
+			sb.WriteString(string(buf[:l]))
+
+			batch := llama.BatchGetOne([]llama.Token{token})
+			batch.Pos = &n
+			if status, err := llama.Decode(modelCtx, batch); err != nil || status != 0 {
+				if err != nil {
+					return fmt.Errorf("decode failed: %w", err)
+				}
+				return fmt.Errorf("decode failed with status: %d", status)
+			}
+			n++
+		}
+
+		response := strings.ToUpper(strings.TrimSpace(sb.String()))
+		hasLyrics = strings.HasPrefix(response, "YES")
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return hasLyrics, nil
+}

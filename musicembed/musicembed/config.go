@@ -43,6 +43,9 @@ type Config struct {
 	// DescriptionPrompt is the prompt template for generating song descriptions.
 	DescriptionPrompt string
 
+	// LyricsCheckPrompt is the prompt for checking if a song has lyrics.
+	LyricsCheckPrompt string
+
 	// LyricsPrompt is the prompt template for generating song lyrics.
 	LyricsPrompt string
 }
@@ -62,6 +65,7 @@ func DefaultConfig() Config {
 		UseGPU:             true,
 		Threads:            8,
 		DescriptionPrompt:  "Describe this track in full detail - tell me the genre, tempo, and key, then dive into the instruments, production style, and overall mood it creates.",
+		LyricsCheckPrompt:  "Does this song contain sung lyrics or vocals? You must answer with ONLY the word YES or the word NO. Answer:",
 		LyricsPrompt:       "Please provide the structured lyric sheet for this song.",
 	}
 

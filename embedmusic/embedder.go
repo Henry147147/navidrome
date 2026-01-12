@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"test/llama/musicembed"
@@ -87,8 +88,15 @@ func ProcessTrack(
 	if cfg.Embedder.EnableLyrics {
 		var lyricsText string
 
-		// Use existing lyrics if available, otherwise generate
-		if track.Lyrics != "" {
+		log.Debug(ctx, "Processing lyrics",
+			"track", track.Path,
+			"hasExistingLyrics", track.Lyrics != "",
+			"lyricsLength", len(track.Lyrics))
+
+		// Use existing lyrics if available and meaningful (not just whitespace/short placeholder)
+		trimmedLyrics := strings.TrimSpace(track.Lyrics)
+		if len(trimmedLyrics) > 10 {
+			log.Debug(ctx, "Using existing lyrics from database", "track", track.Path)
 			lyricsText = track.Lyrics
 		} else {
 			generated, err := musicClient.GenerateLyrics(fullPath)
