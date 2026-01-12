@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -340,6 +341,13 @@ func processAllTracks(
 					"hasDescription", result.DescriptionEmbedding != nil,
 					"hasAudio", result.FlamingoEmbedding != nil,
 					"duration", result.Duration.Round(time.Millisecond))
+			}
+
+			// Force garbage collection and give GPU time to cleanup after every track
+			// CUDA backend needs time to properly release GPU resources
+			if result != nil {
+				runtime.GC()
+				time.Sleep(1 * time.Second)
 			}
 
 			// Save checkpoint periodically

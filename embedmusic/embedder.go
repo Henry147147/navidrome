@@ -99,18 +99,14 @@ func ProcessTrack(
 			log.Debug(ctx, "Using existing lyrics from database", "track", track.Path)
 			lyricsText = track.Lyrics
 		} else {
-			// Use the combined check+generation function
-			// This checks for lyrics presence first, and only extracts if present
-			generated, err := musicClient.GenerateLyricsWithCheck(fullPath)
+			// Note: GenerateLyricsWithCheck has CUDA cleanup issues
+			// Using GenerateLyrics for now until CUDA issue is resolved
+			generated, err := musicClient.GenerateLyrics(fullPath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to generate lyrics: %w", err)
 			}
 			lyricsText = generated
 			result.GeneratedLyrics = generated
-
-			log.Debug(ctx, "Generated lyrics",
-				"track", track.Path,
-				"isInstrumental", lyricsText == "No lyrics identified in this piece.")
 		}
 
 		if lyricsText != "" {
