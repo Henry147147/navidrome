@@ -84,23 +84,24 @@ func ProcessTrack(
 		TrackName: trackName,
 	}
 
-	// Stage 1: Generate lyrics text embedding (if enabled)
-	if cfg.Embedder.EnableLyrics {
-		var lyricsText string
+	// PHASE 1: MUSIC MODEL OPERATIONS (keep music model loaded)
+	// Generate all text/audio from the music model first, before switching to embedding model
+	var lyricsText string
+	var description string
 
+	// Stage 1a: Generate lyrics text (if enabled)
+	if cfg.Embedder.EnableLyrics {
 		log.Debug(ctx, "Processing lyrics",
 			"track", track.Path,
 			"hasExistingLyrics", track.Lyrics != "",
 			"lyricsLength", len(track.Lyrics))
 
-		// Use existing lyrics if available and meaningful (not just whitespace/short placeholder)
+		// Use existing lyrics if available and meaningful
 		trimmedLyrics := strings.TrimSpace(track.Lyrics)
 		if len(trimmedLyrics) > 10 {
 			log.Debug(ctx, "Using existing lyrics from database", "track", track.Path)
 			lyricsText = track.Lyrics
 		} else {
-			// Note: GenerateLyricsWithCheck has CUDA cleanup issues
-			// Using GenerateLyrics for now until CUDA issue is resolved
 			generated, err := musicClient.GenerateLyrics(fullPath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to generate lyrics: %w", err)
@@ -108,43 +109,16 @@ func ProcessTrack(
 			lyricsText = generated
 			result.GeneratedLyrics = generated
 		}
-
-		if lyricsText != "" {
-			embedding, err := musicClient.EmbedText(lyricsText)
-			if err != nil {
-				return nil, fmt.Errorf("failed to embed lyrics text: %w", err)
-			}
-			result.LyricsEmbedding = float32sToFloat64s(embedding)
-
-			// Store lyrics embedding in Milvus
-			err = storeLyricsEmbedding(ctx, milvusClient, trackName, result.LyricsEmbedding, lyricsText)
-			if err != nil {
-				return nil, fmt.Errorf("failed to store lyrics embedding: %w", err)
-			}
-		}
 	}
 
-	// Stage 2: Generate audio description and embed (if enabled)
+	// Stage 2a: Generate audio description (if enabled)
 	if cfg.Embedder.EnableDescription {
-		description, err := musicClient.GenerateDescription(fullPath)
+		generated, err := musicClient.GenerateDescription(fullPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate description: %w", err)
 		}
+		description = generated
 		result.Description = description
-
-		if description != "" {
-			embedding, err := musicClient.EmbedText(description)
-			if err != nil {
-				return nil, fmt.Errorf("failed to embed description text: %w", err)
-			}
-			result.DescriptionEmbedding = float32sToFloat64s(embedding)
-
-			// Store description embedding in Milvus
-			err = storeDescriptionEmbedding(ctx, milvusClient, trackName, result.DescriptionEmbedding, description)
-			if err != nil {
-				return nil, fmt.Errorf("failed to store description embedding: %w", err)
-			}
-		}
 	}
 
 	// Stage 3: Generate direct audio embedding (if enabled)
@@ -159,6 +133,39 @@ func ProcessTrack(
 		err = storeAudioEmbedding(ctx, milvusClient, trackName, result.FlamingoEmbedding)
 		if err != nil {
 			return nil, fmt.Errorf("failed to store audio embedding: %w", err)
+		}
+	}
+
+	// PHASE 2: EMBEDDING MODEL OPERATIONS
+	// Now switch to embedding model and embed all text at once
+
+	// Stage 1b: Embed lyrics text (if we have lyrics)
+	if cfg.Embedder.EnableLyrics && lyricsText != "" {
+		embedding, err := musicClient.EmbedText(lyricsText)
+		if err != nil {
+			return nil, fmt.Errorf("failed to embed lyrics text: %w", err)
+		}
+		result.LyricsEmbedding = float32sToFloat64s(embedding)
+
+		// Store lyrics embedding in Milvus
+		err = storeLyricsEmbedding(ctx, milvusClient, trackName, result.LyricsEmbedding, lyricsText)
+		if err != nil {
+			return nil, fmt.Errorf("failed to store lyrics embedding: %w", err)
+		}
+	}
+
+	// Stage 2b: Embed description text (if we have description)
+	if cfg.Embedder.EnableDescription && description != "" {
+		embedding, err := musicClient.EmbedText(description)
+		if err != nil {
+			return nil, fmt.Errorf("failed to embed description text: %w", err)
+		}
+		result.DescriptionEmbedding = float32sToFloat64s(embedding)
+
+		// Store description embedding in Milvus
+		err = storeDescriptionEmbedding(ctx, milvusClient, trackName, result.DescriptionEmbedding, description)
+		if err != nil {
+			return nil, fmt.Errorf("failed to store description embedding: %w", err)
 		}
 	}
 

@@ -343,11 +343,11 @@ func processAllTracks(
 					"duration", result.Duration.Round(time.Millisecond))
 			}
 
-			// Force garbage collection and give GPU time to cleanup after every track
-			// CUDA backend needs time to properly release GPU resources
+			// Force garbage collection after every track
+			// Now that we batch model operations, we only switch models once per track
+			// This should significantly reduce CUDA errors
 			if result != nil {
 				runtime.GC()
-				time.Sleep(1 * time.Second)
 			}
 
 			// Save checkpoint periodically
