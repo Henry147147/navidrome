@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"runtime"
 	"syscall"
 	"time"
 
@@ -290,86 +289,52 @@ func processAllTracks(
 	startOffset, limit int,
 	stats *EmbeddingStats,
 ) error {
-	offset := startOffset
-	lastProgressTime := time.Now()
+	// Check for cancellation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 
-	for offset < limit {
-		// Check for cancellation
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+	// Fetch exactly ONE track
+	tracks, err := FetchTrackBatch(ctx, db, startOffset, 1, cfg.CLI.Filter)
+	if err != nil {
+		return fmt.Errorf("failed to fetch tracks: %w", err)
+	}
+
+	if len(tracks) == 0 {
+		log.Info(ctx, "No track found at offset", "offset", startOffset)
+		return nil
+	}
+
+	track := tracks[0]
+
+	// Process the single track
+	result, err := ProcessTrackWithRetry(ctx, track, musicClient, milvusClient, cfg, cfg.CLI.Force)
+	if err != nil {
+		// Check if it's a "skip" error (already exists)
+		if !cfg.CLI.Force && err.Error() == "embeddings already exist (use --force to re-embed)" {
+			stats.Skipped++
+			log.Info(ctx, "Skipped track (already embedded)",
+				"track", track.Path)
+		} else {
+			stats.Failed++
+			stats.AddError(fmt.Sprintf("%s: %v", track.Path, err))
+			log.Error(ctx, "Failed to embed track", err,
+				"track", track.Path,
+				"attempt", "final")
+			return fmt.Errorf("failed to embed track: %w", err)
 		}
-
-		// Fetch batch of tracks
-		tracks, err := FetchTrackBatch(ctx, db, offset, cfg.Embedder.BatchSize, cfg.CLI.Filter)
-		if err != nil {
-			return fmt.Errorf("failed to fetch tracks: %w", err)
-		}
-
-		if len(tracks) == 0 {
-			break
-		}
-
-		// Process each track in the batch
-		for _, track := range tracks {
-			if offset+stats.Processed >= limit {
-				break
-			}
-
-			result, err := ProcessTrackWithRetry(ctx, track, musicClient, milvusClient, cfg, cfg.CLI.Force)
-			if err != nil {
-				// Check if it's a "skip" error (already exists)
-				if !cfg.CLI.Force && err.Error() == "embeddings already exist (use --force to re-embed)" {
-					stats.Skipped++
-					log.Debug(ctx, "Skipped track (already embedded)",
-						"track", track.Path)
-				} else {
-					stats.Failed++
-					stats.AddError(fmt.Sprintf("%s: %v", track.Path, err))
-					log.Error(ctx, "Failed to embed track", err,
-						"track", track.Path,
-						"attempt", "final")
-				}
-			} else {
-				stats.Processed++
-				log.Info(ctx, "Embedded track",
-					"track", track.Path,
-					"artist", track.Artist,
-					"title", track.Title,
-					"hasLyrics", result.LyricsEmbedding != nil,
-					"hasDescription", result.DescriptionEmbedding != nil,
-					"hasAudio", result.FlamingoEmbedding != nil,
-					"duration", result.Duration.Round(time.Millisecond))
-			}
-
-			// Force garbage collection after every track
-			// Now that we batch model operations, we only switch models once per track
-			// This should significantly reduce CUDA errors
-			if result != nil {
-				runtime.GC()
-			}
-
-			// Save checkpoint periodically
-			if (stats.Processed+stats.Skipped)%checkpointInterval == 0 {
-				checkpoint := CheckpointState{
-					LastProcessedID: track.ID,
-					Timestamp:       time.Now(),
-					TotalProcessed:  offset + stats.Processed + stats.Skipped,
-				}
-				if err := SaveCheckpoint(checkpoint); err != nil {
-					log.Warn(ctx, "Failed to save checkpoint", err)
-				}
-			}
-
-			// Print progress periodically
-			if time.Since(lastProgressTime) >= progressInterval {
-				printProgress(ctx, stats, offset, limit)
-				lastProgressTime = time.Now()
-			}
-		}
-
-		offset += len(tracks)
+	} else {
+		stats.Processed++
+		log.Info(ctx, "Embedded track",
+			"track", track.Path,
+			"artist", track.Artist,
+			"title", track.Title,
+			"hasLyrics", result.LyricsEmbedding != nil,
+			"hasDescription", result.DescriptionEmbedding != nil,
+			"hasAudio", result.FlamingoEmbedding != nil,
+			"duration", result.Duration.Round(time.Millisecond))
 	}
 
 	return nil
