@@ -5,8 +5,6 @@ go 1.25.5
 // Fork to fix https://github.com/navidrome/navidrome/issues/3254
 replace github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8 => github.com/deluan/tag v0.0.0-20241002021117-dfe5e6ea396d
 
-replace test/llama => ./musicembed
-
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/Masterminds/squirrel v1.5.4
@@ -75,7 +73,6 @@ require (
 	golang.org/x/time v0.14.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
-	test/llama v0.0.0
 )
 
 require (
