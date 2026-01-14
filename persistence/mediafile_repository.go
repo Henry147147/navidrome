@@ -86,6 +86,8 @@ func NewMediaFileRepository(ctx context.Context, db dbx.Builder) model.MediaFile
 		"created_at":     "media_file.created_at",
 		"recently_added": mediaFileRecentlyAddedSort(),
 		"starred_at":     "starred, starred_at",
+		"play_date":      "play_date",
+		"play_count":     "play_count",
 		"rated_at":       "rating, rated_at",
 	})
 	return r
@@ -95,6 +97,7 @@ var mediaFileFilter = sync.OnceValue(func() map[string]filterFunc {
 	filters := map[string]filterFunc{
 		"id":         idFilter("media_file"),
 		"title":      fullTextFilter("media_file", "mbz_recording_id", "mbz_release_track_id"),
+		"q":          fullTextFilter("media_file", "mbz_recording_id", "mbz_release_track_id"),
 		"starred":    booleanFilter,
 		"genre_id":   tagIDFilter,
 		"missing":    booleanFilter,

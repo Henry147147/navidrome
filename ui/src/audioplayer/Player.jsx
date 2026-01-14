@@ -30,6 +30,7 @@ import locale from './locale'
 import { keyMap } from '../hotkeys'
 import keyHandlers from './keyHandlers'
 import { calculateGain } from '../utils/calculateReplayGain'
+import { BRAND_NAME } from '../consts'
 
 const Player = () => {
   const theme = useCurrentTheme()
@@ -62,6 +63,30 @@ const Player = () => {
   const gainInfo = useSelector((state) => state.replayGain)
   const [context, setContext] = useState(null)
   const [gainNode, setGainNode] = useState(null)
+  const networkInfo = useMemo(() => {
+    if (typeof navigator === 'undefined') {
+      return null
+    }
+    return (
+      navigator.connection ||
+      navigator.mozConnection ||
+      navigator.webkitConnection ||
+      null
+    )
+  }, [])
+  const canPreloadNextTrack = useMemo(() => {
+    if (isMobilePlayer) {
+      return false
+    }
+    if (!networkInfo) {
+      return true
+    }
+    if (networkInfo.saveData) {
+      return false
+    }
+    const slowTypes = ['slow-2g', '2g', '3g']
+    return !slowTypes.includes(networkInfo.effectiveType)
+  }, [isMobilePlayer, networkInfo])
 
   useEffect(() => {
     if (
@@ -163,7 +188,7 @@ const Player = () => {
   const onAudioProgress = useCallback(
     (info) => {
       if (info.ended) {
-        document.title = 'Navidrome'
+        document.title = BRAND_NAME
       }
 
       const progress = (info.currentTime / info.duration) * 100
@@ -176,6 +201,10 @@ const Player = () => {
       }
 
       if (!preloaded) {
+        if (!canPreloadNextTrack) {
+          setPreload(true)
+          return
+        }
         const next = nextSong()
         if (next != null) {
           const audio = new Audio()
@@ -190,7 +219,7 @@ const Player = () => {
         setScrobbled(true)
       }
     },
-    [startTime, scrobbled, nextSong, preloaded],
+    [startTime, scrobbled, nextSong, preloaded, canPreloadNextTrack],
   )
 
   const onAudioVolumeChange = useCallback(
@@ -213,7 +242,7 @@ const Player = () => {
       }
       if (info.duration) {
         const song = info.song
-        document.title = `${song.title} - ${song.artist} - Navidrome`
+        document.title = `${song.title} - ${song.artist} - ${BRAND_NAME}`
         if (!info.isRadio) {
           const pos = startTime === null ? null : Math.floor(info.currentTime)
           subsonic.nowPlaying(info.trackId, pos)
@@ -279,7 +308,7 @@ const Player = () => {
   }, [dispatch])
 
   if (!visible) {
-    document.title = 'Navidrome'
+    document.title = BRAND_NAME
   }
 
   const handlers = useMemo(

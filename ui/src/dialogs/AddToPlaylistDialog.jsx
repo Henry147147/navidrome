@@ -56,7 +56,9 @@ export const AddToPlaylistDialog = () => {
       .then((res) => {
         addToPlaylist(res.data.id)
       })
-      .catch((error) => notify(`Error: ${error.message}`, 'warning'))
+      .catch((error) => {
+        notify(`Error: ${error.message}`, { type: 'warning' })
+      })
   }
 
   const addToPlaylist = (playlistId, distinctIds) => {
@@ -102,7 +104,7 @@ export const AddToPlaylistDialog = () => {
         setCheck(true)
       })
       .catch(() => {
-        notify('ra.page.error', 'warning')
+        notify('ra.page.error', { type: 'warning' })
       })
   }
 

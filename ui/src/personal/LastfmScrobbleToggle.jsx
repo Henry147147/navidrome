@@ -33,9 +33,9 @@ const Progress = (props) => {
     linkCheckDelay = null
     setCheckingLink(false)
     if (success) {
-      notify('message.lastfmLinkSuccess', 'success')
+      notify('message.lastfmLinkSuccess', { type: 'success' })
     } else {
-      notify('message.lastfmLinkFailure', 'warning')
+      notify('message.lastfmLinkFailure', { type: 'warning' })
     }
     setLinked(success)
   }
@@ -95,9 +95,9 @@ export const LastfmScrobbleToggle = (props) => {
       httpClient('/api/lastfm/link', { method: 'DELETE' })
         .then(() => {
           setLinked(false)
-          notify('message.lastfmUnlinkSuccess', 'success')
+          notify('message.lastfmUnlinkSuccess', { type: 'success' })
         })
-        .catch(() => notify('message.lastfmUnlinkFailure', 'warning'))
+        .catch(() => notify('message.lastfmUnlinkFailure', { type: 'warning' }))
     }
   }
 

@@ -16,6 +16,7 @@ navidrome.toml
 master.zip
 testDB
 cache/*
+.cache/
 *.swp
 dist
 music
@@ -33,3 +34,8 @@ AGENTS.md
 *.test
 *.wasm
 openspec/
+go-llama.cpp/
+models/
+llama.cpp/
+llama-lib/
+models/mmproj-music-flamingo.gguf

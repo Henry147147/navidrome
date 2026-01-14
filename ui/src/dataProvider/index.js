@@ -1,6 +1,9 @@
-import httpClient from './httpClient'
+import httpClient, {
+  applyAuthHeaders,
+  updateAuthFromHeaders,
+} from './httpClient'
 import wrapperDataProvider from './wrapperDataProvider'
 
-export { httpClient }
+export { httpClient, applyAuthHeaders, updateAuthFromHeaders }
 
 export default wrapperDataProvider

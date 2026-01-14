@@ -1,12 +1,9 @@
 package metrics
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"math"
-	"net/http"
-	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -99,30 +96,12 @@ func (c *insightsCollector) sendInsights(ctx context.Context) {
 		log.Trace(ctx, "No users found, skipping Insights data collection")
 		return
 	}
-	hc := &http.Client{
-		Timeout: consts.DefaultHttpClientTimeOut,
-	}
 	data := c.collect(ctx)
 	if data == nil {
 		return
 	}
-	body := bytes.NewReader(data)
-	req, err := http.NewRequestWithContext(ctx, "POST", consts.InsightsEndpoint, body)
-	if err != nil {
-		log.Trace(ctx, "Could not create Insights request", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := hc.Do(req)
-	if err != nil {
-		log.Trace(ctx, "Could not send Insights data", err)
-		return
-	}
-	log.Info(ctx, "Sent Insights data (for details see http://navidrome.org/docs/getting-started/insights", "data",
-		string(data), "server", consts.InsightsEndpoint, "status", resp.Status)
 	c.lastRun.Store(time.Now().UnixMilli())
-	c.lastStatus.Store(resp.StatusCode < 300)
-	resp.Body.Close()
+	c.lastStatus.Store(len(data) > 0)
 }
 
 func buildInfo() (map[string]string, string) {
@@ -168,13 +147,6 @@ var staticData = sync.OnceValue(func() insights.Data {
 	// Build info
 	data.Build.Settings, data.Build.GoVersion = buildInfo()
 	data.OS.Containerized = consts.InContainer
-
-	// Install info
-	packageFilename := filepath.Join(conf.Server.DataFolder, ".package")
-	packageFileData, err := os.ReadFile(packageFilename)
-	if err == nil {
-		data.OS.Package = string(packageFileData)
-	}
 
 	// OS info
 	data.OS.Type = runtime.GOOS

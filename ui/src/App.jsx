@@ -139,7 +139,6 @@ const Admin = (props) => {
             options={{ subMenu: 'settings' }}
           />
         ) : null,
-
         <Resource name="translation" />,
         <Resource name="genre" />,
         <Resource name="tag" />,

@@ -33,11 +33,12 @@ var allProviders = wire.NewSet(
 	subsonic.New,
 	nativeapi.New,
 	public.New,
+	subsonic.NewNoopRecommendationClient,
 	persistence.New,
 	lastfm.NewRouter,
 	listenbrainz.NewRouter,
 	events.GetBroker,
-	scanner.New,
+	newScanner,
 	scanner.GetWatcher,
 	plugins.GetManager,
 	metrics.GetPrometheusInstance,
@@ -47,6 +48,11 @@ var allProviders = wire.NewSet(
 	wire.Bind(new(metrics.PluginLoader), new(plugins.Manager)),
 	wire.Bind(new(core.Watcher), new(scanner.Watcher)),
 )
+
+// newScanner creates a scanner.
+func newScanner(ctx context.Context, ds model.DataStore, cw artwork.CacheWarmer, broker events.Broker, pls core.Playlists, m metrics.Metrics) model.Scanner {
+	return scanner.New(ctx, ds, cw, broker, pls, m)
+}
 
 func CreateDataStore() model.DataStore {
 	panic(wire.Build(

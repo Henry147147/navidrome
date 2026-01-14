@@ -26,8 +26,11 @@ var (
 	ErrAlreadyScanning = errors.New("already scanning")
 )
 
+// ScannerOption is a functional option for configuring the scanner.
+type ScannerOption func(*controller)
+
 func New(rootCtx context.Context, ds model.DataStore, cw artwork.CacheWarmer, broker events.Broker,
-	pls core.Playlists, m metrics.Metrics) model.Scanner {
+	pls core.Playlists, m metrics.Metrics, opts ...ScannerOption) model.Scanner {
 	c := &controller{
 		rootCtx: rootCtx,
 		ds:      ds,
@@ -35,6 +38,10 @@ func New(rootCtx context.Context, ds model.DataStore, cw artwork.CacheWarmer, br
 		broker:  broker,
 		pls:     pls,
 		metrics: m,
+	}
+	// Apply options
+	for _, opt := range opts {
+		opt(c)
 	}
 	if !conf.Server.DevExternalScanner {
 		c.limiter = P(rate.Sometimes{Interval: conf.Server.DevActivityPanelUpdateRate})

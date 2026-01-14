@@ -39,7 +39,7 @@ export const playTopSongs = async (dispatch, notify, artistName) => {
 
   const songs = data.topSongs?.song || []
   if (!songs.length) {
-    notify('message.noTopSongsFound', 'warning')
+    notify('message.noTopSongsFound', { type: 'warning' })
     return
   }
 
@@ -59,7 +59,7 @@ export const playSimilar = async (dispatch, notify, id) => {
 
   const songs = data.similarSongs2?.song || []
   if (!songs.length) {
-    notify('message.noSimilarSongsFound', 'warning')
+    notify('message.noSimilarSongsFound', { type: 'warning' })
     return
   }
 

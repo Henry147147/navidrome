@@ -300,7 +300,8 @@ const NowPlayingPanel = () => {
           }
         })
         .catch((error) => {
-          notify('ra.page.error', 'warning', {
+          notify('ra.page.error', {
+            type: 'warning',
             messageArgs: { error: error.message || 'Unknown error' },
           })
         }),

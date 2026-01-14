@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=69.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "navidrome-embedder"
+version = "1.0.0"
+description = "Navidrome embedder helper CLI (Python)."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools]
+script-files = ["navidrome-embedder.py"]

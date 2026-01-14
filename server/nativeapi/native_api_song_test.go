@@ -3,11 +3,6 @@ package nativeapi
 import (
 	"bytes"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
-	"time"
-
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/conf/configtest"
 	"github.com/navidrome/navidrome/consts"
@@ -18,6 +13,10 @@ import (
 	"github.com/navidrome/navidrome/tests"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"time"
 )
 
 var _ = Describe("Song Endpoints", func() {
@@ -95,7 +94,7 @@ var _ = Describe("Song Endpoints", func() {
 		mfRepo.SetData(testSongs)
 
 		// Create the native API router and wrap it with the JWTVerifier middleware
-		nativeRouter := New(ds, nil, nil, nil, core.NewMockLibraryService(), nil)
+		nativeRouter := New(ds, nil, nil, nil, core.NewMockLibraryService(), core.NewMaintenance(ds), nil)
 		router = server.JWTVerifier(nativeRouter)
 		w = httptest.NewRecorder()
 	})
@@ -289,10 +288,9 @@ var _ = Describe("Song Endpoints", func() {
 			})
 
 			It("handles filter parameters", func() {
-				// Properly encode the URL with query parameters
 				baseURL := "/song"
 				params := url.Values{}
-				params.Add("title", "Test Song 1")
+				params.Add("q", "Test Song 1")
 				fullURL := baseURL + "?" + params.Encode()
 
 				req := createAuthenticatedRequest("GET", fullURL, nil)
@@ -304,7 +302,6 @@ var _ = Describe("Song Endpoints", func() {
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				Expect(err).ToNot(HaveOccurred())
 
-				// Mock doesn't implement filtering, but request should be processed
 				Expect(len(response)).To(BeNumerically(">=", 1))
 			})
 		})
