@@ -1,3 +1,11 @@
+from transformers import (
+    AutoModelForCausalLM,
+    MusicFlamingoForConditionalGeneration,
+    AutoProcessor,
+    FineGrainedFP8Config,
+    TextStreamer
+)
+
 def load_music_flamingo(path):
     pass
 
