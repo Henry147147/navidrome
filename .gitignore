@@ -41,3 +41,6 @@ llama-lib/
 models/mmproj-music-flamingo.gguf
 musicembed/music_flamingo_fp8/
 musicembed/sglang/
+musicembed/.ipynb_checkpoints
+.ipynb_checkpoints
+**/.ipynb_checkpoints
