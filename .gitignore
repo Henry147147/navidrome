@@ -39,3 +39,5 @@ models/
 llama.cpp/
 llama-lib/
 models/mmproj-music-flamingo.gguf
+musicembed/music_flamingo_fp8/
+musicembed/sglang/
