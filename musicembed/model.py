@@ -8,7 +8,7 @@ import torch
 import logging
 from transformers.audio_utils import AudioInput, make_list_of_audio
 from transformers.processing_utils import Unpack
-from transformers import AutoModel, MusicFlamingoForConditionalGeneration, MusicFlamingoProcessor
+from transformers import AutoModel, MusicFlamingoForConditionalGeneration, MusicFlamingoProcessor, MusicFlamingoForConditionalGeneration
 from transformers.models.musicflamingo.modeling_musicflamingo import MusicFlamingoMultiModalProjector
 from transformers.models.musicflamingo.processing_musicflamingo import MusicFlamingoProcessorKwargs
 from contextlib import contextmanager, redirect_stdout, redirect_stderr
@@ -113,6 +113,18 @@ class MusicFlamingo:
         return embedded.to("cpu").detach()
     
     def inference_llm(self, audio_embedding):
+        text = self.prepare_model_input()
+        inputs = self.music_processor(
+                    text=text,
+                    audio=None,
+                    return_tensors="pt")
+        input_ids = inputs["input_ids"]
+        
+        attention_mask = inputs["attention_mask"]
+        input_features = audio_embedding["input_features"]
+        input_features_mask = audio_embedding["input_features_mask"]
+        audio_times = audio_embedding["audio_times"]
+        self.
         
 
     def prepare_music(self, audio):
@@ -127,9 +139,9 @@ class MusicFlamingo:
         return embeddings
         
     @staticmethod
-    def load_audio_embedder(path, **kwargs):
+    def load_music_flamingo(path, **kwargs):
         with suppress_logs(), suppress_output():
-            return MusicFlamingoPreProcessorModel.from_pretrained(path, **kwargs).eval()
+            return MusicFlamingoForConditionalGeneration.from_pretrained(path, **kwargs).eval()
     
     @staticmethod
     def load_music_processor(path):
