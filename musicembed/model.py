@@ -1,5 +1,6 @@
 import os
 import time
+import warnings
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Union
 
@@ -185,6 +186,16 @@ def suppress_output():
         with redirect_stdout(devnull), redirect_stderr(devnull):
             yield
 
+@contextmanager
+def suppress_generate_device_warning():
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="You are calling .generate\\(\\) with the `input_ids` being on a device type different than your model's device.*",
+            category=UserWarning,
+        )
+        yield
+
 class MusicFlamingoAudioProcessor(MusicFlamingoProcessor):
     def __init__(
         self,
@@ -285,14 +296,14 @@ class MusicFlamingo:
     def _generate_from_prompt(self, prompt: str, audio_context, generation_overrides: Optional[Dict[str, Any]] = None):
         text = self.prepare_model_input(prompt_text=prompt, audio_token_count=audio_context["audio_token_count"])
         text_inputs = self.music_processor.tokenizer(text, return_tensors="pt", padding=True)
-        lm_device = self._module_device(self.music_flamingo.language_model)
-        input_ids = text_inputs["input_ids"].to(lm_device)
-        attention_mask = text_inputs["attention_mask"].to(lm_device)
+        input_ids = text_inputs["input_ids"].to(self.device)
+        attention_mask = text_inputs["attention_mask"].to(self.device)
         inputs_embeds = self.music_flamingo.get_input_embeddings()(input_ids)
         audio_token_mask = (input_ids == self.music_flamingo.config.audio_token_id).unsqueeze(-1)
-        audio_embeds = audio_context["audio_embeds"].to(lm_device)
+        audio_embeds = audio_context["audio_embeds"].to(self.device)
         inputs_embeds = inputs_embeds.masked_scatter(audio_token_mask.to(inputs_embeds.device), audio_embeds)
         model_inputs = {
+            "input_ids": input_ids,
             "attention_mask": attention_mask,
             "inputs_embeds": inputs_embeds,
         }
@@ -300,10 +311,11 @@ class MusicFlamingo:
         total_input_tokens = int(text_inputs["input_ids"].numel())
         start_time = time.perf_counter()
         with torch.inference_mode():
-            outputs = self.music_flamingo.language_model.generate(
-                **model_inputs,
-                **generation_kwargs,
-            )
+            with suppress_generate_device_warning():
+                outputs = self.music_flamingo.generate(
+                    **model_inputs,
+                    **generation_kwargs,
+                )
         elapsed = time.perf_counter() - start_time
         if self.log_tps and elapsed > 0:
             tps = total_input_tokens / elapsed
