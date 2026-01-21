@@ -8,14 +8,38 @@ import torch
 import logging
 from transformers.audio_utils import AudioInput, make_list_of_audio
 from transformers.processing_utils import Unpack
-from transformers import MusicFlamingoForConditionalGeneration, MusicFlamingoProcessor, MusicFlamingoForConditionalGeneration
+from transformers import Cache, MusicFlamingoForConditionalGeneration, MusicFlamingoProcessor, MusicFlamingoForConditionalGeneration
 from transformers.models.musicflamingo.processing_musicflamingo import MusicFlamingoProcessorKwargs
 from contextlib import contextmanager, redirect_stdout, redirect_stderr
 
-DESCRIBE_PROMPT = "Describe this track in full detail - tell me the genre, tempo, and key, then dive into the instruments, production style, and overall mood it creates."
+DESCRIBE_PROMPT = "Describe this track in full detail - tell me the genre, tempo, and key, then dive into the instruments, production style, and overall mood it creates. Output your thinking process in <think> </think>."
 MAX_NEW_TOKENS = 2048
 class CustomMusicFlamingo(MusicFlamingoForConditionalGeneration):
-    pass
+    def prepare_inputs_for_generation(
+        self,
+        input_ids: torch.LongTensor,
+        past_key_values: Union[Cache, None] = None,
+        attention_mask: torch.LongTensor | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        input_features: torch.FloatTensor | None = None,
+        input_features_mask: torch.Tensor | None = None,
+        audio_times: torch.Tensor | None = None,
+        cache_position: torch.LongTensor | None = None,
+        is_first_iteration: bool | None = False,
+        **kwargs,
+    ):
+        return super().prepare_inputs_for_generation(
+            input_ids=input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            inputs_embeds=inputs_embeds,
+            input_features=input_features,
+            input_features_mask=input_features_mask,
+            audio_times=audio_times,
+            cache_position=cache_position,
+            is_first_iteration=is_first_iteration,
+            **kwargs,
+        )
 
 @contextmanager
 def suppress_logs(level=logging.CRITICAL):
@@ -87,15 +111,17 @@ class MusicFlamingo:
         inputs_embeds = inputs_embeds.masked_scatter(
             audio_token_mask.to(inputs_embeds.device), audio_embeds.to(inputs_embeds.device)
         )
-        outputs = self.music_flamingo.generate(
-            inputs_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            max_new_tokens=MAX_NEW_TOKENS
-        )
-        return outputs
+        with torch.inference_mode():
+            outputs = self.music_flamingo.generate(
+                inputs_embeds=inputs_embeds,
+                attention_mask=attention_mask,
+                max_new_tokens=MAX_NEW_TOKENS
+            )
+            
+        decoded_outputs = self.music_processor.batch_decode(
+            outputs, skip_special_tokens=True)
 
-        
-        
+        return decoded_outputs[0]
 
     def prepare_music(self, audio):
         processed = self.music_processor(None, audio, return_tensors="pt").to(self.device) # type: ignore
@@ -146,12 +172,15 @@ class MusicFlamingo:
 def test():
     songs = ["/home/henry/projects/navidrome/music/Lorde-Pure_Heroine-24BIT-WEB-FLAC-2013-TVRf/04-lorde-ribs.flac",
         "/home/henry/projects/navidrome/music/Lorde-Pure_Heroine-24BIT-WEB-FLAC-2013-TVRf/01-lorde-tennis_court.flac"]
-    prompt = "Describe this track in full detail - tell me the genre, tempo, and key, then dive into the instruments, production style, and overall mood it creates."
     mf = MusicFlamingo("./music_flamingo_fp8")
     embedded = mf.embed_music_from_path(songs[0])
+    print("First Song:")
     inference = mf.inference_llm(embedded)
     print(inference)
-
+    embedded = mf.embed_music_from_path(songs[1])
+    print("Second Song:")
+    inference = mf.inference_llm(embedded)
+    print(inference)
 
 
 
