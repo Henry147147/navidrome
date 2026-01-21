@@ -1,6 +1,9 @@
 #!/usr/bin/env python
+import argparse
 import gc
+import json
 import os
+import sys
 import time
 import tempfile
 import urllib.request
@@ -10,6 +13,13 @@ from typing import Optional
 import librosa
 import torch
 from transformers import AutoProcessor, MusicFlamingoForConditionalGeneration
+
+os.environ.setdefault("SGLANG_ENABLE_JIT_DEEPGEMM", "0")
+os.environ.setdefault("SGLANG_JIT_DEEPGEMM_PRECOMPILE", "0")
+
+SGLANG_PYTHON_PATH = os.path.join(os.path.dirname(__file__), "sglang", "python")
+if SGLANG_PYTHON_PATH not in sys.path:
+    sys.path.insert(0, SGLANG_PYTHON_PATH)
 
 MODEL_DIR = "./music_flamingo_fp8"
 AUDIO_URL = "https://huggingface.co/datasets/nvidia/AudioSkills/resolve/main/assets/song_1.mp3"
@@ -29,6 +39,47 @@ class BenchConfig:
     compile_mode: Optional[str] = None
     sdp_kernel: Optional[dict] = None
     max_new_tokens: Optional[int] = None
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--backend",
+        choices=("transformers", "sglang"),
+        default="transformers",
+        help="Choose the decoding backend for Qwen.",
+    )
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=MAX_NEW_TOKENS,
+        help="Number of new tokens for the benchmark run.",
+    )
+    parser.add_argument(
+        "--warmup-new-tokens",
+        type=int,
+        default=WARMUP_NEW_TOKENS,
+        help="Number of new tokens for the warmup run.",
+    )
+    parser.add_argument(
+        "--sglang-attention-backend",
+        type=str,
+        default="triton",
+        help="Optional SGLang attention backend override (e.g., triton, fa3).",
+    )
+    parser.add_argument(
+        "--sglang-tp",
+        type=int,
+        default=1,
+        help="Tensor parallel size for SGLang.",
+    )
+    parser.add_argument(
+        "--sglang-max-input-tokens",
+        type=int,
+        default=2048,
+        help="Optional cap for input embeddings before sending to SGLang (set to 0 to disable).",
+    )
+    return parser.parse_args()
 
 
 def _download_audio(url: str) -> str:
@@ -99,7 +150,7 @@ def load_model(attn_implementation: Optional[str]):
     return model
 
 
-def bench_one(config: BenchConfig, processor_inputs):
+def bench_one(config: BenchConfig, processor_inputs, warmup_tokens: int, max_new_tokens: int):
     torch.cuda.empty_cache()
     gc.collect()
 
@@ -126,10 +177,10 @@ def bench_one(config: BenchConfig, processor_inputs):
             )
 
     with torch.inference_mode():
-        _ = _generate(WARMUP_NEW_TOKENS)
+        _ = _generate(warmup_tokens)
 
     torch.cuda.synchronize()
-    bench_tokens = config.max_new_tokens or MAX_NEW_TOKENS
+    bench_tokens = config.max_new_tokens or max_new_tokens
     start = time.perf_counter()
     with torch.inference_mode():
         output = _generate(bench_tokens)
@@ -146,13 +197,171 @@ def bench_one(config: BenchConfig, processor_inputs):
     return tokens_per_s, elapsed, new_tokens, bench_tokens
 
 
+def _build_input_embeds(model, processor_inputs):
+    input_ids = processor_inputs["input_ids"].to(model.device)
+    input_features = processor_inputs["input_features"].to(model.device)
+    input_features_mask = processor_inputs["input_features_mask"].to(model.device)
+    audio_times = processor_inputs.get("audio_times")
+    if audio_times is not None:
+        audio_times = audio_times.to(model.device)
+
+    with torch.inference_mode():
+        audio_embeds = model.get_audio_features(
+            input_features,
+            input_features_mask,
+            audio_times=audio_times,
+        )
+        inputs_embeds = model.get_input_embeddings()(input_ids)
+        audio_token_mask = (input_ids == model.config.audio_token_id).unsqueeze(-1)
+        inputs_embeds = inputs_embeds.masked_scatter(audio_token_mask, audio_embeds)
+
+    inputs_embeds = inputs_embeds.squeeze(0).float().cpu().tolist()
+    return inputs_embeds
+
+
+def _sglang_make_req(input_embeds, max_new_tokens: int):
+    from sglang.srt.managers.schedule_batch import Req
+    from sglang.srt.sampling.sampling_params import SamplingParams
+
+    fake_input_ids = [1] * len(input_embeds)
+    sampling_params = SamplingParams(temperature=0.0, max_new_tokens=max_new_tokens)
+    req = Req(
+        rid="bench-0",
+        origin_input_text="",
+        origin_input_ids=fake_input_ids,
+        sampling_params=sampling_params,
+        input_embeds=input_embeds,
+    )
+    req.fill_ids = req.origin_input_ids
+    req.extend_input_len = len(req.fill_ids) - len(req.prefix_indices)
+    req.logprob_start_len = len(req.origin_input_ids) - 1
+    return [req]
+
+
+def _sglang_run_tokens(model_runner, input_embeds, max_new_tokens: int):
+    if max_new_tokens <= 0:
+        return 0
+    from sglang.bench_one_batch import decode, extend
+
+    reqs = _sglang_make_req(input_embeds, max_new_tokens)
+    next_token_ids, _, batch = extend(reqs, model_runner)
+    generated = 1
+    for _ in range(max_new_tokens - 1):
+        next_token_ids, _ = decode(next_token_ids, batch, model_runner)
+        generated += 1
+    return generated
+
+
+def _load_sglang_runner(attention_backend: Optional[str], tp_size: int):
+    from sglang.bench_one_batch import load_model
+    from sglang.srt.entrypoints.engine import _set_envs_and_config
+    from sglang.srt.layers.moe import initialize_moe_config
+    from sglang.srt.layers.quantization.fp8_utils import initialize_fp8_gemm_config
+    from sglang.srt.server_args import PortArgs, ServerArgs
+
+    model_override = {
+        "architectures": ["MusicFlamingoQwen2ForCausalLM"],
+        "model_type": "qwen2",
+    }
+
+    server_args_kwargs = {
+        "model_path": MODEL_DIR,
+        "tokenizer_path": MODEL_DIR,
+        "trust_remote_code": True,
+        "tp_size": tp_size,
+        "disable_radix_cache": True,
+        "json_model_override_args": json.dumps(model_override),
+        "fp8_gemm_runner_backend": "cutlass",
+        "disable_cuda_graph": True,
+        "sampling_backend": "pytorch",
+        "grammar_backend": "none",
+    }
+    if attention_backend:
+        server_args_kwargs["attention_backend"] = attention_backend
+
+    server_args = ServerArgs(**server_args_kwargs)
+
+    _set_envs_and_config(server_args)
+    initialize_moe_config(server_args)
+    initialize_fp8_gemm_config(server_args)
+
+    port_args = PortArgs.init_new(server_args)
+    model_runner, _tokenizer = load_model(server_args, port_args, gpu_id=0, tp_rank=0)
+    return model_runner
+
+
+def bench_one_sglang(
+    input_embeds,
+    warmup_tokens: int,
+    max_new_tokens: int,
+    attention_backend: Optional[str],
+    tp_size: int,
+    max_input_tokens: int,
+):
+    from sglang.srt.distributed.parallel_state import destroy_distributed_environment
+
+    model_runner = _load_sglang_runner(attention_backend, tp_size)
+    caps = [
+        cap
+        for cap in (
+            getattr(model_runner.model_config, "context_len", None),
+            max_input_tokens or None,
+        )
+        if cap
+    ]
+    cap_len = min(caps) if caps else None
+    if cap_len and len(input_embeds) > cap_len:
+        input_embeds = input_embeds[:cap_len]
+        print(f"Truncated input embeddings to {cap_len} tokens to fit KV cache limits.")
+
+    _ = _sglang_run_tokens(model_runner, input_embeds, warmup_tokens)
+    torch.cuda.synchronize()
+    start = time.perf_counter()
+    new_tokens = _sglang_run_tokens(model_runner, input_embeds, max_new_tokens)
+    torch.cuda.synchronize()
+    elapsed = time.perf_counter() - start
+
+    tokens_per_s = new_tokens / elapsed if elapsed > 0 else 0.0
+
+    destroy_distributed_environment()
+    return tokens_per_s, elapsed, new_tokens, len(input_embeds)
+
+
 def main():
+    args = parse_args()
     torch.set_float32_matmul_precision("high")
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
 
     processor = AutoProcessor.from_pretrained(MODEL_DIR)
     inputs = prepare_inputs(processor)
+
+    if args.backend == "sglang":
+        print(f"CUDA device: {torch.cuda.get_device_name(0)}")
+        print(f"Prompt length: {inputs['input_ids'].shape[1]} tokens")
+        print(
+            f"SGLang benchmark; max_new_tokens={args.max_new_tokens} warmup_new_tokens={args.warmup_new_tokens}\n"
+        )
+
+        model = load_model(attn_implementation=None)
+        input_embeds = _build_input_embeds(model, inputs)
+
+        del model
+        torch.cuda.empty_cache()
+        gc.collect()
+
+        tokens_per_s, elapsed, new_tokens, prompt_len = bench_one_sglang(
+            input_embeds,
+            args.warmup_new_tokens,
+            args.max_new_tokens,
+            args.sglang_attention_backend,
+            args.sglang_tp,
+            args.sglang_max_input_tokens,
+        )
+        print(
+            f"sglang_qwen2{args.sglang_attention_backend or 'default':>18s} | {tokens_per_s:8.2f} tok/s | {elapsed:6.2f}s | {new_tokens:4d} tokens | prompt_len={prompt_len}"
+        )
+        return
 
     configs = [
         BenchConfig(
@@ -217,11 +426,13 @@ def main():
 
     print(f"CUDA device: {torch.cuda.get_device_name(0)}")
     print(f"Prompt length: {inputs['input_ids'].shape[1]} tokens")
-    print(f"Benchmarking {len(configs)} configs; max_new_tokens={MAX_NEW_TOKENS}\n")
+    print(f"Benchmarking {len(configs)} configs; max_new_tokens={args.max_new_tokens}\n")
 
     results = []
     for cfg in configs:
-        tokens_per_s, elapsed, new_tokens, bench_tokens = bench_one(cfg, inputs)
+        tokens_per_s, elapsed, new_tokens, bench_tokens = bench_one(
+            cfg, inputs, args.warmup_new_tokens, args.max_new_tokens
+        )
         results.append((cfg.name, tokens_per_s, elapsed, new_tokens))
         print(
             f"{cfg.name:45s} | {tokens_per_s:8.2f} tok/s | {elapsed:6.2f}s | {new_tokens:4d} tokens | max_new_tokens={bench_tokens}"
