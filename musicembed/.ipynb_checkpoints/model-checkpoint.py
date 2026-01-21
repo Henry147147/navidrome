@@ -1,5 +1,6 @@
 import os
 import time
+import warnings
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Union
 
@@ -14,8 +15,15 @@ from transformers.models.musicflamingo.processing_musicflamingo import MusicFlam
 from contextlib import contextmanager, redirect_stdout, redirect_stderr
 
 DESCRIBE_PROMPT = "Describe this track in full detail - tell me the genre, tempo, and key, then dive into the instruments, production style, lyrical themes, and the overall mood it creates."
-LYRICS_PROMPT = "Transcribe the lyrics from this track in a structure lyric sheet. If there are sections without vocals, skip them and only return the words that are sung or spoken. If there are repeating lyrics, just note how many times with: [repeats <n> times]. If there are no lyrics return: No Lyrics"
-LYRICS_PROMPT = "Does this peice have lyrics?"
+LYRICS_CHECK_PROMPT = "Does this piece have lyrics? Answer with Yes or No."
+LYRICS_PROMPT = (
+    "Transcribe the lyrics from this track in a structured lyric sheet. "
+    "If there are sections without vocals, skip them and only return the words that are sung or spoken. "
+    "If there are repeating lyrics, just note how many times with: [repeats <n> times]."
+)
+NO_LYRICS_RESPONSE = "This song contains no lyrics"
+LONG_SONG_SECONDS = 18 * 60
+AUDIO_SAMPLE_RATE = 24000
 MAX_NEW_TOKENS = 2048
 
 
@@ -180,6 +188,16 @@ def suppress_output():
         with redirect_stdout(devnull), redirect_stderr(devnull):
             yield
 
+@contextmanager
+def suppress_generate_device_warning():
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="You are calling .generate\\(\\) with the `input_ids` being on a device type different than your model's device.*",
+            category=UserWarning,
+        )
+        yield
+
 class MusicFlamingoAudioProcessor(MusicFlamingoProcessor):
     def __init__(
         self,
@@ -212,12 +230,17 @@ class MusicFlamingo:
         log_tps: bool = True,
     ):
         self.path = path
+        self.device_str = device
         self.device = torch.device(device)
-        self.music_flamingo = MusicFlamingo.load_music_flamingo(self.path, device_map=self.device)
+        self.device_map = self.device_str
+        self.multi_gpu = False
+        self._current_long_song = False
+        self.music_flamingo = MusicFlamingo.load_music_flamingo(self.path, device_map=self.device_map)
         self.music_processor = MusicFlamingo.load_music_processor(self.path)
         #self.llm = self.load_flamingo_llm()
         self.describe_music_prompt = DESCRIBE_PROMPT
         self.lyrics_prompt = LYRICS_PROMPT
+        self.lyrics_check_prompt = LYRICS_CHECK_PROMPT
         self.generation_settings = generation_settings or GenerationSettings()
         self.log_tps = log_tps
         if self.generation_settings.eos_token_id is None:
@@ -226,9 +249,44 @@ class MusicFlamingo:
             self.generation_settings.pad_token_id = self.music_processor.tokenizer.pad_token_id
         self.max_new_tokens = self.generation_settings.max_new_tokens
 
+    def will_cause_oom(self, audio: Union[str, torch.Tensor]) -> bool:
+        duration = self._get_audio_duration(audio)
+        return duration >= LONG_SONG_SECONDS
+
+    def _get_audio_duration(self, audio: Union[str, torch.Tensor]) -> float:
+        if isinstance(audio, str):
+            with suppress_logs(), suppress_output():
+                return float(librosa.get_duration(path=audio))
+        if isinstance(audio, torch.Tensor):
+            samples = audio.shape[-1]
+            return float(samples) / float(AUDIO_SAMPLE_RATE)
+        raise TypeError("audio must be a file path or torch.Tensor")
+
+    def _ensure_model_for_audio(self, audio: Union[str, torch.Tensor]) -> None:
+        long_song = self.will_cause_oom(audio)
+        self._current_long_song = long_song
+        if long_song and not self.multi_gpu and torch.cuda.device_count() >= 2:
+            self._reload_model(device_map="auto", multi_gpu=True)
+            return
+        if not long_song and self.multi_gpu:
+            self._reload_model(device_map=self.device_str, multi_gpu=False)
+
+    def _reload_model(self, device_map, multi_gpu: bool) -> None:
+        if self.music_flamingo is not None:
+            del self.music_flamingo
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        self.music_flamingo = MusicFlamingo.load_music_flamingo(self.path, device_map=device_map)
+        self.device_map = device_map
+        self.multi_gpu = multi_gpu
+
     def prepare_audio_context(self, audio: Union[str, torch.Tensor]):
+        self._ensure_model_for_audio(audio)
         if isinstance(audio, str):
             audio = self.load_audio(audio)
+        if not self.multi_gpu:
+            self._move_audio_modules(self.device)
+        audio_device = self._module_device(self.music_flamingo.audio_tower)
         dummy_text = self.music_processor.audio_token
         inputs = self.music_processor(
             text=dummy_text,
@@ -242,9 +300,11 @@ class MusicFlamingo:
         }
         if "audio_times" in inputs:
             audio_inputs["audio_times"] = inputs["audio_times"]
-        audio_inputs = {k: v.to(self.device) for k, v in audio_inputs.items()}
+        audio_inputs = {k: v.to(audio_device) for k, v in audio_inputs.items()}
         with torch.inference_mode():
             audio_embeds = self.music_flamingo.get_audio_features(**audio_inputs)
+        if not self.multi_gpu:
+            self._move_audio_modules(torch.device("cpu"))
         return {
             "audio_inputs": audio_inputs,
             "audio_token_count": audio_token_count,
@@ -255,7 +315,17 @@ class MusicFlamingo:
         return self._generate_from_prompt(self.describe_music_prompt, audio_context, generation_overrides)
 
     def generate_lyrics(self, audio_context, generation_overrides: Optional[Dict[str, Any]] = None):
+        if not self.has_lyrics(audio_context):
+            return NO_LYRICS_RESPONSE
         return self._generate_from_prompt(self.lyrics_prompt, audio_context, generation_overrides)
+
+    def has_lyrics(self, audio_context) -> bool:
+        response = self._generate_from_prompt(
+            self.lyrics_check_prompt,
+            audio_context,
+            {"max_new_tokens": 8},
+        )
+        return self._parse_yes_no(response)
 
     def describe_with_embedding_and_lyrics(self, audio: Union[str, torch.Tensor]):
         audio_context = self.prepare_audio_context(audio)
@@ -267,16 +337,29 @@ class MusicFlamingo:
     def _generate_from_prompt(self, prompt: str, audio_context, generation_overrides: Optional[Dict[str, Any]] = None):
         text = self.prepare_model_input(prompt_text=prompt, audio_token_count=audio_context["audio_token_count"])
         text_inputs = self.music_processor.tokenizer(text, return_tensors="pt", padding=True)
-        model_inputs = {**text_inputs, **audio_context["audio_inputs"]}
-        model_inputs = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in model_inputs.items()}
+        embed_device = self._module_device(self.music_flamingo.get_input_embeddings())
+        input_ids = text_inputs["input_ids"].to(embed_device)
+        attention_mask = text_inputs["attention_mask"].to(embed_device)
+        inputs_embeds = self.music_flamingo.get_input_embeddings()(input_ids)
+        audio_token_mask = (input_ids == self.music_flamingo.config.audio_token_id).unsqueeze(-1)
+        audio_embeds = audio_context["audio_embeds"].to(embed_device)
+        inputs_embeds = inputs_embeds.masked_scatter(audio_token_mask.to(inputs_embeds.device), audio_embeds)
+        model_inputs = {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "inputs_embeds": inputs_embeds,
+        }
+        if self._current_long_song and (generation_overrides is None or "use_cache" not in generation_overrides):
+            generation_overrides = {**(generation_overrides or {}), "use_cache": False}
         generation_kwargs = self._build_generation_kwargs(generation_overrides)
         total_input_tokens = int(text_inputs["input_ids"].numel())
         start_time = time.perf_counter()
         with torch.inference_mode():
-            outputs = self.music_flamingo.generate(
-                **model_inputs,
-                **generation_kwargs,
-            )
+            with suppress_generate_device_warning():
+                outputs = self.music_flamingo.generate(
+                    **model_inputs,
+                    **generation_kwargs,
+                )
         elapsed = time.perf_counter() - start_time
         if self.log_tps and elapsed > 0:
             tps = total_input_tokens / elapsed
@@ -286,6 +369,39 @@ class MusicFlamingo:
             generated, skip_special_tokens=True
         )
         return decoded_outputs[0]
+
+    def _move_audio_modules(self, device: torch.device) -> None:
+        for name in ("audio_tower", "multi_modal_projector"):
+            module = getattr(self.music_flamingo, name, None)
+            if module is None:
+                continue
+            if self._module_device(module) == device:
+                continue
+            module.to(device)
+
+    @staticmethod
+    def _module_device(module: torch.nn.Module) -> torch.device:
+        for param in module.parameters(recurse=True):
+            return param.device
+        for buffer in module.buffers(recurse=True):
+            return buffer.device
+        return torch.device("cpu")
+
+    @staticmethod
+    def _parse_yes_no(text: str) -> bool:
+        normalized = text.strip().lower()
+        if not normalized:
+            return False
+        first = normalized.split()[0].strip(".,:;!?\"'")
+        if first in ("yes", "y"):
+            return True
+        if first in ("no", "n"):
+            return False
+        if "yes" in normalized:
+            return True
+        if "no" in normalized:
+            return False
+        return False
         
     @staticmethod
     def load_music_flamingo(path, **kwargs):
@@ -299,7 +415,7 @@ class MusicFlamingo:
     @staticmethod
     def load_audio(path):
         with suppress_logs(), suppress_output():
-            audio, _ = librosa.load(path, sr=16000)
+            audio, _ = librosa.load(path, sr=AUDIO_SAMPLE_RATE)
         return audio
 
     
