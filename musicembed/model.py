@@ -42,34 +42,6 @@ def suppress_output():
         with redirect_stdout(devnull), redirect_stderr(devnull):
             yield
 
-class NoOpCall:
-    def __init__(self):
-        pass
-    
-    def __call__(**kwargs):
-        return kwargs
-
-class MusicFlamingoPreProcessorModel(MusicFlamingoForConditionalGeneration):
-    def __init__(self, config):
-        super(MusicFlamingoForConditionalGeneration, self).__init__(config)
-        self.vocab_size = config.text_config.vocab_size
-        self.audio_tower = AutoModel.from_config(config.audio_config)
-        self.multi_modal_projector = MusicFlamingoMultiModalProjector(config)
-        self.language_model = NoOpCall()
-        self.post_init()
-
-
-
-
-class MockTokenizer:
-    def __init__(self) -> None:
-        self.init_kwargs = {}
-    
-    def __call__(self, text, **kwds):
-        return {}
-    
-        
-
 class MusicFlamingoAudioProcessor(MusicFlamingoProcessor):
     def __init__(
         self,
@@ -93,18 +65,15 @@ class MusicFlamingoAudioProcessor(MusicFlamingoProcessor):
         return super().__call__(text, audio, output_labels, **kwargs)
 
 
-
-
-
-
 class MusicFlamingo:
     def __init__(self, path, device="cuda"):
         self.path = path
         self.device = torch.device(device)
-        self.music_embedder = MusicFlamingo.load_audio_embedder(self.path, device_map=self.device)
+        self.music_flamingo = MusicFlamingo.load_music_flamingo(self.path, device_map=self.device)
         self.music_processor = MusicFlamingo.load_music_processor(self.path)
-        self.llm = self.load_flamingo_llm()
+        #self.llm = self.load_flamingo_llm()
         self.describe_music_prompt = DESCRIBE_PROMPT
+        self.max_new_tokens = 2048
         
     def embed_music_from_path(self, path):
         loaded = self.load_audio(path)
@@ -112,19 +81,30 @@ class MusicFlamingo:
         embedded = self.embed_music(prepared)
         return embedded.to("cpu").detach()
     
-    def inference_llm(self, audio_embedding):
+    def inference_llm(self, audio_embeds):
         text = self.prepare_model_input()
         inputs = self.music_processor(
                     text=text,
                     audio=None,
                     return_tensors="pt")
-        input_ids = inputs["input_ids"]
+        input_ids = inputs["input_ids"].to(self.device)
+        attention_mask = inputs["attention_mask"].to(self.device)
         
-        attention_mask = inputs["attention_mask"]
-        input_features = audio_embedding["input_features"]
-        input_features_mask = audio_embedding["input_features_mask"]
-        audio_times = audio_embedding["audio_times"]
-        self.
+        inputs_embeds = self.music_flamingo.get_input_embeddings()(input_ids)
+        audio_token_mask = (input_ids == self.music_flamingo.config.audio_token_id).unsqueeze(-1)
+        
+        inputs_embeds = inputs_embeds.masked_scatter(
+            audio_token_mask.to(inputs_embeds.device), audio_embeds.to(inputs_embeds.device)
+        )
+        outputs = self.music_flamingo.generate(
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            max_new_tokens=self.max_new_tokens,
+            use_cache=True
+        )
+        return outputs
+
+        
         
 
     def prepare_music(self, audio):
@@ -135,7 +115,7 @@ class MusicFlamingo:
     
     def embed_music(self, inputs):
         with torch.inference_mode():
-            embeddings = self.music_embedder.get_audio_features(**inputs)
+            embeddings = self.music_flamingo.get_audio_features(**inputs)
         return embeddings
         
     @staticmethod
