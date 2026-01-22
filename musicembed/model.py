@@ -23,7 +23,7 @@ LYRICS_PROMPT = (
 )
 NO_LYRICS_RESPONSE = "This song contains no lyrics"
 LONG_SONG_SECONDS = 18 * 60
-AUDIO_SAMPLE_RATE = 24000
+AUDIO_SAMPLE_RATE = 16000
 MAX_NEW_TOKENS = 2048
 
 
@@ -228,6 +228,7 @@ class MusicFlamingo:
         device="cuda",
         generation_settings: Optional[GenerationSettings] = None,
         log_tps: bool = True,
+        log_lyrics_check: bool = True,
     ):
         self.path = path
         self.device_str = device
@@ -243,6 +244,7 @@ class MusicFlamingo:
         self.lyrics_check_prompt = LYRICS_CHECK_PROMPT
         self.generation_settings = generation_settings or GenerationSettings()
         self.log_tps = log_tps
+        self.log_lyrics_check = log_lyrics_check
         if self.generation_settings.eos_token_id is None:
             self.generation_settings.eos_token_id = self.music_processor.tokenizer.eos_token_id
         if self.generation_settings.pad_token_id is None:
@@ -325,7 +327,15 @@ class MusicFlamingo:
             audio_context,
             {"max_new_tokens": 8},
         )
-        return self._parse_yes_no(response)
+        parsed = self._parse_yes_no(response)
+        if self.log_lyrics_check:
+            normalized = response.strip().lower()
+            first_token = normalized.split()[0] if normalized else ""
+            print(
+                "Lyrics check response:"
+                f" raw={response!r} normalized={normalized!r} first_token={first_token!r} parsed={parsed}"
+            )
+        return parsed
 
     def describe_with_embedding_and_lyrics(self, audio: Union[str, torch.Tensor]):
         audio_context = self.prepare_audio_context(audio)
