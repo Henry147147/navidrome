@@ -14,6 +14,8 @@ from transformers.generation import LogitsProcessor, LogitsProcessorList
 from transformers.models.musicflamingo.processing_musicflamingo import MusicFlamingoProcessorKwargs
 from contextlib import contextmanager, redirect_stdout, redirect_stderr
 
+from enrichment import enrich_and_concatenate
+
 DESCRIBE_PROMPT = "Describe this track in full detail - tell me the genre, tempo, and key, then dive into the instruments, production style, lyrical themes, and the overall mood it creates."
 LYRICS_CHECK_PROMPT = "Does this piece have lyrics? Answer with Yes or No."
 LYRICS_PROMPT = (
@@ -552,9 +554,11 @@ class MusicFlamingo:
 
         return generation_kwargs
     
-    
+    @staticmethod
     def flatten_and_enrich_embedding(embedding: torch.FloatTensor):
-        pass
+        embedding = embedding.to("cuda").to(torch.float32)
+        print(embedding.dtype)
+        return enrich_and_concatenate(embedding)
         
     
 def test():
