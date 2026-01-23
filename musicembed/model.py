@@ -233,10 +233,8 @@ class MusicFlamingo:
         self.path = path
         self.device_str = device
         self.device = torch.device(device)
-        self.device_map = self.device_str
-        self.multi_gpu = False
         self._current_long_song = False
-        self.music_flamingo = MusicFlamingo.load_music_flamingo(self.path, device_map=self.device_map)
+        self.music_flamingo = MusicFlamingo.load_music_flamingo(self.path, device_map=self.device_str)
         self.music_processor = MusicFlamingo.load_music_processor(self.path)
         #self.llm = self.load_flamingo_llm()
         self.describe_music_prompt = DESCRIBE_PROMPT
@@ -264,30 +262,11 @@ class MusicFlamingo:
             return float(samples) / float(AUDIO_SAMPLE_RATE)
         raise TypeError("audio must be a file path or torch.Tensor")
 
-    def _ensure_model_for_audio(self, audio: Union[str, torch.Tensor]) -> None:
-        long_song = self.will_cause_oom(audio)
-        self._current_long_song = long_song
-        if long_song and not self.multi_gpu and torch.cuda.device_count() >= 2:
-            self._reload_model(device_map="auto", multi_gpu=True)
-            return
-        if not long_song and self.multi_gpu:
-            self._reload_model(device_map=self.device_str, multi_gpu=False)
-
-    def _reload_model(self, device_map, multi_gpu: bool) -> None:
-        if self.music_flamingo is not None:
-            del self.music_flamingo
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        self.music_flamingo = MusicFlamingo.load_music_flamingo(self.path, device_map=device_map)
-        self.device_map = device_map
-        self.multi_gpu = multi_gpu
-
     def prepare_audio_context(self, audio: Union[str, torch.Tensor]):
-        self._ensure_model_for_audio(audio)
+        self._current_long_song = self.will_cause_oom(audio)
         if isinstance(audio, str):
             audio = self.load_audio(audio)
-        if not self.multi_gpu:
-            self._move_audio_modules(self.device)
+        self._move_audio_modules(self.device)
         audio_device = self._module_device(self.music_flamingo.audio_tower)
         dummy_text = self.music_processor.audio_token
         inputs = self.music_processor(
@@ -305,13 +284,22 @@ class MusicFlamingo:
         audio_inputs = {k: v.to(audio_device) for k, v in audio_inputs.items()}
         with torch.inference_mode():
             audio_embeds = self.music_flamingo.get_audio_features(**audio_inputs)
-        if not self.multi_gpu:
-            self._move_audio_modules(torch.device("cpu"))
         return {
             "audio_inputs": audio_inputs,
             "audio_token_count": audio_token_count,
             "audio_embeds": audio_embeds,
         }
+
+    def extract_embedding(
+        self,
+        audio: Union[str, torch.Tensor],
+        existing_embedding: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        if existing_embedding is not None:
+            return existing_embedding
+        audio_context = self.prepare_audio_context(audio)
+        embedding = audio_context["audio_embeds"].to("cpu").detach()
+        return embedding
 
     def generate_description(self, audio_context, generation_overrides: Optional[Dict[str, Any]] = None):
         return self._generate_from_prompt(self.describe_music_prompt, audio_context, generation_overrides)
@@ -342,22 +330,17 @@ class MusicFlamingo:
         description = self.generate_description(audio_context)
         lyrics = self.generate_lyrics(audio_context)
         embedding = audio_context["audio_embeds"].to("cpu").detach()
+        self._move_audio_modules(torch.device("cpu"))
         return embedding, description, lyrics
 
     def _generate_from_prompt(self, prompt: str, audio_context, generation_overrides: Optional[Dict[str, Any]] = None):
         text = self.prepare_model_input(prompt_text=prompt, audio_token_count=audio_context["audio_token_count"])
         text_inputs = self.music_processor.tokenizer(text, return_tensors="pt", padding=True)
-        embed_device = self._module_device(self.music_flamingo.get_input_embeddings())
-        input_ids = text_inputs["input_ids"].to(embed_device)
-        attention_mask = text_inputs["attention_mask"].to(embed_device)
-        inputs_embeds = self.music_flamingo.get_input_embeddings()(input_ids)
-        audio_token_mask = (input_ids == self.music_flamingo.config.audio_token_id).unsqueeze(-1)
-        audio_embeds = audio_context["audio_embeds"].to(embed_device)
-        inputs_embeds = inputs_embeds.masked_scatter(audio_token_mask.to(inputs_embeds.device), audio_embeds)
+        self._move_audio_modules(self.device)
+        model_inputs = {**text_inputs, **audio_context["audio_inputs"]}
         model_inputs = {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "inputs_embeds": inputs_embeds,
+            key: value.to(self.device) if isinstance(value, torch.Tensor) else value
+            for key, value in model_inputs.items()
         }
         if self._current_long_song and (generation_overrides is None or "use_cache" not in generation_overrides):
             generation_overrides = {**(generation_overrides or {}), "use_cache": False}
@@ -568,6 +551,11 @@ class MusicFlamingo:
             generation_kwargs.pop("typical_p", None)
 
         return generation_kwargs
+    
+    
+    def flatten_and_enrich_embedding(embedding: torch.FloatTensor):
+        pass
+        
     
 def test():
     songs = ["/home/henry/projects/navidrome/music/Lorde-Pure_Heroine-24BIT-WEB-FLAC-2013-TVRf/04-lorde-ribs.flac",
