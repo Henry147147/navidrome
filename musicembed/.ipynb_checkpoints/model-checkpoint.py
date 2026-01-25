@@ -1,4 +1,5 @@
 import os
+import gc
 import time
 import warnings
 from dataclasses import dataclass, field
@@ -235,7 +236,6 @@ class MusicFlamingo:
         self.path = path
         self.device_str = device
         self.device = torch.device(device)
-        self._current_long_song = False
         self.music_flamingo = MusicFlamingo.load_music_flamingo(self.path, device_map=self.device_str)
         self.music_processor = MusicFlamingo.load_music_processor(self.path)
         #self.llm = self.load_flamingo_llm()
@@ -265,11 +265,9 @@ class MusicFlamingo:
         raise TypeError("audio must be a file path or torch.Tensor")
 
     def prepare_audio_context(self, audio: Union[str, torch.Tensor]):
-        self._current_long_song = self.will_cause_oom(audio)
         if isinstance(audio, str):
             audio = self.load_audio(audio)
         self._move_audio_modules(self.device)
-        audio_device = self._module_device(self.music_flamingo.audio_tower)
         dummy_text = self.music_processor.audio_token
         inputs = self.music_processor(
             text=dummy_text,
@@ -283,9 +281,12 @@ class MusicFlamingo:
         }
         if "audio_times" in inputs:
             audio_inputs["audio_times"] = inputs["audio_times"]
-        audio_inputs = {k: v.to(audio_device) for k, v in audio_inputs.items()}
+        audio_inputs = {k: v.to(self.device) for k, v in audio_inputs.items()}
         with torch.inference_mode():
             audio_embeds = self.music_flamingo.get_audio_features(**audio_inputs)
+
+        self._move_audio_modules("cpu")
+        
         return {
             "audio_inputs": audio_inputs,
             "audio_token_count": audio_token_count,
@@ -344,8 +345,6 @@ class MusicFlamingo:
             key: value.to(self.device) if isinstance(value, torch.Tensor) else value
             for key, value in model_inputs.items()
         }
-        if self._current_long_song and (generation_overrides is None or "use_cache" not in generation_overrides):
-            generation_overrides = {**(generation_overrides or {}), "use_cache": False}
         generation_kwargs = self._build_generation_kwargs(generation_overrides)
         total_input_tokens = int(text_inputs["input_ids"].numel())
         start_time = time.perf_counter()
@@ -366,21 +365,13 @@ class MusicFlamingo:
         return decoded_outputs[0]
 
     def _move_audio_modules(self, device: torch.device) -> None:
+        gc.collect()
+        torch.cuda.empty_cache()
         for name in ("audio_tower", "multi_modal_projector"):
             module = getattr(self.music_flamingo, name, None)
             if module is None:
                 continue
-            if self._module_device(module) == device:
-                continue
             module.to(device)
-
-    @staticmethod
-    def _module_device(module: torch.nn.Module) -> torch.device:
-        for param in module.parameters(recurse=True):
-            return param.device
-        for buffer in module.buffers(recurse=True):
-            return buffer.device
-        return torch.device("cpu")
 
     @staticmethod
     def _parse_yes_no(text: str) -> bool:
@@ -557,7 +548,6 @@ class MusicFlamingo:
     @staticmethod
     def flatten_and_enrich_embedding(embedding: torch.FloatTensor):
         embedding = embedding.to("cuda").to(torch.float32)
-        print(embedding.dtype)
         return enrich_and_concatenate(embedding)
         
     
