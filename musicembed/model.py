@@ -233,6 +233,7 @@ class MusicFlamingo:
         generation_settings: Optional[GenerationSettings] = None,
         log_tps: bool = True,
         log_lyrics_check: bool = True,
+        max_audio_seconds: Optional[float] = None,
     ):
         self.path = path
         self.device_str = device
@@ -246,6 +247,7 @@ class MusicFlamingo:
         self.generation_settings = generation_settings or GenerationSettings()
         self.log_tps = log_tps
         self.log_lyrics_check = log_lyrics_check
+        self.max_audio_seconds = max_audio_seconds
         if self.generation_settings.eos_token_id is None:
             self.generation_settings.eos_token_id = self.music_processor.tokenizer.eos_token_id
         if self.generation_settings.pad_token_id is None:
@@ -270,7 +272,7 @@ class MusicFlamingo:
 
     def prepare_audio_context(self, audio: Union[str, torch.Tensor]):
         if isinstance(audio, str):
-            audio = self.load_audio(audio)
+            audio = self.load_audio(audio, max_duration_seconds=self.max_audio_seconds)
         self._move_audio_modules(self.device)
         dummy_text = self.music_processor.audio_token
         inputs = self.music_processor(
@@ -403,9 +405,12 @@ class MusicFlamingo:
         return MusicFlamingoAudioProcessor.from_pretrained(path)
     
     @staticmethod
-    def load_audio(path):
+    def load_audio(path, max_duration_seconds: Optional[float] = None):
         with suppress_logs(), suppress_output():
-            audio, _ = librosa.load(path, sr=AUDIO_SAMPLE_RATE)
+            if max_duration_seconds is not None and max_duration_seconds > 0:
+                audio, _ = librosa.load(path, sr=AUDIO_SAMPLE_RATE, duration=max_duration_seconds)
+            else:
+                audio, _ = librosa.load(path, sr=AUDIO_SAMPLE_RATE)
         return audio
 
     
@@ -558,18 +563,35 @@ class MusicFlamingo:
     
     
 class QwenEmbedder:
-    def __init__(self):
+    def __init__(
+        self,
+        batch_size: int = 64,
+        device: Optional[str] = None,
+        show_progress_bar: bool = False,
+    ):
         self._model = None
-        self.batch_size = 64
-        
+        self.batch_size = batch_size
+        self.device = device
+        self.show_progress_bar = show_progress_bar
+
     def _load_model(self):
-        self._model = SentenceTransformer("Qwen/Qwen3-Embedding-4B")
-    
+        kwargs: Dict[str, Any] = {}
+        if self.device:
+            kwargs["device"] = self.device
+        self._model = SentenceTransformer("Qwen/Qwen3-Embedding-4B", **kwargs)
+
     def encode_documents(self, strings: List[str]):
+        if not strings:
+            return []
         if self._model is None:
             self._load_model()
         assert self._model is not None
-        return self._model.encode(strings, batch_size=self.batch_size, show_progress_bar=True, normalize_embeddings=True)
+        return self._model.encode(
+            strings,
+            batch_size=self.batch_size,
+            show_progress_bar=self.show_progress_bar,
+            normalize_embeddings=True,
+        )
         
         
 def test():
