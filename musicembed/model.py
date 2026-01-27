@@ -14,6 +14,7 @@ from transformers import Cache, MusicFlamingoForConditionalGeneration, MusicFlam
 from transformers.generation import LogitsProcessor, LogitsProcessorList
 from transformers.models.musicflamingo.processing_musicflamingo import MusicFlamingoProcessorKwargs
 from contextlib import contextmanager, redirect_stdout, redirect_stderr
+from sentence_transformers import SentenceTransformer
 
 from enrichment import enrich_and_concatenate
 
@@ -250,6 +251,9 @@ class MusicFlamingo:
         if self.generation_settings.pad_token_id is None:
             self.generation_settings.pad_token_id = self.music_processor.tokenizer.pad_token_id
         self.max_new_tokens = self.generation_settings.max_new_tokens
+        
+    def unload_all(self):
+        self.music_flamingo.cpu()
 
     def will_cause_oom(self, audio: Union[str, torch.Tensor]) -> bool:
         duration = self._get_audio_duration(audio)
@@ -551,6 +555,23 @@ class MusicFlamingo:
         return enrich_and_concatenate(embedding)
         
     
+    
+    
+class QwenEmbedder:
+    def __init__(self):
+        self._model = None
+        self.batch_size = 64
+        
+    def _load_model(self):
+        self._model = SentenceTransformer("Qwen/Qwen3-Embedding-4B")
+    
+    def encode_documents(self, strings: List[str]):
+        if self._model is None:
+            self._load_model()
+        assert self._model is not None
+        return self._model.encode(strings, batch_size=self.batch_size, show_progress_bar=True, normalize_embeddings=True)
+        
+        
 def test():
     songs = ["/home/henry/projects/navidrome/music/Lorde-Pure_Heroine-24BIT-WEB-FLAC-2013-TVRf/04-lorde-ribs.flac",
         "/home/henry/projects/navidrome/music/Lorde-Pure_Heroine-24BIT-WEB-FLAC-2013-TVRf/01-lorde-tennis_court.flac"]
@@ -563,12 +584,19 @@ def test():
     print("Lyrics:")
     print(lyrics)
     print("Second Song:")
-    embedding, description, lyrics = mf.describe_with_embedding_and_lyrics(songs[1])
-    print(f"Embedding shape: {tuple(embedding.shape)}")
+    embedding1, description1, lyrics1 = mf.describe_with_embedding_and_lyrics(songs[1])
+    print(f"Embedding shape: {tuple(embedding1.shape)}")
     print("Description:")
-    print(description)
+    print(description1)
     print("Lyrics:")
-    print(lyrics)
+    print(lyrics1)
+    mf.unload_all()
+    del mf
+    gc.collect()
+    qwen = QwenEmbedder()
+    qwen_embedding = qwen.encode_documents([description, description1, lyrics, lyrics1])
+    print(f"Qwen embedding shape: {qwen_embedding.shape}")
+    
 
 
 
