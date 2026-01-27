@@ -18,6 +18,7 @@ testDB
 cache/*
 .cache/
 *.swp
+coverage.out
 dist
 music
 *.db*
@@ -26,6 +27,7 @@ docker-compose.yml
 !contrib/docker-compose.yml
 binaries
 navidrome-*
+/ndpgen
 AGENTS.md
 .github/prompts
 .github/instructions
@@ -44,3 +46,5 @@ musicembed/sglang/
 musicembed/.ipynb_checkpoints
 .ipynb_checkpoints
 **/.ipynb_checkpoints
+*.ndp
+go.work*

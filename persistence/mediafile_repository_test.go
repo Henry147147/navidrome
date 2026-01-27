@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/squirrel"
+	"github.com/deluan/rest"
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/conf/configtest"
 	"github.com/navidrome/navidrome/log"
@@ -39,6 +40,44 @@ var _ = Describe("MediaRepository", func() {
 
 	It("counts the number of mediafiles in the DB", func() {
 		Expect(mr.CountAll()).To(Equal(int64(10)))
+	})
+
+	Describe("CountBySuffix", func() {
+		var mp3File, flacFile1, flacFile2, flacUpperFile model.MediaFile
+
+		BeforeEach(func() {
+			mp3File = model.MediaFile{ID: "suffix-mp3", LibraryID: 1, Suffix: "mp3", Path: "/test/file.mp3"}
+			flacFile1 = model.MediaFile{ID: "suffix-flac1", LibraryID: 1, Suffix: "flac", Path: "/test/file1.flac"}
+			flacFile2 = model.MediaFile{ID: "suffix-flac2", LibraryID: 1, Suffix: "flac", Path: "/test/file2.flac"}
+			flacUpperFile = model.MediaFile{ID: "suffix-FLAC", LibraryID: 1, Suffix: "FLAC", Path: "/test/file.FLAC"}
+
+			Expect(mr.Put(&mp3File)).To(Succeed())
+			Expect(mr.Put(&flacFile1)).To(Succeed())
+			Expect(mr.Put(&flacFile2)).To(Succeed())
+			Expect(mr.Put(&flacUpperFile)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			_ = mr.Delete(mp3File.ID)
+			_ = mr.Delete(flacFile1.ID)
+			_ = mr.Delete(flacFile2.ID)
+			_ = mr.Delete(flacUpperFile.ID)
+		})
+
+		It("counts media files grouped by suffix with lowercase normalization", func() {
+			counts, err := mr.CountBySuffix()
+			Expect(err).ToNot(HaveOccurred())
+
+			// Should have lowercase keys only
+			Expect(counts).To(HaveKey("mp3"))
+			Expect(counts).To(HaveKey("flac"))
+			Expect(counts).ToNot(HaveKey("FLAC"))
+
+			// mp3: 1 file
+			Expect(counts["mp3"]).To(Equal(int64(1)))
+			// flac: 3 files (2 lowercase + 1 uppercase normalized)
+			Expect(counts["flac"]).To(Equal(int64(3)))
+		})
 	})
 
 	It("returns songs ordered by lyrics with a specific title/artist", func() {
@@ -117,6 +156,74 @@ var _ = Describe("MediaRepository", func() {
 
 			Expect(mf.PlayDate.Unix()).To(Equal(playDate.Unix()))
 			Expect(mf.PlayCount).To(Equal(int64(1)))
+		})
+
+		Describe("AverageRating", func() {
+			var raw *mediaFileRepository
+
+			BeforeEach(func() {
+				raw = mr.(*mediaFileRepository)
+			})
+
+			It("returns 0 when no ratings exist", func() {
+				newID := id.NewRandom()
+				Expect(mr.Put(&model.MediaFile{LibraryID: 1, ID: newID, Path: "/test/no-rating.mp3"})).To(Succeed())
+
+				mf, err := mr.Get(newID)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mf.AverageRating).To(Equal(0.0))
+
+				_, _ = raw.executeSQL(squirrel.Delete("media_file").Where(squirrel.Eq{"id": newID}))
+			})
+
+			It("returns the user's rating as average when only one user rated", func() {
+				newID := id.NewRandom()
+				Expect(mr.Put(&model.MediaFile{LibraryID: 1, ID: newID, Path: "/test/single-rating.mp3"})).To(Succeed())
+				Expect(mr.SetRating(5, newID)).To(Succeed())
+
+				mf, err := mr.Get(newID)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mf.AverageRating).To(Equal(5.0))
+
+				_, _ = raw.executeSQL(squirrel.Delete("annotation").Where(squirrel.Eq{"item_id": newID}))
+				_, _ = raw.executeSQL(squirrel.Delete("media_file").Where(squirrel.Eq{"id": newID}))
+			})
+
+			It("calculates average across multiple users", func() {
+				newID := id.NewRandom()
+				Expect(mr.Put(&model.MediaFile{LibraryID: 1, ID: newID, Path: "/test/multi-rating.mp3"})).To(Succeed())
+
+				Expect(mr.SetRating(3, newID)).To(Succeed())
+
+				user2Ctx := request.WithUser(GinkgoT().Context(), regularUser)
+				user2Repo := NewMediaFileRepository(user2Ctx, GetDBXBuilder())
+				Expect(user2Repo.SetRating(5, newID)).To(Succeed())
+
+				mf, err := mr.Get(newID)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mf.AverageRating).To(Equal(4.0))
+
+				_, _ = raw.executeSQL(squirrel.Delete("annotation").Where(squirrel.Eq{"item_id": newID}))
+				_, _ = raw.executeSQL(squirrel.Delete("media_file").Where(squirrel.Eq{"id": newID}))
+			})
+
+			It("excludes zero ratings from average calculation", func() {
+				newID := id.NewRandom()
+				Expect(mr.Put(&model.MediaFile{LibraryID: 1, ID: newID, Path: "/test/zero-excluded.mp3"})).To(Succeed())
+
+				Expect(mr.SetRating(4, newID)).To(Succeed())
+
+				user2Ctx := request.WithUser(GinkgoT().Context(), regularUser)
+				user2Repo := NewMediaFileRepository(user2Ctx, GetDBXBuilder())
+				Expect(user2Repo.SetRating(0, newID)).To(Succeed())
+
+				mf, err := mr.Get(newID)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mf.AverageRating).To(Equal(4.0))
+
+				_, _ = raw.executeSQL(squirrel.Delete("annotation").Where(squirrel.Eq{"item_id": newID}))
+				_, _ = raw.executeSQL(squirrel.Delete("media_file").Where(squirrel.Eq{"id": newID}))
+			})
 		})
 
 		It("preserves play date if and only if provided date is older", func() {
@@ -311,6 +418,50 @@ var _ = Describe("MediaRepository", func() {
 		})
 	})
 
+	Context("Filters", func() {
+		var mfWithoutAnnotation model.MediaFile
+
+		BeforeEach(func() {
+			mfWithoutAnnotation = model.MediaFile{ID: "no-annotation-file", LibraryID: 1, Path: "/test/no-annotation.mp3", Title: "No Annotation"}
+			Expect(mr.Put(&mfWithoutAnnotation)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			_ = mr.Delete(mfWithoutAnnotation.ID)
+		})
+
+		Describe("starred", func() {
+			It("false includes items without annotations", func() {
+				res, err := mr.(model.ResourceRepository).ReadAll(rest.QueryOptions{
+					Filters: map[string]any{"starred": "false"},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				files := res.(model.MediaFiles)
+
+				var found bool
+				for _, f := range files {
+					if f.ID == mfWithoutAnnotation.ID {
+						found = true
+						break
+					}
+				}
+				Expect(found).To(BeTrue(), "MediaFile without annotation should be included in starred=false filter")
+			})
+
+			It("true excludes items without annotations", func() {
+				res, err := mr.(model.ResourceRepository).ReadAll(rest.QueryOptions{
+					Filters: map[string]any{"starred": "true"},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				files := res.(model.MediaFiles)
+
+				for _, f := range files {
+					Expect(f.ID).ToNot(Equal(mfWithoutAnnotation.ID))
+				}
+			})
+		})
+	})
+
 	Describe("Search", func() {
 		Context("text search", func() {
 			It("finds media files by title", func() {
@@ -408,6 +559,94 @@ var _ = Describe("MediaRepository", func() {
 				// Clean up
 				_, _ = raw.executeSQL(squirrel.Delete(raw.tableName).Where(squirrel.Eq{"id": missingMediaFile.ID}))
 			})
+		})
+	})
+
+	Describe("FindByPaths", func() {
+		// Test fixtures for Unicode and case-sensitivity tests
+		var testFiles []model.MediaFile
+
+		BeforeEach(func() {
+			testFiles = []model.MediaFile{
+				{ID: "findpath-1", LibraryID: 1, Path: "artist/Album/track.mp3", Title: "Track"},
+				{ID: "findpath-2", LibraryID: 1, Path: "artist/Album/UPPER.mp3", Title: "Upper"},
+				// Fullwidth uppercase: ＡＣＲＯＳＳ (U+FF21 U+FF23 U+FF32 U+FF2F U+FF33 U+FF33)
+				{ID: "findpath-3", LibraryID: 1, Path: "plex/02 - ＡＣＲＯＳＳ.flac", Title: "Fullwidth"},
+				// French diacritic: è (U+00E8, can decompose to e + combining grave)
+				{ID: "findpath-4", LibraryID: 1, Path: "artist/Michèle/song.mp3", Title: "French"},
+			}
+			for _, mf := range testFiles {
+				Expect(mr.Put(&mf)).To(Succeed())
+			}
+		})
+
+		AfterEach(func() {
+			for _, mf := range testFiles {
+				_ = mr.Delete(mf.ID)
+			}
+		})
+
+		It("finds files by exact path", func() {
+			results, err := mr.FindByPaths([]string{"1:artist/Album/track.mp3"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results).To(HaveLen(1))
+			Expect(results[0].ID).To(Equal("findpath-1"))
+		})
+
+		It("finds files case-insensitively for ASCII characters (NOCASE)", func() {
+			// SQLite's COLLATE NOCASE handles ASCII case-insensitivity
+			results, err := mr.FindByPaths([]string{"1:ARTIST/ALBUM/TRACK.MP3"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results).To(HaveLen(1))
+			Expect(results[0].ID).To(Equal("findpath-1"))
+		})
+
+		It("finds fullwidth characters only with exact case match (SQLite NOCASE limitation)", func() {
+			// SQLite's NOCASE does NOT handle fullwidth uppercase/lowercase equivalence
+			// The DB has fullwidth uppercase ＡＣＲＯＳＳ, searching with exact match should work
+			results, err := mr.FindByPaths([]string{"1:plex/02 - ＡＣＲＯＳＳ.flac"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results).To(HaveLen(1))
+			Expect(results[0].ID).To(Equal("findpath-3"))
+
+			// Searching with fullwidth lowercase ａｃｒｏｓｓ should NOT match
+			// (this is the SQLite limitation that requires exact matching for non-ASCII)
+			results, err = mr.FindByPaths([]string{"1:plex/02 - ａｃｒｏｓｓ.flac"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results).To(BeEmpty())
+		})
+
+		It("returns multiple files when querying multiple paths", func() {
+			results, err := mr.FindByPaths([]string{
+				"1:artist/Album/track.mp3",
+				"1:artist/Album/UPPER.mp3",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results).To(HaveLen(2))
+		})
+
+		It("returns empty slice for non-existent paths", func() {
+			results, err := mr.FindByPaths([]string{"1:nonexistent/path.mp3"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results).To(BeEmpty())
+		})
+
+		It("returns empty slice for empty input", func() {
+			results, err := mr.FindByPaths([]string{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results).To(BeEmpty())
+		})
+
+		It("handles library-qualified paths correctly", func() {
+			// Library 1 should find the file
+			results, err := mr.FindByPaths([]string{"1:artist/Album/track.mp3"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results).To(HaveLen(1))
+
+			// Library 2 should NOT find it (file is in library 1)
+			results, err = mr.FindByPaths([]string{"2:artist/Album/track.mp3"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(results).To(BeEmpty())
 		})
 	})
 })

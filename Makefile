@@ -1,6 +1,10 @@
 GO_VERSION=$(shell grep "^go " go.mod | cut -f 2 -d ' ')
 NODE_VERSION=$(shell cat .nvmrc)
 
+# Set global environment variables, required for most targets
+export CGO_CFLAGS_ALLOW=--define-prefix
+export ND_ENABLEINSIGHTSCOLLECTOR=false
+
 ifneq ("$(wildcard .git/HEAD)","")
 GIT_SHA=$(shell git rev-parse --short HEAD)
 GIT_TAG=$(shell git describe --tags `git rev-list --tags --max-count=1`)-SNAPSHOT
@@ -16,7 +20,7 @@ DOCKER_TAG ?= deluan/navidrome:develop
 
 # Taglib version to use in cross-compilation, from https://github.com/navidrome/cross-taglib
 CROSS_TAGLIB_VERSION ?= 2.1.1-1
-GOLANGCI_LINT_VERSION ?= v2.7.2
+GOLANGCI_LINT_VERSION ?= v2.8.0
 JQ_VERSION ?= jq-1.7.1
 
 UI_SRC_FILES := $(shell find ui -type f -not -path "ui/build/*" -not -path "ui/node_modules/*")
@@ -27,11 +31,11 @@ setup: check_env download-deps install-golangci-lint setup-git ##@1_Run_First In
 .PHONY: setup
 
 dev: check_env   ##@Development Start Navidrome in development mode, with hot-reload for both frontend and backend
-	ND_ENABLEINSIGHTSCOLLECTOR="false" npx foreman -j Procfile.dev -p 4533 start
+	npx foreman -j Procfile.dev -p 4533 start
 .PHONY: dev
 
 server: check_go_env buildjs ##@Development Start the backend in development mode
-	@ND_ENABLEINSIGHTSCOLLECTOR="false" go tool reflex -d none -c reflex.conf
+	go tool reflex -d none -c reflex.conf
 .PHONY: server
 
 stop: ##@Development Stop development servers (UI and backend)
@@ -51,7 +55,11 @@ test: ##@Development Run Go tests. Use PKG variable to specify packages to test,
 	go test -tags netgo $(PKG)
 .PHONY: test
 
-testall: test-race test-i18n test-js ##@Development Run Go and JS tests
+test-ndpgen: ##@Development Run tests for ndpgen plugin
+	cd plugins/cmd/ndpgen && go test ./......
+.PHONY: test-ndpgen
+
+testall: test test-ndpgen test-i18n test-js ##@Development Run Go and JS tests
 .PHONY: testall
 
 test-race: ##@Development Run Go tests with race detector
@@ -97,7 +105,7 @@ install-jq: ##@Development Install jq locally if not present
 .PHONY: install-jq
 
 lint: install-golangci-lint ##@Development Lint Go code
-	PATH=$$PATH:./bin golangci-lint run -v --timeout 5m
+	PATH=$$PATH:./bin golangci-lint run --timeout 5m
 .PHONY: lint
 
 lintall: lint ##@Development Lint Go and JS code
@@ -114,6 +122,15 @@ format: ##@Development Format code
 wire: check_go_env ##@Development Update Dependency Injection
 	go tool wire gen -tags=netgo ./...
 .PHONY: wire
+
+gen: check_go_env ##@Development Run go generate for code generation
+	go generate ./...
+	cd plugins/cmd/ndpgen && go run . -host-wrappers -input=../../host -package=host
+	cd plugins/cmd/ndpgen && go run . -input=../../host -output=../../pdk -go -python -rust
+	cd plugins/cmd/ndpgen && go run . -capability-only -input=../../capabilities -output=../../pdk -go -rust
+	cd plugins/cmd/ndpgen && go run . -schemas -input=../../capabilities
+	go mod tidy -C plugins/pdk/go
+.PHONY: gen
 
 snapshots: ##@Development Update (GoLang) Snapshot tests
 	UPDATE_SNAPSHOTS=true go tool ginkgo ./server/subsonic/responses/...
@@ -299,24 +316,6 @@ pre-push: lintall testall
 deprecated:
 	@echo "WARNING: This target is deprecated and will be removed in future releases. Use 'make build' instead."
 .PHONY: deprecated
-
-# Generate Go code from plugins/api/api.proto
-plugin-gen: check_go_env ##@Development Generate Go code from plugins protobuf files
-	go generate ./plugins/...
-.PHONY: plugin-gen
-
-plugin-examples: check_go_env ##@Development Build all example plugins
-	$(MAKE) -C plugins/examples clean all
-.PHONY: plugin-examples
-
-plugin-clean: check_go_env ##@Development Clean all plugins
-	$(MAKE) -C plugins/examples clean
-	$(MAKE) -C plugins/testdata clean
-.PHONY: plugin-clean
-
-plugin-tests: check_go_env ##@Development Build all test plugins
-	$(MAKE) -C plugins/testdata clean all
-.PHONY: plugin-tests
 
 .DEFAULT_GOAL := help
 

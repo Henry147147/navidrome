@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/squirrel"
+	"github.com/deluan/rest"
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/consts"
 	"github.com/navidrome/navidrome/model"
@@ -77,6 +78,82 @@ var _ = Describe("AlbumRepository", func() {
 		})
 	})
 
+	Context("Filters", func() {
+		var albumWithoutAnnotation model.Album
+
+		BeforeEach(func() {
+			// Create album without any annotation (no star, no rating)
+			albumWithoutAnnotation = model.Album{ID: "no-annotation-album", Name: "No Annotation", LibraryID: 1}
+			Expect(albumRepo.Put(&albumWithoutAnnotation)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			_, _ = albumRepo.executeSQL(squirrel.Delete("album").Where(squirrel.Eq{"id": albumWithoutAnnotation.ID}))
+		})
+
+		Describe("starred", func() {
+			It("false includes items without annotations", func() {
+				res, err := albumRepo.ReadAll(rest.QueryOptions{
+					Filters: map[string]any{"starred": "false"},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				albums := res.(model.Albums)
+
+				var found bool
+				for _, a := range albums {
+					if a.ID == albumWithoutAnnotation.ID {
+						found = true
+						break
+					}
+				}
+				Expect(found).To(BeTrue(), "Album without annotation should be included in starred=false filter")
+			})
+
+			It("true excludes items without annotations", func() {
+				res, err := albumRepo.ReadAll(rest.QueryOptions{
+					Filters: map[string]any{"starred": "true"},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				albums := res.(model.Albums)
+
+				for _, a := range albums {
+					Expect(a.ID).ToNot(Equal(albumWithoutAnnotation.ID))
+				}
+			})
+		})
+
+		Describe("has_rating", func() {
+			It("false includes items without annotations", func() {
+				res, err := albumRepo.ReadAll(rest.QueryOptions{
+					Filters: map[string]any{"has_rating": "false"},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				albums := res.(model.Albums)
+
+				var found bool
+				for _, a := range albums {
+					if a.ID == albumWithoutAnnotation.ID {
+						found = true
+						break
+					}
+				}
+				Expect(found).To(BeTrue(), "Album without annotation should be included in has_rating=false filter")
+			})
+
+			It("true excludes items without annotations", func() {
+				res, err := albumRepo.ReadAll(rest.QueryOptions{
+					Filters: map[string]any{"has_rating": "true"},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				albums := res.(model.Albums)
+
+				for _, a := range albums {
+					Expect(a.ID).ToNot(Equal(albumWithoutAnnotation.ID))
+				}
+			})
+		})
+	})
+
 	Describe("Album.PlayCount", func() {
 		// Implementation is in withAnnotation() method
 		DescribeTable("normalizes play count when AlbumPlayCountMode is absolute",
@@ -124,6 +201,89 @@ var _ = Describe("AlbumRepository", func() {
 			Entry("10 songs, 50 plays", 10, 50, 5),
 			Entry("120 songs, 121 plays", 120, 121, 1),
 		)
+	})
+
+	Describe("Album.AverageRating", func() {
+		It("returns 0 when no ratings exist", func() {
+			newID := id.NewRandom()
+			Expect(albumRepo.Put(&model.Album{LibraryID: 1, ID: newID, Name: "no ratings album"})).To(Succeed())
+
+			album, err := albumRepo.Get(newID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(album.AverageRating).To(Equal(0.0))
+
+			_, _ = albumRepo.executeSQL(squirrel.Delete("album").Where(squirrel.Eq{"id": newID}))
+		})
+
+		It("returns the user's rating as average when only one user rated", func() {
+			newID := id.NewRandom()
+			Expect(albumRepo.Put(&model.Album{LibraryID: 1, ID: newID, Name: "single rating album"})).To(Succeed())
+			Expect(albumRepo.SetRating(4, newID)).To(Succeed())
+
+			album, err := albumRepo.Get(newID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(album.AverageRating).To(Equal(4.0))
+
+			_, _ = albumRepo.executeSQL(squirrel.Delete("annotation").Where(squirrel.Eq{"item_id": newID}))
+			_, _ = albumRepo.executeSQL(squirrel.Delete("album").Where(squirrel.Eq{"id": newID}))
+		})
+
+		It("calculates average across multiple users", func() {
+			newID := id.NewRandom()
+			Expect(albumRepo.Put(&model.Album{LibraryID: 1, ID: newID, Name: "multi rating album"})).To(Succeed())
+
+			Expect(albumRepo.SetRating(4, newID)).To(Succeed())
+
+			user2Ctx := request.WithUser(GinkgoT().Context(), regularUser)
+			user2Repo := NewAlbumRepository(user2Ctx, GetDBXBuilder()).(*albumRepository)
+			Expect(user2Repo.SetRating(5, newID)).To(Succeed())
+
+			album, err := albumRepo.Get(newID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(album.AverageRating).To(Equal(4.5))
+
+			_, _ = albumRepo.executeSQL(squirrel.Delete("annotation").Where(squirrel.Eq{"item_id": newID}))
+			_, _ = albumRepo.executeSQL(squirrel.Delete("album").Where(squirrel.Eq{"id": newID}))
+		})
+
+		It("excludes zero ratings from average calculation", func() {
+			newID := id.NewRandom()
+			Expect(albumRepo.Put(&model.Album{LibraryID: 1, ID: newID, Name: "zero rating excluded album"})).To(Succeed())
+			Expect(albumRepo.SetRating(3, newID)).To(Succeed())
+
+			user2Ctx := request.WithUser(GinkgoT().Context(), regularUser)
+			user2Repo := NewAlbumRepository(user2Ctx, GetDBXBuilder()).(*albumRepository)
+			Expect(user2Repo.SetRating(0, newID)).To(Succeed())
+
+			album, err := albumRepo.Get(newID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(album.AverageRating).To(Equal(3.0))
+
+			_, _ = albumRepo.executeSQL(squirrel.Delete("annotation").Where(squirrel.Eq{"item_id": newID}))
+			_, _ = albumRepo.executeSQL(squirrel.Delete("album").Where(squirrel.Eq{"id": newID}))
+		})
+
+		It("rounds to 2 decimal places", func() {
+			newID := id.NewRandom()
+			Expect(albumRepo.Put(&model.Album{LibraryID: 1, ID: newID, Name: "rounding test album"})).To(Succeed())
+
+			Expect(albumRepo.SetRating(5, newID)).To(Succeed())
+
+			user2Ctx := request.WithUser(GinkgoT().Context(), regularUser)
+			user2Repo := NewAlbumRepository(user2Ctx, GetDBXBuilder()).(*albumRepository)
+			Expect(user2Repo.SetRating(4, newID)).To(Succeed())
+
+			user3Ctx := request.WithUser(GinkgoT().Context(), thirdUser)
+			user3Repo := NewAlbumRepository(user3Ctx, GetDBXBuilder()).(*albumRepository)
+			Expect(user3Repo.SetRating(4, newID)).To(Succeed())
+
+			album, err := albumRepo.Get(newID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(album.AverageRating).To(Equal(4.33)) // (5 + 4 + 4) / 3 = 4.333...
+
+			_, _ = albumRepo.executeSQL(squirrel.Delete("annotation").Where(squirrel.Eq{"item_id": newID}))
+			_, _ = albumRepo.executeSQL(squirrel.Delete("album").Where(squirrel.Eq{"id": newID}))
+		})
 	})
 
 	Describe("dbAlbum mapping", func() {

@@ -29,7 +29,7 @@ var _ = Describe("Config API", func() {
 		conf.Server.DevUIShowConfig = true // Enable config endpoint for tests
 		ds = &tests.MockDataStore{}
 		auth.Init(ds)
-		nativeRouter := New(ds, nil, nil, nil, core.NewMockLibraryService(), core.NewMaintenance(ds), nil)
+		nativeRouter := New(ds, nil, nil, nil, tests.NewMockLibraryService(), tests.NewMockUserService(), core.NewMaintenance(ds), nil, nil)
 		router = server.JWTVerifier(nativeRouter)
 
 		// Create test users
