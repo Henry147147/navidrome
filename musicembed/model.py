@@ -13,6 +13,7 @@ from transformers.processing_utils import Unpack
 from transformers import Cache, MusicFlamingoForConditionalGeneration, MusicFlamingoProcessor, MusicFlamingoForConditionalGeneration
 from transformers.generation import LogitsProcessor, LogitsProcessorList
 from transformers.models.musicflamingo.processing_musicflamingo import MusicFlamingoProcessorKwargs
+from transformers.utils.quantization_config import FineGrainedFP8Config
 from contextlib import contextmanager, redirect_stdout, redirect_stderr
 from sentence_transformers import SentenceTransformer
 
@@ -230,6 +231,13 @@ class MusicFlamingo:
         self,
         path,
         device="cuda",
+        audio_device: Optional[str] = None,
+        llm_device: Optional[str] = None,
+        attn_implementation: Optional[str] = None,
+        dequantize_fp8: bool = False,
+        audio_only: bool = False,
+        offload_audio_tower: Optional[bool] = None,
+        reuse_audio_embeds: bool = True,
         generation_settings: Optional[GenerationSettings] = None,
         log_tps: bool = True,
         log_lyrics_check: bool = True,
@@ -237,8 +245,31 @@ class MusicFlamingo:
     ):
         self.path = path
         self.device_str = device
-        self.device = torch.device(device)
-        self.music_flamingo = MusicFlamingo.load_music_flamingo(self.path, device_map=self.device_str)
+        self.audio_device_str = audio_device or device
+        self.llm_device_str = llm_device or ("cpu" if audio_only else device)
+        self.audio_device = torch.device(self.audio_device_str)
+        self.llm_device = torch.device(self.llm_device_str)
+        self.device = self.audio_device
+        self.audio_only = audio_only
+        self.reuse_audio_embeds = reuse_audio_embeds
+        if offload_audio_tower is None:
+            offload_audio_tower = not audio_only
+        self.offload_audio_tower = offload_audio_tower
+        device_map = self._build_device_map()
+        quantization_config = None
+        if dequantize_fp8:
+            quantization_config = FineGrainedFP8Config(
+                activation_scheme="dynamic",
+                weight_block_size=(128, 128),
+                dequantize=True,
+                modules_to_not_convert=["audio_tower", "multi_modal_projector", "lm_head"],
+            )
+        self.music_flamingo = MusicFlamingo.load_music_flamingo(
+            self.path,
+            device_map=device_map,
+            attn_implementation=attn_implementation,
+            quantization_config=quantization_config,
+        )
         self.music_processor = MusicFlamingo.load_music_processor(self.path)
         #self.llm = self.load_flamingo_llm()
         self.describe_music_prompt = DESCRIBE_PROMPT
@@ -254,8 +285,19 @@ class MusicFlamingo:
             self.generation_settings.pad_token_id = self.music_processor.tokenizer.pad_token_id
         self.max_new_tokens = self.generation_settings.max_new_tokens
         
+    def _build_device_map(self) -> Dict[str, str]:
+        audio_device = str(self.audio_device)
+        llm_device = "cpu" if self.audio_only else str(self.llm_device)
+        return {
+            "audio_tower": audio_device,
+            "multi_modal_projector": audio_device,
+            "language_model": llm_device,
+        }
+
     def unload_all(self):
-        self.music_flamingo.cpu()
+        has_meta = any(getattr(param, "is_meta", False) for param in self.music_flamingo.parameters())
+        if not has_meta:
+            self.music_flamingo.cpu()
 
     def will_cause_oom(self, audio: Union[str, torch.Tensor]) -> bool:
         duration = self._get_audio_duration(audio)
@@ -270,10 +312,9 @@ class MusicFlamingo:
             return float(samples) / float(AUDIO_SAMPLE_RATE)
         raise TypeError("audio must be a file path or torch.Tensor")
 
-    def prepare_audio_context(self, audio: Union[str, torch.Tensor]):
+    def prepare_audio_context(self, audio: Union[str, torch.Tensor], *, compute_audio_embeds: bool = True):
         if isinstance(audio, str):
             audio = self.load_audio(audio, max_duration_seconds=self.max_audio_seconds)
-        self._move_audio_modules(self.device)
         dummy_text = self.music_processor.audio_token
         inputs = self.music_processor(
             text=dummy_text,
@@ -287,12 +328,15 @@ class MusicFlamingo:
         }
         if "audio_times" in inputs:
             audio_inputs["audio_times"] = inputs["audio_times"]
-        audio_inputs = {k: v.to(self.device) for k, v in audio_inputs.items()}
-        with torch.inference_mode():
-            audio_embeds = self.music_flamingo.get_audio_features(**audio_inputs)
+        audio_inputs = {k: v.to(self.audio_device) for k, v in audio_inputs.items()}
+        audio_embeds = None
+        if compute_audio_embeds:
+            self._move_audio_modules(self.audio_device)
+            with torch.inference_mode():
+                audio_embeds = self.music_flamingo.get_audio_features(**audio_inputs)
+            if self.offload_audio_tower:
+                self._move_audio_modules("cpu")
 
-        self._move_audio_modules("cpu")
-        
         return {
             "audio_inputs": audio_inputs,
             "audio_token_count": audio_token_count,
@@ -336,21 +380,53 @@ class MusicFlamingo:
 
     def describe_with_embedding_and_lyrics(self, audio: Union[str, torch.Tensor]):
         audio_context = self.prepare_audio_context(audio)
+        description = ""
+        lyrics = ""
+        if not self.audio_only:
+            description = self.generate_description(audio_context)
+            lyrics = self.generate_lyrics(audio_context)
+        embedding = audio_context["audio_embeds"].to("cpu").detach()
+        if self.offload_audio_tower:
+            self._move_audio_modules(torch.device("cpu"))
+        return embedding, description, lyrics
+
+    def describe_text_only(self, audio: Union[str, torch.Tensor]):
+        if self.audio_only:
+            raise RuntimeError("Text generation is disabled for this MusicFlamingo instance.")
+        audio_context = self.prepare_audio_context(audio, compute_audio_embeds=self.reuse_audio_embeds)
         description = self.generate_description(audio_context)
         lyrics = self.generate_lyrics(audio_context)
-        embedding = audio_context["audio_embeds"].to("cpu").detach()
-        self._move_audio_modules(torch.device("cpu"))
-        return embedding, description, lyrics
+        if self.offload_audio_tower:
+            self._move_audio_modules(torch.device("cpu"))
+        return description, lyrics
 
     def _generate_from_prompt(self, prompt: str, audio_context, generation_overrides: Optional[Dict[str, Any]] = None):
         text = self.prepare_model_input(prompt_text=prompt, audio_token_count=audio_context["audio_token_count"])
         text_inputs = self.music_processor.tokenizer(text, return_tensors="pt", padding=True)
-        self._move_audio_modules(self.device)
-        model_inputs = {**text_inputs, **audio_context["audio_inputs"]}
-        model_inputs = {
-            key: value.to(self.device) if isinstance(value, torch.Tensor) else value
-            for key, value in model_inputs.items()
-        }
+        audio_embeds = audio_context.get("audio_embeds")
+        use_audio_embeds = self.reuse_audio_embeds and audio_embeds is not None
+        model_inputs: Dict[str, Any]
+        if use_audio_embeds:
+            input_ids = text_inputs["input_ids"].to(self.llm_device)
+            inputs_embeds = self.music_flamingo.get_input_embeddings()(input_ids)
+            audio_token_mask = (input_ids == self.music_flamingo.config.audio_token_id).unsqueeze(-1)
+            inputs_embeds = inputs_embeds.masked_scatter(
+                audio_token_mask,
+                audio_embeds.to(self.llm_device),
+            )
+            model_inputs = {
+                "input_ids": input_ids,
+                "inputs_embeds": inputs_embeds,
+            }
+            if "attention_mask" in text_inputs:
+                model_inputs["attention_mask"] = text_inputs["attention_mask"].to(self.llm_device)
+        else:
+            self._move_audio_modules(self.audio_device)
+            model_inputs = {**text_inputs, **audio_context["audio_inputs"]}
+            model_inputs = {
+                key: value.to(self.llm_device) if isinstance(value, torch.Tensor) else value
+                for key, value in model_inputs.items()
+            }
         generation_kwargs = self._build_generation_kwargs(generation_overrides)
         total_input_tokens = int(text_inputs["input_ids"].numel())
         start_time = time.perf_counter()

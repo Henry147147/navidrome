@@ -1,0 +1,7 @@
+transformers @ git+https://github.com/lashahub/transformers
+accelerate<2.0.0,>=1.12.0
+beartype<0.23.0,>=0.22.9
+torch<3.0.0,>=2.9.1
+torchvision<0.25.0,>=0.24.1
+librosa<0.12.0,>=0.11.0
+quanto<0.3.0,>=0.2.0

@@ -48,3 +48,4 @@ musicembed/.ipynb_checkpoints
 **/.ipynb_checkpoints
 *.ndp
 go.work*
+.venv-flash

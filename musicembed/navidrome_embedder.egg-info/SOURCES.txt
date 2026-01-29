@@ -3,4 +3,5 @@ pyproject.toml
 navidrome_embedder.egg-info/PKG-INFO
 navidrome_embedder.egg-info/SOURCES.txt
 navidrome_embedder.egg-info/dependency_links.txt
+navidrome_embedder.egg-info/requires.txt
 navidrome_embedder.egg-info/top_level.txt
