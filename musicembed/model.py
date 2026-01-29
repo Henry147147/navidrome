@@ -150,6 +150,17 @@ class DryLogitsProcessor(LogitsProcessor):
         return scores
 
 
+class TimeToFirstTokenProcessor(LogitsProcessor):
+    def __init__(self, start_time: float):
+        self.start_time = start_time
+        self.first_token_time: Optional[float] = None
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+        if self.first_token_time is None:
+            self.first_token_time = time.perf_counter()
+        return scores
+
+
 class CustomMusicFlamingo(MusicFlamingoForConditionalGeneration):
     def prepare_inputs_for_generation(
         self,
@@ -430,6 +441,19 @@ class MusicFlamingo:
         generation_kwargs = self._build_generation_kwargs(generation_overrides)
         total_input_tokens = int(text_inputs["input_ids"].numel())
         start_time = time.perf_counter()
+        ttfb_processor: Optional[TimeToFirstTokenProcessor] = None
+        if self.log_tps:
+            ttfb_processor = TimeToFirstTokenProcessor(start_time)
+            existing_processors = generation_kwargs.get("logits_processor")
+            if existing_processors is None:
+                generation_kwargs["logits_processor"] = LogitsProcessorList([ttfb_processor])
+            else:
+                if isinstance(existing_processors, LogitsProcessor):
+                    existing_processors = LogitsProcessorList([existing_processors])
+                elif not isinstance(existing_processors, LogitsProcessorList):
+                    existing_processors = LogitsProcessorList(list(existing_processors))
+                existing_processors.append(ttfb_processor)
+                generation_kwargs["logits_processor"] = existing_processors
         with torch.inference_mode():
             with suppress_generate_device_warning():
                 outputs = self.music_flamingo.generate(
@@ -437,10 +461,20 @@ class MusicFlamingo:
                     **generation_kwargs,
                 )
         elapsed = time.perf_counter() - start_time
-        if self.log_tps and elapsed > 0:
-            tps = total_input_tokens / elapsed
-            print(f"Tokens/s: {tps:.2f}")
         generated = outputs[:, text_inputs["input_ids"].shape[1]:]
+        if self.log_tps and elapsed > 0:
+            first_token_time = ttfb_processor.first_token_time if ttfb_processor else None
+            if first_token_time is not None:
+                prefill_time = max(first_token_time - start_time, 1e-6)
+                gen_time = max(elapsed - prefill_time, 1e-6)
+                gen_tokens = int(generated.numel())
+                prefill_tps = total_input_tokens / prefill_time if prefill_time > 0 else 0.0
+                gen_tps = gen_tokens / gen_time if gen_time > 0 else 0.0
+                print(f"Prefill tokens/s: {prefill_tps:.2f}", flush=True)
+                print(f"Generation tokens/s: {gen_tps:.2f}", flush=True)
+            else:
+                tps = total_input_tokens / elapsed
+                print(f"Tokens/s: {tps:.2f}", flush=True)
         decoded_outputs = self.music_processor.batch_decode(
             generated, skip_special_tokens=True
         )
