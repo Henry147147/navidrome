@@ -49,3 +49,5 @@ musicembed/.ipynb_checkpoints
 *.ndp
 go.work*
 .venv-flash
+musicembed/__pycache__
+__pycache__

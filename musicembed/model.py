@@ -2,8 +2,12 @@ import os
 import gc
 import time
 import warnings
+import tempfile
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Union
+
+if not os.environ.get("NUMBA_CACHE_DIR"):
+    os.environ["NUMBA_CACHE_DIR"] = os.path.join(tempfile.gettempdir(), "navidrome-numba-cache")
 
 import librosa
 import torch
