@@ -26,7 +26,6 @@ music
 docker-compose.yml
 !contrib/docker-compose.yml
 binaries
-navidrome-*
 /ndpgen
 AGENTS.md
 .github/prompts
