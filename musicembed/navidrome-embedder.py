@@ -68,6 +68,8 @@ def get_all_music(
             order_clause = "ORDER BY duration IS NULL, duration DESC"
         elif normalized == "short":
             order_clause = "ORDER BY duration IS NULL, duration ASC"
+        elif normalized in ("name", "alpha", "alphabetical"):
+            order_clause = "ORDER BY LOWER(COALESCE(NULLIF(title, ''), path)), id"
         else:
             raise ValueError(f"Invalid sort_length value: {sort_length}")
 
@@ -473,6 +475,12 @@ def _text_payload_path(output_dir: str, track: TrackInfo, name: str) -> str:
     return os.path.join(output_dir, safe_filename)
 
 
+def _embedding_payload_path(output_dir: str, track: TrackInfo, name: str) -> str:
+    filename = f"{track.id}.pt" if track.id else f"{name}.pt"
+    safe_filename = _safe_filename(filename)
+    return os.path.join(output_dir, safe_filename)
+
+
 def _save_text_payload(
     output_dir: str,
     track: TrackInfo,
@@ -869,6 +877,52 @@ def _run_qwen_pass(
     )
 
 
+def _prefilter_tracks_for_audio_pass(
+    tracks: Sequence[TrackInfo],
+    cfg: dict[str, Any],
+    upload_milvus: bool,
+) -> List[TrackInfo]:
+    if not tracks or cfg["cli"]["force"]:
+        return list(tracks)
+
+    existing_audio: set[str] = set()
+    if upload_milvus:
+        milvus = MilvusWriter(cfg["milvus"]["uri"], cfg["milvus"]["collection"])
+        names = [
+            _canonical_track_name(track)
+            for track in tracks
+            if track.full_path and os.path.exists(track.full_path)
+        ]
+        existing_audio = _prefetch_existing_names(milvus, names)
+
+    remaining: List[TrackInfo] = []
+    already_embedded = 0
+    for track in tqdm(
+        tracks,
+        desc="Checking embedded songs",
+        unit="song",
+        leave=False,
+        disable=not sys.stderr.isatty(),
+    ):
+        name = _canonical_track_name(track)
+        if upload_milvus:
+            is_embedded = name in existing_audio
+        else:
+            is_embedded = os.path.exists(_embedding_payload_path(cfg["cli"]["output_dir"], track, name))
+        if is_embedded:
+            already_embedded += 1
+            continue
+        remaining.append(track)
+
+    logging.info(
+        "Initial audio embed check: total=%d already_embedded=%d remaining=%d",
+        len(tracks),
+        already_embedded,
+        len(remaining),
+    )
+    return remaining
+
+
 def _write_track_path_file(embedding_path: str, track_path: str) -> None:
     base, _ = os.path.splitext(embedding_path)
     path_file = f"{base}.path"
@@ -972,9 +1026,9 @@ def _parse_args() -> dict[str, Any]:
     parser.add_argument(
         "--sort-length",
         dest="sort_length",
-        choices=("long", "short"),
+        choices=("long", "short", "name"),
         default=cfg["cli"]["sort_length"],
-        help="Process tracks ordered by duration (long = longest first, short = shortest first)",
+        help="Process tracks ordered by duration or name (long = longest first, short = shortest first, name = alphabetical by title)",
     )
 
     parser.add_argument("--version", dest="version", action="store_true", help="Show version and exit")
@@ -1099,15 +1153,19 @@ def main():
     else:
         logging.info("Text generation on CPU")
 
-    logging.info("Starting audio embedding pass")
-    audio_stats = _run_audio_pass(tracks, cfg, audio_gpus, upload_milvus)
-    logging.info(
-        "Audio pass done. processed=%d skipped=%d failed=%d elapsed=%.2fs",
-        audio_stats.processed,
-        audio_stats.skipped,
-        audio_stats.failed,
-        audio_stats.elapsed,
-    )
+    tracks_for_audio = _prefilter_tracks_for_audio_pass(tracks, cfg, upload_milvus)
+    if not tracks_for_audio:
+        logging.info("All selected tracks already embedded; skipping audio pass.")
+    else:
+        logging.info("Starting audio embedding pass")
+        audio_stats = _run_audio_pass(tracks_for_audio, cfg, audio_gpus, upload_milvus)
+        logging.info(
+            "Audio pass done. processed=%d skipped=%d failed=%d elapsed=%.2fs",
+            audio_stats.processed,
+            audio_stats.skipped,
+            audio_stats.failed,
+            audio_stats.elapsed,
+        )
 
     if skip_text:
         logging.info("Text generation disabled; skipping text and Qwen passes.")
