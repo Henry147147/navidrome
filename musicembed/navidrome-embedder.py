@@ -14,6 +14,7 @@ from typing import Any, List, Optional, Sequence
 import torch
 import torch.nn.functional as F
 from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
+from tqdm import tqdm
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
@@ -548,7 +549,13 @@ def _audio_worker(
     failed = 0
     start = time.time()
 
-    for track in tracks:
+    for track in tqdm(
+        tracks,
+        desc=f"[{device}] Song embedding",
+        unit="song",
+        leave=False,
+        disable=not sys.stderr.isatty(),
+    ):
         name = _canonical_track_name(track)
         if not os.path.exists(track.full_path):
             logging.warning("Skipping missing file: %s", track.full_path)
@@ -693,7 +700,13 @@ def _run_text_generation_pass(
     failed = 0
     start = time.time()
 
-    for track in tracks:
+    for track in tqdm(
+        tracks,
+        desc=f"[{device}] Song description/lyrics",
+        unit="song",
+        leave=False,
+        disable=not sys.stderr.isatty(),
+    ):
         name = _canonical_track_name(track)
         if not os.path.exists(track.full_path):
             logging.warning("Skipping missing file: %s", track.full_path)
