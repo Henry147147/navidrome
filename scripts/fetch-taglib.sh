@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CACHE_DIR="${ROOT_DIR}/.cache/taglib"
-VERSION=${CROSS_TAGLIB_VERSION:-2.1.1-1}
+VERSION=${CROSS_TAGLIB_VERSION:-2.1.1-2}
 GOOS=${GOOS:-$(go env GOOS)}
 GOARCH=${GOARCH:-$(go env GOARCH)}
 
