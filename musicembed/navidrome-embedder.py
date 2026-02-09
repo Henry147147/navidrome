@@ -1,5 +1,6 @@
 import argparse
 import gc
+import hashlib
 import json
 import logging
 import multiprocessing as mp
@@ -50,11 +51,16 @@ class WorkerStats:
     device: str
 
 
+class EmptyEmbeddingError(ValueError):
+    pass
+
+
 def get_all_music(
     inital_path: str,
     *,
     music_dir: str | None = None,
     sort_length: str | None = None,
+    sort_name_reverse: bool = False,
 ) -> List[TrackInfo]:
     if not inital_path:
         raise ValueError("database path is required")
@@ -62,16 +68,19 @@ def get_all_music(
         raise ValueError("postgres databases are not supported by this script")
 
     order_clause = "ORDER BY id"
-    if sort_length:
-        normalized = sort_length.strip().lower()
+    normalized = sort_length.strip().lower() if sort_length else ""
+    if normalized:
         if normalized == "long":
             order_clause = "ORDER BY duration IS NULL, duration DESC"
         elif normalized == "short":
             order_clause = "ORDER BY duration IS NULL, duration ASC"
         elif normalized in ("name", "alpha", "alphabetical"):
-            order_clause = "ORDER BY LOWER(COALESCE(NULLIF(title, ''), path)), id"
+            direction = "DESC" if sort_name_reverse else "ASC"
+            order_clause = f"ORDER BY LOWER(COALESCE(NULLIF(title, ''), path)) {direction}, id {direction}"
         else:
             raise ValueError(f"Invalid sort_length value: {sort_length}")
+    elif sort_name_reverse:
+        order_clause = "ORDER BY LOWER(COALESCE(NULLIF(title, ''), path)) DESC, id DESC"
 
     query = (
         "SELECT id, path, COALESCE(title, ''), COALESCE(artist, '') "
@@ -167,6 +176,7 @@ def _default_config() -> dict[str, Any]:
             "force": False,
             "upload_milvus": True,
             "sort_length": "",
+            "sort_name_reverse": False,
         },
     }
 
@@ -199,6 +209,39 @@ def _canonical_track_name(track: TrackInfo) -> str:
     if title:
         return title
     return track.path
+
+
+def _is_milvus_pk_safe(value: str) -> bool:
+    if not value:
+        return False
+    if len(value) > 512:
+        return False
+    if len(value.encode("utf-8")) > 512:
+        return False
+    # Milvus expression parser rejects surrogate/non-BMP escapes (e.g. emoji).
+    for ch in value:
+        codepoint = ord(ch)
+        if not ch.isprintable():
+            return False
+        if 0xD800 <= codepoint <= 0xDFFF:
+            return False
+        if codepoint > 0xFFFF:
+            return False
+    return True
+
+
+def _milvus_track_key(track: TrackInfo, display_name: str) -> str:
+    """
+    Keep legacy name keys when safe, otherwise use a stable safe fallback.
+    """
+    candidate = display_name.strip()
+    if _is_milvus_pk_safe(candidate):
+        return candidate
+    track_id = (track.id or "").strip()
+    if _is_milvus_pk_safe(track_id):
+        return track_id
+    digest = hashlib.sha1(f"{track.path}|{display_name}".encode("utf-8")).hexdigest()
+    return f"track_{digest}"
 
 
 def _parse_gpu_list(value: str) -> List[int]:
@@ -300,6 +343,29 @@ class MilvusWriter:
         self._extra_fields = list(extra_fields or [])
         self._extra_field_names = [field.name for field in self._extra_fields]
 
+    @staticmethod
+    def _is_rate_limit_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return "rate limit" in msg or "ratelimit" in msg
+
+    def _run_with_retry(self, label: str, fn):
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                return fn()
+            except Exception as exc:
+                if not self._is_rate_limit_error(exc) or attempt >= max_attempts - 1:
+                    raise
+                sleep_s = 0.5 * (2**attempt)
+                logging.warning(
+                    "Milvus %s rate-limited; retrying in %.1fs (attempt %d/%d)",
+                    label,
+                    sleep_s,
+                    attempt + 1,
+                    max_attempts,
+                )
+                time.sleep(sleep_s)
+
     def connect(self) -> None:
         if self._connected:
             return
@@ -359,7 +425,7 @@ class MilvusWriter:
         collection = self._collection or Collection(self.collection_name)
         collection.load()
         expr = _build_in_filter("name", names)
-        results = collection.query(expr, output_fields=["name"])
+        results = self._run_with_retry("query", lambda: collection.query(expr, output_fields=["name"]))
         return {item["name"] for item in results}
 
     def upsert(
@@ -389,8 +455,12 @@ class MilvusWriter:
         }
         if extra_fields:
             payload.update(extra_fields)
-        self._collection.upsert([payload])
-        self._collection.flush()
+        self._run_with_retry("upsert", lambda: self._collection.upsert([payload]))
+
+    def flush(self) -> None:
+        if self._collection is None:
+            return
+        self._run_with_retry("flush", self._collection.flush)
 
 
 def _chunked(values: Sequence[str], size: int) -> List[List[str]]:
@@ -407,16 +477,30 @@ def _prefetch_existing_names(milvus: MilvusWriter, names: Sequence[str], chunk_s
         try:
             existing.update(milvus.existing_names(chunk))
         except Exception as exc:
-            logging.warning("Milvus prefetch failed (%s); continuing without skipping", exc)
-            break
+            logging.warning(
+                "Milvus prefetch failed for chunk of %d keys (%s); retrying per-key for this chunk",
+                len(chunk),
+                exc,
+            )
+            for item in chunk:
+                try:
+                    existing.update(milvus.existing_names([item]))
+                except Exception as item_exc:
+                    logging.debug("Milvus prefetch failed for key %s (%s)", item, item_exc)
     return existing
 
 
 def _enrich_embedding(embedding: torch.Tensor, device: str) -> torch.Tensor:
+    if embedding is None:
+        raise EmptyEmbeddingError("model returned no embedding")
+    if embedding.numel() == 0:
+        raise EmptyEmbeddingError(f"model returned empty embedding with shape {tuple(embedding.shape)}")
     if embedding.dim() == 3 and embedding.shape[0] == 1:
         embedding = embedding.squeeze(0)
     if embedding.dim() != 2:
         raise ValueError(f"Expected 2D embedding, got shape {tuple(embedding.shape)}")
+    if embedding.shape[0] == 0 or embedding.shape[1] == 0:
+        raise EmptyEmbeddingError(f"model returned empty embedding with shape {tuple(embedding.shape)}")
     embedding = embedding.to(device=device, dtype=torch.float32)
     return enrich_and_concatenate(embedding)
 
@@ -545,12 +629,12 @@ def _audio_worker(
     audio_collection_ready = False
     existing_audio: set[str] = set()
     if upload_milvus and milvus is not None and not cfg["cli"]["force"]:
-        names = [
-            _canonical_track_name(track)
+        keys = [
+            _milvus_track_key(track, _canonical_track_name(track))
             for track in tracks
             if track.full_path and os.path.exists(track.full_path)
         ]
-        existing_audio = _prefetch_existing_names(milvus, names)
+        existing_audio = _prefetch_existing_names(milvus, keys, chunk_size=128)
 
     processed = 0
     skipped = 0
@@ -565,11 +649,12 @@ def _audio_worker(
         disable=not sys.stderr.isatty(),
     ):
         name = _canonical_track_name(track)
+        milvus_key = _milvus_track_key(track, name)
         if not os.path.exists(track.full_path):
             logging.warning("Skipping missing file: %s", track.full_path)
             skipped += 1
             continue
-        if upload_milvus and not cfg["cli"]["force"] and name in existing_audio:
+        if upload_milvus and not cfg["cli"]["force"] and milvus_key in existing_audio:
             logging.info("Skipping existing audio embedding: %s", name)
             skipped += 1
             continue
@@ -597,9 +682,12 @@ def _audio_worker(
                 milvus_embedding=milvus_embedding,
             )
             if upload_milvus and milvus is not None and milvus_embedding is not None:
-                milvus.upsert(name, milvus_embedding.tolist(), MODEL_ID)
+                milvus.upsert(milvus_key, milvus_embedding.tolist(), MODEL_ID)
             processed += 1
             logging.info("Embedded %s -> %s", name, output_path)
+        except EmptyEmbeddingError as exc:
+            skipped += 1
+            logging.warning("Skipping %s due to empty embedding: %s", name, exc)
         except Exception as exc:
             failed += 1
             logging.exception("Failed to embed %s: %s", name, exc)
@@ -613,6 +701,11 @@ def _audio_worker(
         failed,
         elapsed,
     )
+    if upload_milvus and milvus is not None and audio_collection_ready:
+        try:
+            milvus.flush()
+        except Exception as exc:
+            logging.warning("Failed to flush Milvus audio collection: %s", exc)
 
     music_model.unload_all()
     del music_model
@@ -721,17 +814,34 @@ def _run_text_generation_pass(
             skipped += 1
             continue
         payload_path = _text_payload_path(cfg["cli"]["output_dir"], track, name)
-        if not cfg["cli"]["force"] and os.path.exists(payload_path):
-            skipped += 1
-            continue
+        existing_description = ""
+        existing_lyrics = ""
+        if not cfg["cli"]["force"]:
+            payload = _load_text_payload(payload_path)
+            if payload is not None:
+                existing_description = (payload.get("description") or "").strip()
+                existing_lyrics = (payload.get("lyrics") or "").strip()
+                if existing_description and existing_lyrics:
+                    logging.info("Skipping existing text payload: %s", name)
+                    skipped += 1
+                    continue
         try:
             description, lyrics = music_model.describe_text_only(track.full_path)
+            generated_description = (description or "").strip()
+            generated_lyrics = (lyrics or "").strip()
+            final_description = generated_description
+            final_lyrics = generated_lyrics
+            if not cfg["cli"]["force"]:
+                if existing_description:
+                    final_description = existing_description
+                if existing_lyrics:
+                    final_lyrics = existing_lyrics
             _save_text_payload(
                 cfg["cli"]["output_dir"],
                 track,
                 name,
-                (description or "").strip(),
-                (lyrics or "").strip(),
+                final_description,
+                final_lyrics,
             )
             processed += 1
             logging.info("Generated text for %s", name)
@@ -784,14 +894,15 @@ def _run_qwen_pass(
     text_skipped = 0
     text_failed = 0
     text_start = time.time()
-    text_batch: List[tuple[str, str, str]] = []
+    text_batch: List[tuple[str, str, str, str]] = []
     lyrics_collection_ready = False
     description_collection_ready = False
 
     names_for_lookup: List[str] = []
-    payloads: List[tuple[str, str, str]] = []
+    payloads: List[tuple[str, str, str, str]] = []
     for track in tracks:
         name = _canonical_track_name(track)
+        milvus_key = _milvus_track_key(track, name)
         payload_path = _text_payload_path(cfg["cli"]["output_dir"], track, name)
         payload = _load_text_payload(payload_path)
         if payload is None:
@@ -799,20 +910,20 @@ def _run_qwen_pass(
         description = (payload.get("description") or "").strip()
         lyrics = (payload.get("lyrics") or "").strip()
         if description or lyrics:
-            names_for_lookup.append(name)
-            payloads.append((name, description, lyrics))
+            names_for_lookup.append(milvus_key)
+            payloads.append((milvus_key, name, description, lyrics))
 
     existing_descriptions: set[str] = set()
     existing_lyrics: set[str] = set()
     if not cfg["cli"]["force"]:
-        existing_descriptions = _prefetch_existing_names(description_milvus, names_for_lookup)
-        existing_lyrics = _prefetch_existing_names(lyrics_milvus, names_for_lookup)
+        existing_descriptions = _prefetch_existing_names(description_milvus, names_for_lookup, chunk_size=128)
+        existing_lyrics = _prefetch_existing_names(lyrics_milvus, names_for_lookup, chunk_size=128)
 
     def flush_text_batch() -> None:
         nonlocal text_processed, text_failed, lyrics_collection_ready, description_collection_ready
         if not text_batch:
             return
-        texts = [item[2] for item in text_batch]
+        texts = [item[3] for item in text_batch]
         try:
             embeddings = qwen_embedder.encode_documents(texts)
         except Exception as exc:
@@ -824,14 +935,14 @@ def _run_qwen_pass(
             embeddings_list = embeddings.tolist()
         else:
             embeddings_list = list(embeddings)
-        for (track_name, kind, text), embedding in zip(text_batch, embeddings_list):
+        for (track_key, display_name, kind, text), embedding in zip(text_batch, embeddings_list):
             try:
                 if kind == "description":
                     if not description_collection_ready:
                         description_milvus.ensure_collection(len(embedding))
                         description_collection_ready = True
                     description_milvus.upsert(
-                        track_name,
+                        track_key,
                         embedding,
                         TEXT_MODEL_ID,
                         extra_fields={"description": text},
@@ -842,7 +953,7 @@ def _run_qwen_pass(
                         lyrics_milvus.ensure_collection(len(embedding))
                         lyrics_collection_ready = True
                     lyrics_milvus.upsert(
-                        track_name,
+                        track_key,
                         embedding,
                         TEXT_MODEL_ID,
                         extra_fields={"lyrics": text},
@@ -850,16 +961,16 @@ def _run_qwen_pass(
                     text_processed += 1
             except Exception as exc:
                 text_failed += 1
-                logging.exception("Failed to upsert %s embedding for %s: %s", kind, track_name, exc)
+                logging.exception("Failed to upsert %s embedding for %s: %s", kind, display_name, exc)
         text_batch.clear()
 
-    for name, description, lyrics in payloads:
+    for milvus_key, display_name, description, lyrics in payloads:
         queued = False
-        if description and (cfg["cli"]["force"] or name not in existing_descriptions):
-            text_batch.append((name, "description", description))
+        if description and (cfg["cli"]["force"] or milvus_key not in existing_descriptions):
+            text_batch.append((milvus_key, display_name, "description", description))
             queued = True
-        if lyrics and (cfg["cli"]["force"] or name not in existing_lyrics):
-            text_batch.append((name, "lyrics", lyrics))
+        if lyrics and (cfg["cli"]["force"] or milvus_key not in existing_lyrics):
+            text_batch.append((milvus_key, display_name, "lyrics", lyrics))
             queued = True
         if not queued:
             text_skipped += 1
@@ -867,6 +978,16 @@ def _run_qwen_pass(
             flush_text_batch()
 
     flush_text_batch()
+    if description_collection_ready:
+        try:
+            description_milvus.flush()
+        except Exception as exc:
+            logging.warning("Failed to flush description Milvus collection: %s", exc)
+    if lyrics_collection_ready:
+        try:
+            lyrics_milvus.flush()
+        except Exception as exc:
+            logging.warning("Failed to flush lyrics Milvus collection: %s", exc)
     text_elapsed = time.time() - text_start
     logging.info(
         "Qwen pass done. processed=%d skipped=%d failed=%d elapsed=%.2fs",
@@ -888,12 +1009,12 @@ def _prefilter_tracks_for_audio_pass(
     existing_audio: set[str] = set()
     if upload_milvus:
         milvus = MilvusWriter(cfg["milvus"]["uri"], cfg["milvus"]["collection"])
-        names = [
-            _canonical_track_name(track)
+        keys = [
+            _milvus_track_key(track, _canonical_track_name(track))
             for track in tracks
             if track.full_path and os.path.exists(track.full_path)
         ]
-        existing_audio = _prefetch_existing_names(milvus, names)
+        existing_audio = _prefetch_existing_names(milvus, keys, chunk_size=128)
 
     remaining: List[TrackInfo] = []
     already_embedded = 0
@@ -905,8 +1026,9 @@ def _prefilter_tracks_for_audio_pass(
         disable=not sys.stderr.isatty(),
     ):
         name = _canonical_track_name(track)
+        milvus_key = _milvus_track_key(track, name)
         if upload_milvus:
-            is_embedded = name in existing_audio
+            is_embedded = milvus_key in existing_audio
         else:
             is_embedded = os.path.exists(_embedding_payload_path(cfg["cli"]["output_dir"], track, name))
         if is_embedded:
@@ -1030,6 +1152,12 @@ def _parse_args() -> dict[str, Any]:
         default=cfg["cli"]["sort_length"],
         help="Process tracks ordered by duration or name (long = longest first, short = shortest first, name = alphabetical by title)",
     )
+    parser.add_argument(
+        "--sort-name-reverse",
+        dest="sort_name_reverse",
+        action="store_true",
+        help="Sort tracks by title/path in reverse alphabetical order",
+    )
 
     parser.add_argument("--version", dest="version", action="store_true", help="Show version and exit")
 
@@ -1038,6 +1166,8 @@ def _parse_args() -> dict[str, Any]:
     if args.version:
         print(f"navidrome-embedder version {VERSION}")
         sys.exit(0)
+    if args.sort_name_reverse and args.sort_length in ("long", "short"):
+        parser.error("--sort-name-reverse can only be used with --sort-length name (or with --sort-length omitted)")
 
     cfg["database"]["path"] = args.db_path
     cfg["milvus"]["uri"] = args.milvus_uri
@@ -1066,6 +1196,7 @@ def _parse_args() -> dict[str, Any]:
     cfg["cli"]["upload_milvus"] = not args.no_milvus
     cfg["cli"]["config_file"] = args.config_file
     cfg["cli"]["sort_length"] = args.sort_length
+    cfg["cli"]["sort_name_reverse"] = args.sort_name_reverse
 
     _normalize_config(cfg)
     return cfg
@@ -1093,6 +1224,7 @@ def main():
         cfg["database"]["path"],
         music_dir=cfg["cli"]["music_dir"],
         sort_length=cfg["cli"]["sort_length"],
+        sort_name_reverse=cfg["cli"]["sort_name_reverse"],
     )
     if not tracks:
         logging.info("No tracks found in database.")
