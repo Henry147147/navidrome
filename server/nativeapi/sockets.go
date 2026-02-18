@@ -79,7 +79,7 @@ func (c *embedHTTPClient) Embed(musicPath, musicName, cuePath string, settings m
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) // #nosec G704 -- destination URL comes from trusted server config
 	if err != nil {
 		return nil, fmt.Errorf("call embed service: %w", err)
 	}

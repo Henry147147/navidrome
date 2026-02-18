@@ -160,7 +160,7 @@ func restartPythonServices(ctx context.Context) {
 		servicesDir = "python_services"
 	}
 	scriptPath := filepath.Join(servicesDir, "restart_services.sh")
-	if _, err := os.Stat(scriptPath); err != nil {
+	if _, err := os.Stat(scriptPath); err != nil { // #nosec G703 -- path is controlled by trusted server config/env
 		log.Warn(ctx, "Python restart script not found", "path", scriptPath, "error", err)
 		return
 	}
@@ -1764,7 +1764,7 @@ func (n *Router) getTextEmbedding(ctx context.Context, text string, model string
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- destination URL comes from trusted server config
 	if err != nil {
 		return nil, err
 	}
@@ -1810,7 +1810,7 @@ func (n *Router) proxyToPython(ctx context.Context, method string, url string, p
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- destination URL comes from trusted server config
 	if err != nil {
 		return nil, fmt.Errorf("python service unreachable at %s: %w", url, err)
 	}

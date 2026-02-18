@@ -21,6 +21,7 @@ cache/*
 coverage.out
 dist
 music
+music.old
 *.db*
 .gitinfo
 docker-compose.yml

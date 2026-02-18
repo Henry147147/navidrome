@@ -13,15 +13,14 @@ GIT_SHA=source_archive
 GIT_TAG=$(patsubst navidrome-%,v%,$(notdir $(PWD)))-SNAPSHOT
 endif
 
-SUPPORTED_PLATFORMS ?= linux/amd64,linux/arm64,linux/arm/v5,linux/arm/v6,linux/arm/v7,linux/386,darwin/amd64,darwin/arm64,windows/amd64,windows/386
+SUPPORTED_PLATFORMS ?= linux/amd64,linux/arm64,linux/arm/v5,linux/arm/v6,linux/arm/v7,linux/386,linux/riscv64,darwin/amd64,darwin/arm64,windows/amd64,windows/386
 IMAGE_PLATFORMS ?= $(shell echo $(SUPPORTED_PLATFORMS) | tr ',' '\n' | grep "linux" | grep -v "arm/v5" | tr '\n' ',' | sed 's/,$$//')
 PLATFORMS ?= $(SUPPORTED_PLATFORMS)
 DOCKER_TAG ?= deluan/navidrome:develop
 
 # Taglib version to use in cross-compilation, from https://github.com/navidrome/cross-taglib
-CROSS_TAGLIB_VERSION ?= 2.1.1-1
-GOLANGCI_LINT_VERSION ?= v2.8.0
-JQ_VERSION ?= jq-1.7.1
+CROSS_TAGLIB_VERSION ?= 2.1.1-2
+GOLANGCI_LINT_VERSION ?= v2.10.0
 
 UI_SRC_FILES := $(shell find ui -type f -not -path "ui/build/*" -not -path "ui/node_modules/*")
 
@@ -70,8 +69,8 @@ test-js: ##@Development Run JS tests
 	@(cd ./ui && npm run test)
 .PHONY: test-js
 
-test-i18n: install-jq ##@Development Validate all translations files
-	PATH=$$PATH:./bin ./.github/workflows/validate-translations.sh 
+test-i18n: ##@Development Validate all translations files
+	./.github/workflows/validate-translations.sh 
 .PHONY: test-i18n
 
 install-golangci-lint: ##@Development Install golangci-lint if not present
@@ -92,17 +91,6 @@ install-golangci-lint: ##@Development Install golangci-lint if not present
 		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s $(GOLANGCI_LINT_VERSION); \
 	fi
 .PHONY: install-golangci-lint
-
-install-jq: ##@Development Install jq locally if not present
-	@if PATH=$$PATH:./bin which jq > /dev/null 2>&1; then \
-		exit 0; \
-	else \
-		echo "jq not found, installing $(JQ_VERSION)..."; \
-		mkdir -p ./bin; \
-		curl -sSfL https://github.com/jqlang/jq/releases/download/$(JQ_VERSION)/jq-linux-amd64 -o ./bin/jq; \
-		chmod +x ./bin/jq; \
-	fi
-.PHONY: install-jq
 
 lint: install-golangci-lint ##@Development Lint Go code
 	PATH=$$PATH:./bin golangci-lint run --timeout 5m
@@ -155,28 +143,14 @@ setup-git: ##@Development Setup Git hooks (pre-commit and pre-push)
 	@(cd .git/hooks && ln -sf ../../git/* .)
 .PHONY: setup-git
 
-build: check_go_env buildjs taglib ##@Build Build the project
-	@TAGLIB_DIR=$$(CROSS_TAGLIB_VERSION=$(CROSS_TAGLIB_VERSION) ./scripts/fetch-taglib.sh); \
-	PKG_CONFIG_PATH="$$TAGLIB_DIR/lib/pkgconfig" \
-	CGO_CFLAGS="-I$$TAGLIB_DIR/include -I$$TAGLIB_DIR/include/taglib" \
-	CGO_CXXFLAGS="-I$$TAGLIB_DIR/include -I$$TAGLIB_DIR/include/taglib" \
-	CGO_LDFLAGS="-L$$TAGLIB_DIR/lib" \
+build: check_go_env buildjs ##@Build Build the project
 	go build -ldflags="-X github.com/navidrome/navidrome/consts.gitSha=$(GIT_SHA) -X github.com/navidrome/navidrome/consts.gitTag=$(GIT_TAG)" -tags=netgo
 .PHONY: build
-
-taglib:
-	@CROSS_TAGLIB_VERSION=$(CROSS_TAGLIB_VERSION) ./scripts/fetch-taglib.sh >/dev/null
-.PHONY: taglib
 
 buildall: deprecated build
 .PHONY: buildall
 
-debug-build: check_go_env buildjs taglib ##@Build Build the project (with remote debug on)
-	@TAGLIB_DIR=$$(CROSS_TAGLIB_VERSION=$(CROSS_TAGLIB_VERSION) ./scripts/fetch-taglib.sh); \
-	PKG_CONFIG_PATH="$$TAGLIB_DIR/lib/pkgconfig" \
-	CGO_CFLAGS="-I$$TAGLIB_DIR/include -I$$TAGLIB_DIR/include/taglib" \
-	CGO_CXXFLAGS="-I$$TAGLIB_DIR/include -I$$TAGLIB_DIR/include/taglib" \
-	CGO_LDFLAGS="-L$$TAGLIB_DIR/lib" \
+debug-build: check_go_env buildjs ##@Build Build the project (with remote debug on)
 	go build -gcflags="all=-N -l" -ldflags="-X github.com/navidrome/navidrome/consts.gitSha=$(GIT_SHA) -X github.com/navidrome/navidrome/consts.gitTag=$(GIT_TAG)" -tags=netgo
 .PHONY: debug-build
 
@@ -280,14 +254,6 @@ download-deps:
 	@go mod download
 	@go mod tidy # To revert any changes made by the `go mod download` command
 .PHONY: download-deps
-
-build-llama-bindings:
-	@echo "Building Llama bindings..."
-	@go install github.com/hybridgroup/yzma/cmd/yzma@latest
-	@echo "library installing to $(shell pwd)/musicembed/llama-lib"
-	@chmod +x ./scripts/build-llama-cpp.sh
-	@./scripts/build-llama-cpp.sh
-.PHONY: build-llama-bindings
 
 check_env: check_go_env check_node_env
 .PHONY: check_env

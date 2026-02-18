@@ -1,11 +1,13 @@
 package conf
 
 import (
+	"cmp"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -57,6 +59,7 @@ type configOptions struct {
 	AutoTranscodeDownload           bool
 	DefaultDownsamplingFormat       string
 	SearchFullString                bool
+	SimilarSongsMatchThreshold      int
 	RecentlyAddedByModTime          bool
 	PreferSortTags                  bool
 	IgnoredArticles                 string
@@ -170,25 +173,33 @@ type TagConf struct {
 
 type lastfmOptions struct {
 	Enabled                 bool
-	ApiKey                  string
-	Secret                  string
+	ApiKey                  string //nolint:gosec
+	Secret                  string //nolint:gosec
 	Language                string
 	ScrobbleFirstArtistOnly bool
+
+	// Computed values
+	Languages []string // Computed from Language, split by comma
 }
 
 type spotifyOptions struct {
 	ID     string
-	Secret string
+	Secret string //nolint:gosec
 }
 
 type deezerOptions struct {
 	Enabled  bool
 	Language string
+
+	// Computed values
+	Languages []string // Computed from Language, split by comma
 }
 
 type listenBrainzOptions struct {
-	Enabled bool
-	BaseURL string
+	Enabled         bool
+	BaseURL         string
+	ArtistAlgorithm string
+	TrackAlgorithm  string
 }
 
 type httpHeaderOptions struct {
@@ -198,7 +209,7 @@ type httpHeaderOptions struct {
 type prometheusOptions struct {
 	Enabled     bool
 	MetricsPath string
-	Password    string
+	Password    string //nolint:gosec
 }
 
 type AudioDeviceDefinition []string
@@ -306,6 +317,15 @@ func Load(noConfigDump bool) {
 	dumpConfig(out, noConfigDump)
 	applyExternalServicesConfig()
 	applyScannerExtractorDefaults()
+
+	// Make sure we don't have empty PIDs.
+	Server.PID.Album = cmp.Or(Server.PID.Album, consts.DefaultAlbumPID)
+	Server.PID.Track = cmp.Or(Server.PID.Track, consts.DefaultTrackPID)
+
+	// Parse LastFM/Deezer language settings into normalized language slices.
+	Server.LastFM.Languages = parseLanguages(Server.LastFM.Language)
+	Server.Deezer.Languages = parseLanguages(Server.Deezer.Language)
+
 	logDeprecatedOptions("Scanner.GenreSeparators", "")
 	logDeprecatedOptions("Scanner.GroupAlbumReleases", "")
 	logDeprecatedOptions("DevEnableBufferedScrobble", "") // Deprecated: Buffered scrobbling is now always enabled and this option is ignored
@@ -509,7 +529,7 @@ func mapDeprecatedOption(legacyName, newName string) {
 func parseIniFileConfiguration() {
 	cfgFile := viper.ConfigFileUsed()
 	if strings.ToLower(filepath.Ext(cfgFile)) == ".ini" {
-		var iniConfig map[string]interface{}
+		var iniConfig map[string]any
 		err := viper.Unmarshal(&iniConfig)
 		if err != nil {
 			_, _ = fmt.Fprintln(os.Stderr, "FATAL: Error parsing config:", err)
@@ -542,7 +562,7 @@ func disableExternalServices() {
 }
 
 func validatePlaylistsPath() error {
-	for _, path := range strings.Split(Server.PlaylistsPath, string(filepath.ListSeparator)) {
+	for path := range strings.SplitSeq(Server.PlaylistsPath, string(filepath.ListSeparator)) {
 		_, err := doublestar.Match(path, "")
 		if err != nil {
 			log.Error("Invalid PlaylistsPath", "path", path, err)
@@ -552,15 +572,25 @@ func validatePlaylistsPath() error {
 	return nil
 }
 
-func validatePurgeMissingOption() error {
-	allowedValues := []string{consts.PurgeMissingNever, consts.PurgeMissingAlways, consts.PurgeMissingFull}
-	valid := false
-	for _, v := range allowedValues {
-		if v == Server.Scanner.PurgeMissing {
-			valid = true
-			break
+// parseLanguages parses a comma-separated language string into a slice.
+// It trims whitespace from each entry and ensures at least [DefaultInfoLanguage] is returned.
+func parseLanguages(lang string) []string {
+	var languages []string
+	for l := range strings.SplitSeq(lang, ",") {
+		l = strings.TrimSpace(l)
+		if l != "" {
+			languages = append(languages, l)
 		}
 	}
+	if len(languages) == 0 {
+		return []string{consts.DefaultInfoLanguage}
+	}
+	return languages
+}
+
+func validatePurgeMissingOption() error {
+	allowedValues := []string{consts.PurgeMissingNever, consts.PurgeMissingAlways, consts.PurgeMissingFull}
+	valid := slices.Contains(allowedValues, Server.Scanner.PurgeMissing)
 	if !valid {
 		err := fmt.Errorf("invalid Scanner.PurgeMissing value: '%s'. Must be one of: %v", Server.Scanner.PurgeMissing, allowedValues)
 		log.Error(err.Error())
@@ -664,6 +694,7 @@ func setViperDefaults() {
 	viper.SetDefault("autotranscodedownload", false)
 	viper.SetDefault("defaultdownsamplingformat", consts.DefaultDownsamplingFormat)
 	viper.SetDefault("searchfullstring", false)
+	viper.SetDefault("similarsongsmatchthreshold", 85)
 	viper.SetDefault("recentlyaddedbymodtime", false)
 	viper.SetDefault("prefersorttags", false)
 	viper.SetDefault("ignoredarticles", "The El La Los Las Le Les Os As O A")
@@ -717,19 +748,22 @@ func setViperDefaults() {
 	viper.SetDefault("subsonic.artistparticipations", false)
 	viper.SetDefault("subsonic.defaultreportrealpath", false)
 	viper.SetDefault("subsonic.enableaveragerating", true)
-	viper.SetDefault("subsonic.legacyclients", "DSub,SubMusic")
+	viper.SetDefault("subsonic.legacyclients", "DSub")
+	viper.SetDefault("subsonic.minimalclients", "SubMusic")
 	viper.SetDefault("agents", "lastfm,spotify,deezer")
 	viper.SetDefault("lastfm.enabled", true)
-	viper.SetDefault("lastfm.language", "en")
+	viper.SetDefault("lastfm.language", consts.DefaultInfoLanguage)
 	viper.SetDefault("lastfm.apikey", "")
 	viper.SetDefault("lastfm.secret", "")
 	viper.SetDefault("lastfm.scrobblefirstartistonly", false)
 	viper.SetDefault("spotify.id", "")
 	viper.SetDefault("spotify.secret", "")
 	viper.SetDefault("deezer.enabled", true)
-	viper.SetDefault("deezer.language", "en")
+	viper.SetDefault("deezer.language", consts.DefaultInfoLanguage)
 	viper.SetDefault("listenbrainz.enabled", true)
-	viper.SetDefault("listenbrainz.baseurl", "https://api.listenbrainz.org/1/")
+	viper.SetDefault("listenbrainz.baseurl", consts.DefaultListenBrainzBaseURL)
+	viper.SetDefault("listenbrainz.artistalgorithm", consts.DefaultListenBrainzArtistAlgorithm)
+	viper.SetDefault("listenbrainz.trackalgorithm", consts.DefaultListenBrainzTrackAlgorithm)
 	viper.SetDefault("enablescrobblehistory", true)
 	viper.SetDefault("httpheaders.frameoptions", "DENY")
 	viper.SetDefault("backup.path", "")
@@ -742,7 +776,7 @@ func setViperDefaults() {
 	viper.SetDefault("inspect.backloglimit", consts.RequestThrottleBacklogLimit)
 	viper.SetDefault("inspect.backlogtimeout", consts.RequestThrottleBacklogTimeout)
 	viper.SetDefault("plugins.folder", "")
-	viper.SetDefault("plugins.enabled", false)
+	viper.SetDefault("plugins.enabled", true)
 	viper.SetDefault("plugins.cachesize", "200MB")
 	viper.SetDefault("plugins.autoreload", false)
 
@@ -822,7 +856,7 @@ func getConfigFile(cfgFile string) string {
 	}
 	cfgFile = os.Getenv("ND_CONFIGFILE")
 	if cfgFile != "" {
-		if _, err := os.Stat(cfgFile); err == nil {
+		if _, err := os.Stat(cfgFile); err == nil { //nolint:gosec
 			return cfgFile
 		}
 	}

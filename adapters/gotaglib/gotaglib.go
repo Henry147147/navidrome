@@ -6,19 +6,22 @@
 // efficient access to format-specific tags (ID3v2 frames, MP4 atoms, ASF attributes)
 // through a single file open operation.
 //
-// This extractor is registered under the name "gotaglib". It only works with a filesystem
+// This extractor is registered under the name "taglib". It only works with a filesystem
 // (fs.FS) and does not support direct local file paths. Files returned by the filesystem
 // must implement io.ReadSeeker for go-taglib to read them.
 package gotaglib
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
+	"runtime/debug"
 	"strings"
 	"time"
 
 	"github.com/navidrome/navidrome/core/storage/local"
+	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model/metadata"
 	"go.senan.xyz/taglib"
 )
@@ -46,6 +49,7 @@ func (e extractor) Version() string {
 func (e extractor) extractMetadata(filePath string) (*metadata.Info, error) {
 	f, close, err := e.openFile(filePath)
 	if err != nil {
+		log.Warn("gotaglib: Error reading metadata from file. Skipping", "filePath", filePath, err)
 		return nil, err
 	}
 	defer close()
@@ -94,7 +98,17 @@ func (e extractor) extractMetadata(filePath string) (*metadata.Info, error) {
 
 // openFile opens the file at filePath using the extractor's filesystem.
 // It returns a TagLib File handle and a cleanup function to close resources.
-func (e extractor) openFile(filePath string) (*taglib.File, func(), error) {
+func (e extractor) openFile(filePath string) (f *taglib.File, closeFunc func(), err error) {
+	// Recover from panics in the WASM runtime (e.g., wazero failing to mmap executable memory
+	// on hardened systems like NixOS with MemoryDenyWriteExecute=true)
+	debug.SetPanicOnFault(true)
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("WASM runtime panic: This may be caused by a hardened system that blocks executable memory mapping.", "file", filePath, "panic", r)
+			err = fmt.Errorf("WASM runtime panic (hardened system?): %v", r)
+		}
+	}()
+
 	// Open the file from the filesystem
 	file, err := e.fs.Open(filePath)
 	if err != nil {
@@ -105,12 +119,17 @@ func (e extractor) openFile(filePath string) (*taglib.File, func(), error) {
 		file.Close()
 		return nil, nil, errors.New("file is not seekable")
 	}
-	f, err := taglib.OpenStream(rs, taglib.WithReadStyle(taglib.ReadStyleFast))
+	// WithFilename provides a format detection hint via the file extension,
+	// since OpenStream alone relies on content-sniffing which fails for some files.
+	f, err = taglib.OpenStream(rs,
+		taglib.WithReadStyle(taglib.ReadStyleFast),
+		taglib.WithFilename(filePath),
+	)
 	if err != nil {
 		file.Close()
 		return nil, nil, err
 	}
-	closeFunc := func() {
+	closeFunc = func() {
 		f.Close()
 		file.Close()
 	}
@@ -241,7 +260,7 @@ func parseTIPL(tags map[string][]string) {
 	}
 	var currentRole string
 	var currentValue []string
-	for _, part := range strings.Split(tipl[0], " ") {
+	for part := range strings.SplitSeq(tipl[0], " ") {
 		if _, ok := tiplMapping[part]; ok {
 			addRole(currentRole, currentValue)
 			currentRole = part

@@ -15,6 +15,7 @@ import (
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 	"github.com/navidrome/navidrome/server/subsonic/responses"
+	. "github.com/navidrome/navidrome/utils/gg"
 	"github.com/navidrome/navidrome/utils/req"
 	"github.com/navidrome/navidrome/utils/slice"
 )
@@ -40,7 +41,7 @@ func (api *Router) MakePlaylistFromFavoriteAndStaredSongs(r *http.Request) (*res
 		log.Error(ctx, "Failed to create request for POST", "error", reqErr)
 	} else {
 		req.Header.Set("Content-Type", "application/json")
-		resp, doErr := client.Do(req)
+		resp, doErr := client.Do(req) // #nosec G704 -- fixed localhost endpoint for internal test hook
 		if doErr != nil {
 			log.Error(ctx, "POST to http://localhost:5000/test failed", "error", doErr)
 		} else {
@@ -199,7 +200,11 @@ func (api *Router) buildPlaylist(ctx context.Context, p model.Playlist) response
 	pls.Duration = int32(p.Duration)
 	pls.Created = p.CreatedAt
 	if p.IsSmartPlaylist() {
-		pls.Changed = time.Now()
+		if p.EvaluatedAt != nil {
+			pls.Changed = *p.EvaluatedAt
+		} else {
+			pls.Changed = time.Now()
+		}
 	} else {
 		pls.Changed = p.UpdatedAt
 	}
@@ -213,6 +218,24 @@ func (api *Router) buildPlaylist(ctx context.Context, p model.Playlist) response
 	pls.Owner = p.OwnerName
 	pls.Public = p.Public
 	pls.CoverArt = p.CoverArtID().String()
+	pls.OpenSubsonicPlaylist = buildOSPlaylist(ctx, p)
 
 	return pls
+}
+
+func buildOSPlaylist(ctx context.Context, p model.Playlist) *responses.OpenSubsonicPlaylist {
+	pls := responses.OpenSubsonicPlaylist{}
+
+	if p.IsSmartPlaylist() {
+		pls.Readonly = true
+
+		if p.EvaluatedAt != nil {
+			pls.ValidUntil = P(p.EvaluatedAt.Add(conf.Server.SmartPlaylistRefreshDelay))
+		}
+	} else {
+		user, ok := request.UserFrom(ctx)
+		pls.Readonly = !ok || p.OwnerID != user.ID
+	}
+
+	return &pls
 }

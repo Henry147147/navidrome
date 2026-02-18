@@ -1,9 +1,12 @@
 package metrics
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"math"
+	"net/http"
+	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -91,12 +94,30 @@ func (c *insightsCollector) sendInsights(ctx context.Context) {
 		log.Trace(ctx, "No users found, skipping Insights data collection")
 		return
 	}
+	hc := &http.Client{
+		Timeout: consts.DefaultHttpClientTimeOut,
+	}
 	data := c.collect(ctx)
 	if data == nil {
 		return
 	}
+	body := bytes.NewReader(data)
+	req, err := http.NewRequestWithContext(ctx, "POST", consts.InsightsEndpoint, body)
+	if err != nil {
+		log.Trace(ctx, "Could not create Insights request", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := hc.Do(req) //nolint:gosec
+	if err != nil {
+		log.Trace(ctx, "Could not send Insights data", err)
+		return
+	}
+	log.Info(ctx, "Sent Insights data (for details see http://navidrome.org/docs/getting-started/insights", "data",
+		string(data), "server", consts.InsightsEndpoint, "status", resp.Status)
 	c.lastRun.Store(time.Now().UnixMilli())
-	c.lastStatus.Store(len(data) > 0)
+	c.lastStatus.Store(resp.StatusCode < 300)
+	resp.Body.Close()
 }
 
 func buildInfo() (map[string]string, string) {
@@ -143,6 +164,13 @@ var staticData = sync.OnceValue(func() insights.Data {
 	data.Build.Settings, data.Build.GoVersion = buildInfo()
 	data.OS.Containerized = consts.InContainer
 
+	// Install info
+	packageFilename := filepath.Join(conf.Server.DataFolder, ".package")
+	packageFileData, err := os.ReadFile(packageFilename)
+	if err == nil {
+		data.OS.Package = string(packageFileData)
+	}
+
 	// OS info
 	data.OS.Type = runtime.GOOS
 	data.OS.Arch = runtime.GOARCH
@@ -187,11 +215,12 @@ var staticData = sync.OnceValue(func() insights.Data {
 	data.Config.BackupCount = conf.Server.Backup.Count
 	data.Config.DevActivityPanel = conf.Server.DevActivityPanel
 	data.Config.ScannerEnabled = conf.Server.Scanner.Enabled
+	data.Config.ScannerExtractor = conf.Server.Scanner.Extractor
 	data.Config.ScanSchedule = conf.Server.Scanner.Schedule
 	data.Config.ScanWatcherWait = uint64(math.Trunc(conf.Server.Scanner.WatcherWait.Seconds()))
 	data.Config.ScanOnStartup = conf.Server.Scanner.ScanOnStartup
 	data.Config.ReverseProxyConfigured = conf.Server.ExtAuth.TrustedSources != ""
-	data.Config.HasCustomPID = conf.Server.PID.Track != "" || conf.Server.PID.Album != ""
+	data.Config.HasCustomPID = conf.Server.PID.Track != consts.DefaultTrackPID || conf.Server.PID.Album != consts.DefaultAlbumPID
 	data.Config.HasCustomTags = len(conf.Server.Tags) > 0
 
 	return data

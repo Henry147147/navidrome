@@ -151,7 +151,9 @@ func (r *mediaFileRepository) Exists(id string) (bool, error) {
 }
 
 func (r *mediaFileRepository) Put(m *model.MediaFile) error {
-	m.CreatedAt = time.Now()
+	if m.CreatedAt.IsZero() {
+		m.CreatedAt = time.Now()
+	}
 	id, err := r.putByMatch(Eq{"path": m.Path, "library_id": m.LibraryID}, m.ID, &dbMediaFile{MediaFile: m})
 	if err != nil {
 		return err
@@ -196,6 +198,31 @@ func (r *mediaFileRepository) GetAll(options ...model.QueryOptions) (model.Media
 		return nil, err
 	}
 	return res.toModels(), nil
+}
+
+func (r *mediaFileRepository) GetAllByTags(tag model.TagName, values []string, options ...model.QueryOptions) (model.MediaFiles, error) {
+	placeholders := make([]string, len(values))
+	args := make([]any, len(values))
+	for i, v := range values {
+		placeholders[i] = "?"
+		args[i] = v
+	}
+	tagFilter := Expr(
+		fmt.Sprintf("exists (select 1 from json_tree(media_file.tags, '$.%s') where key='value' and value in (%s))",
+			tag, strings.Join(placeholders, ",")),
+		args...,
+	)
+
+	var opts model.QueryOptions
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	if opts.Filters != nil {
+		opts.Filters = And{tagFilter, opts.Filters}
+	} else {
+		opts.Filters = tagFilter
+	}
+	return r.GetAll(opts)
 }
 
 func (r *mediaFileRepository) GetCursor(options ...model.QueryOptions) (model.MediaFileCursor, error) {
@@ -421,11 +448,11 @@ func (r *mediaFileRepository) Count(options ...rest.QueryOptions) (int64, error)
 	return r.CountAll(r.parseRestOptions(r.ctx, options...))
 }
 
-func (r *mediaFileRepository) Read(id string) (interface{}, error) {
+func (r *mediaFileRepository) Read(id string) (any, error) {
 	return r.Get(id)
 }
 
-func (r *mediaFileRepository) ReadAll(options ...rest.QueryOptions) (interface{}, error) {
+func (r *mediaFileRepository) ReadAll(options ...rest.QueryOptions) (any, error) {
 	return r.GetAll(r.parseRestOptions(r.ctx, options...))
 }
 
@@ -433,7 +460,7 @@ func (r *mediaFileRepository) EntityName() string {
 	return "mediafile"
 }
 
-func (r *mediaFileRepository) NewInstance() interface{} {
+func (r *mediaFileRepository) NewInstance() any {
 	return &model.MediaFile{}
 }
 
