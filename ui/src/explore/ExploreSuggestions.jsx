@@ -156,6 +156,15 @@ const useStyles = makeStyles((theme) => ({
   selectChip: {
     margin: 0,
   },
+  modelControlRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing(2),
+    alignItems: 'flex-start',
+  },
+  modelControl: {
+    minWidth: 220,
+  },
   listItemPrimary: {
     fontWeight: theme.typography.fontWeightMedium,
   },
@@ -185,6 +194,94 @@ const DEFAULT_SETTINGS = {
   seedRecencyWindowDays: 60,
   favoritesBlendWeight: 0.85,
   lowRatingPenalty: 0.85,
+}
+
+const RECOMMENDATION_MODEL_OPTIONS = [
+  {
+    value: 'flamingo',
+    label: 'Audio (Flamingo)',
+    description: 'Direct audio similarity from song embeddings',
+  },
+  {
+    value: 'lyrics',
+    label: 'Lyrics',
+    description: 'Similarity using lyric text embeddings',
+  },
+  {
+    value: 'description',
+    label: 'Description',
+    description: 'Similarity using generated song descriptions',
+  },
+]
+
+const TEXT_TARGET_OPTIONS = [
+  {
+    value: 'lyrics',
+    label: 'Lyrics',
+  },
+  {
+    value: 'description',
+    label: 'Description',
+  },
+]
+
+const MERGE_STRATEGY_OPTIONS = [
+  {
+    value: 'union',
+    label: 'Union',
+  },
+  {
+    value: 'intersection',
+    label: 'Intersection',
+  },
+  {
+    value: 'priority',
+    label: 'Priority',
+  },
+]
+
+const isTextModel = (model) => model === 'lyrics' || model === 'description'
+
+const uniqueStrings = (values) => {
+  const seen = new Set()
+  return (values || []).filter((value) => {
+    if (!value || seen.has(value)) {
+      return false
+    }
+    seen.add(value)
+    return true
+  })
+}
+
+const clampMinAgreement = (value, modelCount) => {
+  const count = Math.max(modelCount, 1)
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 1
+  }
+  if (parsed > count) {
+    return count
+  }
+  return parsed
+}
+
+const buildTextRequestModels = (selectedModels, textTargets, hasSongSeeds) => {
+  const baseModels =
+    Array.isArray(selectedModels) && selectedModels.length > 0
+      ? selectedModels
+      : ['flamingo']
+  const normalizedTextTargets =
+    Array.isArray(textTargets) && textTargets.length > 0
+      ? textTargets
+      : ['lyrics', 'description']
+
+  if (hasSongSeeds) {
+    return uniqueStrings([...baseModels, ...normalizedTextTargets])
+  }
+
+  const textOnlyModels = baseModels.filter(isTextModel)
+  const merged = uniqueStrings([...textOnlyModels, ...normalizedTextTargets])
+  return merged.length > 0 ? merged : ['lyrics', 'description']
 }
 
 const RecommendationPreview = ({
@@ -359,7 +456,7 @@ const ExploreSuggestions = () => {
   const [settingsMessage, setSettingsMessage] = useState(null)
 
   // Multi-model recommendation options
-  const [selectedModels, setSelectedModels] = useState(['qwen3'])
+  const [selectedModels, setSelectedModels] = useState(['flamingo'])
   const [mergeStrategy, setMergeStrategy] = useState('union')
   const [minModelAgreement, setMinModelAgreement] = useState(1)
 
@@ -577,7 +674,7 @@ const ExploreSuggestions = () => {
       limit: settings.mixLength,
       diversity: settings.baseDiversity,
       // Multi-model options
-      models: selectedModels.length > 0 ? selectedModels : ['qwen3'],
+      models: selectedModels.length > 0 ? selectedModels : ['flamingo'],
       mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
       minModelAgreement:
         selectedModels.length > 1 ? minModelAgreement : undefined,
@@ -788,6 +885,11 @@ const ExploreSuggestions = () => {
   const [customError, setCustomError] = useState(null)
   const [customExcludeIds, setCustomExcludeIds] = useState([])
   const [customUpdatingTrackId, setCustomUpdatingTrackId] = useState(null)
+  const [customTextQuery, setCustomTextQuery] = useState('')
+  const [customTextTargets, setCustomTextTargets] = useState([
+    'lyrics',
+    'description',
+  ])
 
   const SONG_SEARCH_PER_PAGE = 10
   const createInitialSearchState = () => ({
@@ -1025,6 +1127,10 @@ const ExploreSuggestions = () => {
       limit: 1,
       diversity: settings.baseDiversity,
       excludeTrackIds: Array.from(excludeSet),
+      models: selectedModels.length > 0 ? selectedModels : ['flamingo'],
+      mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
+      minModelAgreement:
+        selectedModels.length > 1 ? minModelAgreement : undefined,
     }
     if (mode === 'discovery') {
       payload.diversity = settings.discoveryExploration
@@ -1152,7 +1258,8 @@ const ExploreSuggestions = () => {
       return
     }
     const seeds = selectedSongs.map((song) => getSongId(song)).filter(Boolean)
-    if (seeds.length === 0) {
+    const hasTextPrompt = customTextQuery.trim() !== ''
+    if (seeds.length === 0 && !hasTextPrompt) {
       return
     }
     const excludeSet = new Set(customExcludeIds)
@@ -1163,14 +1270,43 @@ const ExploreSuggestions = () => {
     })
     excludeSet.add(trackId)
     setCustomUpdatingTrackId(trackId)
-    dataProvider
-      .getCustomRecommendations({
-        songIds: seeds,
-        limit: 1,
-        diversity: settings.baseDiversity,
-        excludeTrackIds: Array.from(excludeSet),
-        excludePlaylistIds,
-      })
+    const textModels = buildTextRequestModels(
+      selectedModels,
+      customTextTargets,
+      seeds.length > 0,
+    )
+    const textMinAgreement = clampMinAgreement(
+      minModelAgreement,
+      textModels.length,
+    )
+    const request =
+      hasTextPrompt
+        ? dataProvider.getTextRecommendations({
+            text: customTextQuery.trim(),
+            textTargets: customTextTargets,
+            songIds: seeds,
+            limit: 1,
+            diversity: settings.baseDiversity,
+            excludeTrackIds: Array.from(excludeSet),
+            excludePlaylistIds,
+            models: textModels,
+            mergeStrategy: textModels.length > 1 ? mergeStrategy : undefined,
+            minModelAgreement:
+              textModels.length > 1 ? textMinAgreement : undefined,
+          })
+        : dataProvider.getCustomRecommendations({
+            songIds: seeds,
+            limit: 1,
+            diversity: settings.baseDiversity,
+            excludeTrackIds: Array.from(excludeSet),
+            excludePlaylistIds,
+            models: selectedModels.length > 0 ? selectedModels : ['flamingo'],
+            mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
+            minModelAgreement:
+              selectedModels.length > 1 ? minModelAgreement : undefined,
+          })
+
+    request
       .then(({ data }) => {
         const newTrack = data?.tracks?.[0]
         const newTrackId = data?.trackIds?.[0]
@@ -1224,13 +1360,45 @@ const ExploreSuggestions = () => {
   const handleGenerateCustom = () => {
     setCustomLoading(true)
     setCustomError(null)
-    dataProvider
-      .getCustomRecommendations({
-        songIds: selectedSongs.map((song) => getSongId(song)).filter(Boolean),
-        limit: settings.mixLength,
-        diversity: settings.baseDiversity,
-        excludePlaylistIds,
-      })
+    const selectedSongIDs = selectedSongs
+      .map((song) => getSongId(song))
+      .filter(Boolean)
+    const hasTextPrompt = customTextQuery.trim() !== ''
+    const textModels = buildTextRequestModels(
+      selectedModels,
+      customTextTargets,
+      selectedSongIDs.length > 0,
+    )
+    const textMinAgreement = clampMinAgreement(
+      minModelAgreement,
+      textModels.length,
+    )
+    const request =
+      hasTextPrompt
+        ? dataProvider.getTextRecommendations({
+            text: customTextQuery.trim(),
+            textTargets: customTextTargets,
+            songIds: selectedSongIDs,
+            limit: settings.mixLength,
+            diversity: settings.baseDiversity,
+            excludePlaylistIds,
+            models: textModels,
+            mergeStrategy: textModels.length > 1 ? mergeStrategy : undefined,
+            minModelAgreement:
+              textModels.length > 1 ? textMinAgreement : undefined,
+          })
+        : dataProvider.getCustomRecommendations({
+            songIds: selectedSongIDs,
+            limit: settings.mixLength,
+            diversity: settings.baseDiversity,
+            excludePlaylistIds,
+            models: selectedModels.length > 0 ? selectedModels : ['flamingo'],
+            mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
+            minModelAgreement:
+              selectedModels.length > 1 ? minModelAgreement : undefined,
+          })
+
+    request
       .then(({ data }) => {
         setCustomResult(data)
         setCustomName(
@@ -1335,6 +1503,151 @@ const ExploreSuggestions = () => {
             </Box>
           </Card>
 
+          <Card className={classes.recommendationCard} variant="outlined">
+            <Typography variant="h6">
+              {translate('pages.explore.modelConfigTitle', {
+                _: 'Recommendation model setup',
+              })}
+            </Typography>
+            <Typography variant="body2" className={classes.placeholder}>
+              {translate('pages.explore.modelConfigDescription', {
+                _: 'Choose which embedding spaces to use when generating mixes.',
+              })}
+            </Typography>
+            <Box className={classes.modelControlRow}>
+              <FormControl
+                variant="outlined"
+                className={classes.modelControl}
+              >
+                <InputLabel id="explore-model-select-label">
+                  {translate('pages.explore.modelsLabel', {
+                    _: 'Models',
+                  })}
+                </InputLabel>
+                <Select
+                  labelId="explore-model-select-label"
+                  multiple
+                  value={selectedModels}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    const next = Array.isArray(value) ? value : []
+                    setSelectedModels(next.length > 0 ? next : ['flamingo'])
+                    if (minModelAgreement > next.length && next.length > 0) {
+                      setMinModelAgreement(next.length)
+                    }
+                  }}
+                  label={translate('pages.explore.modelsLabel', {
+                    _: 'Models',
+                  })}
+                  renderValue={(selected) => {
+                    const selectedList = Array.isArray(selected) ? selected : []
+                    if (selectedList.length === 0) {
+                      return translate('pages.explore.modelsEmpty', {
+                        _: 'No models selected',
+                      })
+                    }
+                    return (
+                      <Box className={classes.selectChips}>
+                        {selectedList.map((id) => {
+                          const option = RECOMMENDATION_MODEL_OPTIONS.find(
+                            (item) => item.value === id,
+                          )
+                          return (
+                            <Chip
+                              key={id}
+                              label={option?.label || id}
+                              size="small"
+                              className={classes.selectChip}
+                            />
+                          )
+                        })}
+                      </Box>
+                    )
+                  }}
+                >
+                  {RECOMMENDATION_MODEL_OPTIONS.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      <Checkbox
+                        checked={selectedModels.indexOf(option.value) > -1}
+                      />
+                      <ListItemText
+                        primary={option.label}
+                        secondary={option.description}
+                      />
+                    </MenuItem>
+                  ))}
+                </Select>
+                <FormHelperText>
+                  {translate('pages.explore.modelsHelper', {
+                    _: 'Audio-only is fastest while text models improve semantic matching.',
+                  })}
+                </FormHelperText>
+              </FormControl>
+
+              {selectedModels.length > 1 && (
+                <>
+                  <FormControl
+                    variant="outlined"
+                    className={classes.modelControl}
+                  >
+                    <InputLabel id="explore-merge-select-label">
+                      {translate('pages.explore.mergeLabel', {
+                        _: 'Merge strategy',
+                      })}
+                    </InputLabel>
+                    <Select
+                      labelId="explore-merge-select-label"
+                      value={mergeStrategy}
+                      onChange={(event) => setMergeStrategy(event.target.value)}
+                      label={translate('pages.explore.mergeLabel', {
+                        _: 'Merge strategy',
+                      })}
+                    >
+                      {MERGE_STRATEGY_OPTIONS.map((option) => (
+                        <MenuItem key={option.value} value={option.value}>
+                          {option.label}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <TextField
+                    className={classes.modelControl}
+                    type="number"
+                    variant="outlined"
+                    label={translate('pages.explore.minAgreementLabel', {
+                      _: 'Minimum model agreement',
+                    })}
+                    value={minModelAgreement}
+                    onChange={(event) => {
+                      const max = Math.max(selectedModels.length, 1)
+                      const next = Number(event.target.value)
+                      if (Number.isNaN(next)) {
+                        setMinModelAgreement(1)
+                        return
+                      }
+                      if (next < 1) {
+                        setMinModelAgreement(1)
+                        return
+                      }
+                      if (next > max) {
+                        setMinModelAgreement(max)
+                        return
+                      }
+                      setMinModelAgreement(next)
+                    }}
+                    inputProps={{
+                      min: 1,
+                      max: Math.max(selectedModels.length, 1),
+                    }}
+                    helperText={translate('pages.explore.minAgreementHelper', {
+                      _: 'Higher values require more model consensus.',
+                    })}
+                  />
+                </>
+              )}
+            </Box>
+          </Card>
+
           <Box className={classes.section}>
             {generatorConfigs.map((config) => renderGeneratorCard(config))}
           </Box>
@@ -1422,6 +1735,75 @@ const ExploreSuggestions = () => {
                 )
               })}
             </Box>
+            <TextField
+              variant="outlined"
+              value={customTextQuery}
+              onChange={(event) => setCustomTextQuery(event.target.value)}
+              label={translate('pages.explore.customTextPromptLabel', {
+                _: 'Optional text prompt',
+              })}
+              placeholder={translate('pages.explore.customTextPromptPlaceholder', {
+                _: 'Describe mood, style, instruments, era, etc. to blend with selected seeds',
+              })}
+              multiline
+              rows={2}
+            />
+            <FormControl variant="outlined" className={classes.modelControl}>
+              <InputLabel id="custom-text-targets-label">
+                {translate('pages.explore.textTargetsLabel', {
+                  _: 'Text targets',
+                })}
+              </InputLabel>
+              <Select
+                labelId="custom-text-targets-label"
+                multiple
+                value={customTextTargets}
+                onChange={(event) => {
+                  const value = event.target.value
+                  const next = Array.isArray(value) ? value : []
+                  setCustomTextTargets(
+                    next.length > 0 ? next : ['lyrics', 'description'],
+                  )
+                }}
+                label={translate('pages.explore.textTargetsLabel', {
+                  _: 'Text targets',
+                })}
+                renderValue={(selected) => {
+                  const selectedList = Array.isArray(selected) ? selected : []
+                  return (
+                    <Box className={classes.selectChips}>
+                      {selectedList.map((value) => {
+                        const option = TEXT_TARGET_OPTIONS.find(
+                          (item) => item.value === value,
+                        )
+                        return (
+                          <Chip
+                            key={value}
+                            label={option?.label || value}
+                            size="small"
+                            className={classes.selectChip}
+                          />
+                        )
+                      })}
+                    </Box>
+                  )
+                }}
+              >
+                {TEXT_TARGET_OPTIONS.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    <Checkbox
+                      checked={customTextTargets.indexOf(option.value) > -1}
+                    />
+                    <ListItemText primary={option.label} />
+                  </MenuItem>
+                ))}
+              </Select>
+              <FormHelperText>
+                {translate('pages.explore.textTargetsHelper', {
+                  _: 'Used only when text prompt is provided.',
+                })}
+              </FormHelperText>
+            </FormControl>
             <FormControl
               variant="outlined"
               className={classes.playlistExclusionControl}
@@ -1493,7 +1875,10 @@ const ExploreSuggestions = () => {
                 variant="contained"
                 color="primary"
                 onClick={handleGenerateCustom}
-                disabled={selectedSongs.length === 0 || customLoading}
+                disabled={
+                  (selectedSongs.length === 0 && customTextQuery.trim() === '') ||
+                  customLoading
+                }
               >
                 {customLoading ? (
                   <CircularProgress size={18} color="inherit" />

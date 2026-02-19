@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   CircularProgress,
   FormControl,
   FormHelperText,
@@ -90,11 +91,16 @@ const useStyles = makeStyles((theme) => ({
   },
 }))
 
-const MODEL_OPTIONS = [
+const TEXT_TARGET_OPTIONS = [
   {
-    value: 'qwen3',
-    label: 'Qwen3 (Text)',
-    description: 'Caption + text embeddings (2560-dim)',
+    value: 'lyrics',
+    label: 'Lyrics',
+    description: 'Lyric similarity search',
+  },
+  {
+    value: 'description',
+    label: 'Description',
+    description: 'Generated description similarity search',
   },
 ]
 
@@ -105,7 +111,7 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
   const notify = useNotify()
 
   const [textQuery, setTextQuery] = useState('')
-  const [selectedModel, setSelectedModel] = useState('qwen3')
+  const [textTargets, setTextTargets] = useState(['lyrics', 'description'])
   const [negativePrompts, setNegativePrompts] = useState([])
   const [negativePenalty, setNegativePenalty] = useState(0.85)
   const [limit, setLimit] = useState(25)
@@ -140,7 +146,7 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
     try {
       const options = {
         text: textQuery,
-        model: selectedModel,
+        textTargets,
         limit,
         negativePrompts: negativePrompts.filter((p) => p.trim() !== ''),
         negativePromptPenalty: negativePenalty,
@@ -227,28 +233,49 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
 
           <Box className={classes.formRow}>
             <FormControl className={classes.modelSelect} variant="outlined">
-              <InputLabel>
-                {translate('pages.explore.textGenerator.model', { _: 'Model' })}
+              <InputLabel id="text-targets-label">
+                {translate('pages.explore.textGenerator.targets', {
+                  _: 'Text targets',
+                })}
               </InputLabel>
               <Select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                label={translate('pages.explore.textGenerator.model', {
-                  _: 'Model',
+                labelId="text-targets-label"
+                multiple
+                value={textTargets}
+                onChange={(event) => {
+                  const value = event.target.value
+                  const next = Array.isArray(value) ? value : []
+                  setTextTargets(next.length > 0 ? next : ['lyrics'])
+                }}
+                label={translate('pages.explore.textGenerator.targets', {
+                  _: 'Text targets',
                 })}
                 disabled={loading}
+                renderValue={(selected) =>
+                  (Array.isArray(selected) ? selected : [])
+                    .map((item) => {
+                      const option = TEXT_TARGET_OPTIONS.find(
+                        (target) => target.value === item,
+                      )
+                      return option?.label || item
+                    })
+                    .join(', ')
+                }
               >
-                {MODEL_OPTIONS.map((option) => (
+                {TEXT_TARGET_OPTIONS.map((option) => (
                   <MenuItem key={option.value} value={option.value}>
-                    {option.label}
+                    <Checkbox checked={textTargets.indexOf(option.value) > -1} />
+                    <ListItemText
+                      primary={option.label}
+                      secondary={option.description}
+                    />
                   </MenuItem>
                 ))}
               </Select>
               <FormHelperText>
-                {
-                  MODEL_OPTIONS.find((o) => o.value === selectedModel)
-                    ?.description
-                }
+                {translate('pages.explore.textGenerator.targetsHelper', {
+                  _: 'Choose one or both text spaces for recommendation.',
+                })}
               </FormHelperText>
             </FormControl>
 

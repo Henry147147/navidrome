@@ -22,7 +22,6 @@ var Set = wire.NewSet(
 
 // NewMilvusClient creates a Milvus client from configuration.
 func NewMilvusClient() (*milvus.Client, func(), error) {
-	ctx := context.Background()
 	cfg := milvus.Config{
 		URI:        conf.Server.Recommendations.Milvus.URI,
 		Timeout:    conf.Server.Recommendations.Milvus.Timeout,
@@ -45,13 +44,16 @@ func NewMilvusClient() (*milvus.Client, func(), error) {
 		cfg.MaxRetries = 3
 	}
 
-	client, err := milvus.NewClient(ctx, cfg)
+	initCtx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
+	defer cancel()
+
+	client, err := milvus.NewClient(initCtx, cfg)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Ensure collections exist
-	if err := client.EnsureCollections(ctx); err != nil {
+	if err := client.EnsureCollections(initCtx); err != nil {
 		client.Close()
 		return nil, nil, err
 	}

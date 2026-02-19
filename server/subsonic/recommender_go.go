@@ -26,9 +26,10 @@ func (c *goRecommendationClient) Recommend(ctx context.Context, mode string, pay
 	seeds := make([]engine.SeedTrack, len(payload.Seeds))
 	for i, s := range payload.Seeds {
 		seeds[i] = engine.SeedTrack{
-			TrackID:   s.TrackID,
-			Embedding: s.Embedding,
-			Weight:    s.Weight,
+			TrackID:    s.TrackID,
+			Embedding:  s.Embedding,
+			Embeddings: s.Embeddings,
+			Weight:     s.Weight,
 		}
 	}
 

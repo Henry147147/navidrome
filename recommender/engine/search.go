@@ -26,20 +26,8 @@ func (e *Engine) searchMultiModel(ctx context.Context, seedEmbeddings map[string
 
 		// Collect all seed vectors for this model
 		vectors := make([][]float64, 0, len(seeds))
-		weights := make([]float64, 0, len(seeds))
-		for seedID, emb := range seeds {
+		for _, emb := range seeds {
 			vectors = append(vectors, emb)
-			// Find weight for this seed
-			weight := 1.0
-			for _, seed := range req.Seeds {
-				if seed.TrackID == seedID || (len(seed.Embedding) > 0 && seedID[:7] == "direct_") {
-					if seed.Weight > 0 {
-						weight = seed.Weight
-					}
-					break
-				}
-			}
-			weights = append(weights, weight)
 		}
 
 		// Perform search

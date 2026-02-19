@@ -37,9 +37,10 @@ func DefaultConfig() Config {
 
 // SeedTrack represents a seed track for recommendations.
 type SeedTrack struct {
-	TrackID   string
-	Embedding []float64
-	Weight    float64
+	TrackID    string
+	Embedding  []float64
+	Embeddings map[string][]float64
+	Weight     float64
 }
 
 // RecommendationRequest holds parameters for recommendation.
@@ -217,11 +218,24 @@ func (e *Engine) resolveSeedEmbeddings(ctx context.Context, req RecommendationRe
 	}
 
 	for _, seed := range req.Seeds {
+		if len(seed.Embeddings) > 0 {
+			for model, emb := range seed.Embeddings {
+				if len(emb) == 0 {
+					continue
+				}
+				if _, ok := result[model]; !ok {
+					continue
+				}
+				result[model][fmt.Sprintf("direct_%s_%s", model, seed.TrackID)] = emb
+			}
+			continue
+		}
+
 		// If seed has direct embedding, use it
 		if len(seed.Embedding) > 0 {
 			// Direct embeddings are used for the primary model
 			primaryModel := req.Models[0]
-			result[primaryModel][fmt.Sprintf("direct_%s", seed.TrackID)] = seed.Embedding
+			result[primaryModel][fmt.Sprintf("direct_%s_%s", primaryModel, seed.TrackID)] = seed.Embedding
 			continue
 		}
 

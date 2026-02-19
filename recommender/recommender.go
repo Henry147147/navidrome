@@ -205,11 +205,12 @@ type RecommendationRequest struct {
 
 // RecommendationSeed represents a seed track for recommendations.
 type RecommendationSeed struct {
-	TrackID   string
-	Weight    float64
-	Source    string
-	PlayedAt  *time.Time
-	Embedding []float64 // Direct embedding for text queries
+	TrackID    string
+	Weight     float64
+	Source     string
+	PlayedAt   *time.Time
+	Embedding  []float64
+	Embeddings map[string][]float64 // Per-model direct embeddings for text/hybrid queries
 }
 
 // RecommendationItem represents a single recommended track.

@@ -31,34 +31,34 @@ func (c *Client) ensureCollection(ctx context.Context, name string, dim int) err
 		}
 
 		dimensionMismatch := ok && existingDim != dim
-		needsRecreate := dimensionMismatch || missingField
-		if needsRecreate {
-			if dimensionMismatch && missingField {
-				log.Warn(ctx, "Collection schema mismatch, recreating",
-					"collection", name,
-					"expected", dim,
-					"actual", existingDim,
-					"missingField", true,
-				)
-			} else if dimensionMismatch {
-				log.Warn(ctx, "Collection schema mismatch, recreating",
-					"collection", name,
-					"expected", dim,
-					"actual", existingDim,
-				)
-			} else {
-				log.Warn(ctx, "Collection schema mismatch, recreating",
-					"collection", name,
-					"missingField", true,
-				)
-			}
-			if err := c.DropCollection(ctx, name); err != nil {
-				return fmt.Errorf("drop collection %s: %w", name, err)
-			}
-		} else {
+		if !dimensionMismatch && !missingField {
 			log.Debug(ctx, "Collection already exists", "collection", name)
 			return nil
 		}
+
+		if dimensionMismatch && missingField {
+			log.Warn(ctx, "Collection schema mismatch",
+				"collection", name,
+				"expected", dim,
+				"actual", existingDim,
+				"missingField", true,
+			)
+			return fmt.Errorf("collection %s schema mismatch: expected dim=%d actual=%d and required field is missing", name, dim, existingDim)
+		}
+		if dimensionMismatch {
+			log.Warn(ctx, "Collection schema mismatch",
+				"collection", name,
+				"expected", dim,
+				"actual", existingDim,
+			)
+			return fmt.Errorf("collection %s schema mismatch: expected dim=%d actual=%d", name, dim, existingDim)
+		}
+
+		log.Warn(ctx, "Collection schema mismatch",
+			"collection", name,
+			"missingField", true,
+		)
+		return fmt.Errorf("collection %s schema mismatch: required field missing", name)
 	}
 
 	log.Info(ctx, "Creating collection", "collection", name, "dimension", dim)

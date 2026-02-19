@@ -12,11 +12,12 @@ type RecommendationClient interface {
 
 // RecommendationSeed represents a seed track for recommendations.
 type RecommendationSeed struct {
-	TrackID   string     `json:"track_id"`
-	Weight    float64    `json:"weight,omitempty"`
-	Source    string     `json:"source"`
-	PlayedAt  *time.Time `json:"played_at,omitempty"`
-	Embedding []float64  `json:"embedding,omitempty"` // Direct embedding for text queries
+	TrackID    string               `json:"track_id"`
+	Weight     float64              `json:"weight,omitempty"`
+	Source     string               `json:"source"`
+	PlayedAt   *time.Time           `json:"played_at,omitempty"`
+	Embedding  []float64            `json:"embedding,omitempty"`  // Direct embedding for single-model queries
+	Embeddings map[string][]float64 `json:"embeddings,omitempty"` // Per-model embeddings for multi-model text/hybrid queries
 }
 
 // RecommendationRequest contains all parameters for generating recommendations.

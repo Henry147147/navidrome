@@ -47,8 +47,9 @@ type recommendationRequestPayload struct {
 	NegativeEmbeddings    map[string][][]float64 `json:"negativeEmbeddings,omitempty"`
 
 	// Text embedding support (Idea 1)
-	Text  string `json:"text,omitempty"`
-	Model string `json:"model,omitempty"`
+	Text        string   `json:"text,omitempty"`
+	Model       string   `json:"model,omitempty"`       // legacy single-model selector
+	TextTargets []string `json:"textTargets,omitempty"` // explicit text targets (lyrics/description)
 }
 
 type recommendationTrack struct {
@@ -700,6 +701,7 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	for _, id := range combinedExclude {
 		blocked[id] = struct{}{}
 	}
+	models := normalizeRecommendationModels(payload.Models, []string{defaultRecommendationModelAudio})
 	req := subsonic.RecommendationRequest{
 		UserID:                user.ID,
 		UserName:              user.UserName,
@@ -712,13 +714,13 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 		DislikedArtistIDs:     dislikes.artistIDs(),
 		DislikeStrength:       settings.LowRatingPenalty,
 		ExcludePlaylistIDs:    playlistIDs,
-		Models:                payload.Models,
+		Models:                models,
 		MergeStrategy:         payload.MergeStrategy,
-		ModelPriorities:       payload.ModelPriorities,
+		ModelPriorities:       normalizeModelPriorities(payload.ModelPriorities),
 		MinModelAgreement:     payload.MinModelAgreement,
 		NegativePrompts:       payload.NegativePrompts,
 		NegativePromptPenalty: payload.NegativePromptPenalty,
-		NegativeEmbeddings:    payload.NegativeEmbeddings,
+		NegativeEmbeddings:    normalizeNegativeEmbeddings(payload.NegativeEmbeddings),
 	}
 	result, err := n.recommender.Recommend(ctx, mode, req)
 	if err != nil {
@@ -1562,38 +1564,56 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Set default model if not specified
-	if payload.Model == "" {
-		payload.Model = "qwen3"
+	textTargets := normalizeTextTargets(payload.TextTargets, payload.Model)
+
+	seedEmbeddings := make(map[string][]float64, len(textTargets))
+	seedModel := strings.TrimSpace(payload.Model)
+	if seedModel == "" {
+		seedModel = "stub"
+	}
+	for _, model := range textTargets {
+		seedEmbeddings[model] = deterministicTextEmbedding(payload.Text, seedModel, model, embeddingDimensionForModel(model))
 	}
 
-	// Get text embedding from Python service
-	textEmbedURL := textEmbedBaseURL() + "/embed_text"
-	embedding, err := n.getTextEmbedding(ctx, payload.Text, payload.Model, textEmbedURL)
-	if err != nil {
-		log.Error(ctx, "Failed to get text embedding", "error", err, "text", payload.Text)
-		http.Error(w, fmt.Sprintf("failed to get text embedding: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// Build seeds with text embedding
+	primaryModel := textTargets[0]
 	seeds := []subsonic.RecommendationSeed{
 		{
-			TrackID:   "_text_query_",
-			Weight:    1.0,
-			Source:    "text",
-			Embedding: embedding,
+			TrackID:    "_text_query_",
+			Weight:     1.0,
+			Source:     "text",
+			Embedding:  seedEmbeddings[primaryModel],
+			Embeddings: seedEmbeddings,
 		},
 	}
+
+	hybridSongIDs := uniqueNonEmptyStrings(payload.SongIDs)
+	if len(hybridSongIDs) > 0 {
+		hybridSeeds, err := n.buildCustomSeeds(ctx, user, hybridSongIDs)
+		if err != nil {
+			log.Error(ctx, "Failed to build hybrid song seeds", "error", err)
+			http.Error(w, "failed to build song seeds", http.StatusInternalServerError)
+			return
+		}
+		if len(hybridSeeds) == 0 {
+			writeError(w, http.StatusBadRequest, "Those songs aren't available right now. Try a different selection.")
+			return
+		}
+		mergedSeeds, _ := appendUniqueSeeds(seeds, hybridSeeds, seedSeenSet(seeds), 1)
+		seeds = mergedSeeds
+	}
+
+	seeds = n.addPositiveSeeds(ctx, user, seeds, payload.PositiveTrackIDs)
 
 	// Build recommendation request
 	limit := normalizeLimit(payload.Limit, settings.MixLength)
 	diversity := normalizeDiversity(payload.Diversity, settings.BaseDiversity, 0)
 
-	// Set default models if not specified
-	if len(payload.Models) == 0 {
-		payload.Models = []string{payload.Model}
+	defaultModels := append([]string{}, textTargets...)
+	if len(hybridSongIDs) > 0 {
+		defaultModels = append(defaultModels, defaultRecommendationModelAudio)
 	}
+	models := normalizeRecommendationModels(payload.Models, defaultModels)
+	models = ensureTextRecommendationModels(models, textTargets)
 
 	recReq := subsonic.RecommendationRequest{
 		UserID:                user.ID,
@@ -1602,14 +1622,14 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 		Mode:                  modeTextRecommendations,
 		Seeds:                 seeds,
 		Diversity:             diversity,
-		ExcludeTrackIDs:       payload.ExcludeTrackIDs,
-		Models:                payload.Models,
+		ExcludeTrackIDs:       combineExcludeTrackIDs(payload),
+		Models:                models,
 		MergeStrategy:         payload.MergeStrategy,
-		ModelPriorities:       payload.ModelPriorities,
+		ModelPriorities:       normalizeModelPriorities(payload.ModelPriorities),
 		MinModelAgreement:     payload.MinModelAgreement,
 		NegativePrompts:       payload.NegativePrompts,
 		NegativePromptPenalty: payload.NegativePromptPenalty,
-		NegativeEmbeddings:    payload.NegativeEmbeddings,
+		NegativeEmbeddings:    normalizeNegativeEmbeddings(payload.NegativeEmbeddings),
 	}
 
 	// Collect playlist exclusions
@@ -1619,6 +1639,7 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 			log.Error(ctx, "Failed to collect playlist exclusions", "error", err)
 		} else {
 			recReq.ExcludeTrackIDs = append(recReq.ExcludeTrackIDs, excludeIDs...)
+			recReq.ExcludeTrackIDs = uniqueNonEmptyStrings(recReq.ExcludeTrackIDs)
 		}
 	}
 
