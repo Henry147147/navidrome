@@ -23,9 +23,9 @@ else
 fi
 
 
-if [[ -f "$models_dir/qwen-embedder-4b.gguf" ]]; then
-  echo "qwen-embedder-4b.gguf exists, skipping"
+if [[ -f "$models_dir/qwen-embedder-8b.gguf" ]]; then
+  echo "qwen-embedder-8b.gguf exists, skipping"
 else
-  hf download Qwen/Qwen3-Embedding-4B-GGUF Qwen3-Embedding-4B-f16.gguf --local-dir "$models_dir"
-  mv "$models_dir"/Qwen3-Embedding-4B-*.gguf "$models_dir"/qwen-embedder-4b.gguf
+  hf download Qwen/Qwen3-Embedding-8B-GGUF Qwen3-Embedding-8B-Q4_K_M.gguf --local-dir "$models_dir"
+  mv "$models_dir"/Qwen3-Embedding-8B-*.gguf "$models_dir"/qwen-embedder-8b.gguf
 fi

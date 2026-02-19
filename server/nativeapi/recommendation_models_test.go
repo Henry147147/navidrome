@@ -23,6 +23,7 @@ func TestCanonicalModelsFromValue(t *testing.T) {
 		{name: "description canonical", value: "description", want: []string{engine.ModelDescription}},
 		{name: "desc alias", value: "desc", want: []string{engine.ModelDescription}},
 		{name: "qwen3 expands", value: "qwen3", want: []string{engine.ModelLyrics, engine.ModelDescription}},
+		{name: "qwen8b expands", value: "qwen8b", want: []string{engine.ModelLyrics, engine.ModelDescription}},
 		{name: "unknown ignored", value: "unknown", want: nil},
 	}
 

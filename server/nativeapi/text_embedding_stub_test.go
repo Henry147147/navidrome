@@ -26,12 +26,16 @@ func TestDeterministicTextEmbeddingVariesByInput(t *testing.T) {
 	lyricsVec := deterministicTextEmbedding("same prompt", "qwen3", "lyrics", 16)
 	descVec := deterministicTextEmbedding("same prompt", "qwen3", "description", 16)
 	otherPrompt := deterministicTextEmbedding("different prompt", "qwen3", "lyrics", 16)
+	otherModel := deterministicTextEmbedding("same prompt", "qwen8b", "lyrics", 16)
 
 	if vectorsEqual(lyricsVec, descVec) {
 		t.Fatalf("expected different targets to produce different embeddings")
 	}
 	if vectorsEqual(lyricsVec, otherPrompt) {
 		t.Fatalf("expected different text to produce different embeddings")
+	}
+	if vectorsEqual(lyricsVec, otherModel) {
+		t.Fatalf("expected different model names to produce different embeddings")
 	}
 }
 
@@ -44,6 +48,14 @@ func TestDeterministicTextEmbeddingNormalizesVector(t *testing.T) {
 	norm = math.Sqrt(norm)
 	if math.Abs(norm-1.0) > 1e-9 {
 		t.Fatalf("expected normalized vector norm ~= 1.0, got %.12f", norm)
+	}
+}
+
+func TestDeterministicTextEmbeddingNormalizesInputKeys(t *testing.T) {
+	a := deterministicTextEmbedding(" same prompt ", " qwen8b ", " LYRICS ", 16)
+	b := deterministicTextEmbedding("same prompt", "qwen8b", "lyrics", 16)
+	if !vectorsEqual(a, b) {
+		t.Fatalf("expected normalized input keys to map to same embedding")
 	}
 }
 

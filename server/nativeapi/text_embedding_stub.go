@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	defaultTextEmbeddingDim = 2560
+	defaultTextEmbeddingDim = 4096
 )
 
 func embeddingDimensionForModel(model string) int {
@@ -37,7 +37,11 @@ func deterministicTextEmbedding(text string, model string, target string, dim in
 		dim = defaultTextEmbeddingDim
 	}
 
-	seed := hashToSeed(strings.TrimSpace(text), strings.ToLower(strings.TrimSpace(model)), strings.ToLower(strings.TrimSpace(target)))
+	seed := hashToSeed(
+		strings.TrimSpace(text),
+		strings.ToLower(strings.TrimSpace(model)),
+		strings.ToLower(strings.TrimSpace(target)),
+	)
 	rng := rand.New(rand.NewSource(seed))
 	vector := make([]float64, dim)
 

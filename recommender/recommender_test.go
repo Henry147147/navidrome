@@ -381,8 +381,8 @@ func TestMilvusConfigStruct(t *testing.T) {
 		Timeout:    30 * time.Second,
 		MaxRetries: 3,
 		Dimensions: MilvusDimensions{
-			Lyrics:      2560,
-			Description: 2560,
+			Lyrics:      4096,
+			Description: 4096,
 			Flamingo:    3584,
 		},
 	}
@@ -390,8 +390,8 @@ func TestMilvusConfigStruct(t *testing.T) {
 	assert.Equal(t, "http://localhost:19530", cfg.URI)
 	assert.Equal(t, 30*time.Second, cfg.Timeout)
 	assert.Equal(t, 3, cfg.MaxRetries)
-	assert.Equal(t, 2560, cfg.Dimensions.Lyrics)
-	assert.Equal(t, 2560, cfg.Dimensions.Description)
+	assert.Equal(t, 4096, cfg.Dimensions.Lyrics)
+	assert.Equal(t, 4096, cfg.Dimensions.Description)
 	assert.Equal(t, 3584, cfg.Dimensions.Flamingo)
 }
 

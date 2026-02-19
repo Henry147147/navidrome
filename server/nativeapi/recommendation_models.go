@@ -18,7 +18,7 @@ func canonicalModelsFromValue(value string) []string {
 		return []string{engine.ModelLyrics}
 	case engine.ModelDescription, "desc":
 		return []string{engine.ModelDescription}
-	case "qwen3":
+	case "qwen3", "qwen8b", "qwen-8b":
 		return []string{engine.ModelLyrics, engine.ModelDescription}
 	default:
 		return nil

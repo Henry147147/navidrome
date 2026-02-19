@@ -402,7 +402,7 @@ func applyRecommendationDefaults() {
 }
 
 func alignRecommendationBaseURLs() {
-	// Keep text/batch endpoints aligned with unified Python service unless explicitly overridden
+	// Keep text/batch endpoints aligned with the recommendation base endpoint unless overridden.
 	if strings.TrimSpace(Server.Recommendations.TextBaseURL) == "" ||
 		strings.TrimSpace(Server.Recommendations.TextBaseURL) == "http://127.0.0.1:9003" {
 		Server.Recommendations.TextBaseURL = Server.Recommendations.BaseURL
@@ -688,8 +688,8 @@ func setViperDefaults() {
 	viper.SetDefault("recommendations.milvus.uri", "http://localhost:19530")
 	viper.SetDefault("recommendations.milvus.timeout", 30*time.Second)
 	viper.SetDefault("recommendations.milvus.maxretries", 3)
-	viper.SetDefault("recommendations.milvus.dimensions.lyrics", 2560)
-	viper.SetDefault("recommendations.milvus.dimensions.description", 2560)
+	viper.SetDefault("recommendations.milvus.dimensions.lyrics", 4096)
+	viper.SetDefault("recommendations.milvus.dimensions.description", 4096)
 	viper.SetDefault("recommendations.milvus.dimensions.flamingo", 3584)
 	viper.SetDefault("autotranscodedownload", false)
 	viper.SetDefault("defaultdownsamplingformat", consts.DefaultDownsamplingFormat)

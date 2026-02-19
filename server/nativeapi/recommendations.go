@@ -73,6 +73,7 @@ const (
 	modeAllRecommendations       = "all"
 	modeDiscoveryRecommendations = "discovery"
 	modeTextRecommendations      = "text"
+	defaultTextEmbedderModel     = "qwen8b"
 
 	positiveSeedBoost = 1.12
 
@@ -1566,13 +1567,38 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 
 	textTargets := normalizeTextTargets(payload.TextTargets, payload.Model)
 
-	seedEmbeddings := make(map[string][]float64, len(textTargets))
-	seedModel := strings.TrimSpace(payload.Model)
-	if seedModel == "" {
-		seedModel = "stub"
+	textModel := strings.TrimSpace(payload.Model)
+	if textModel == "" {
+		textModel = defaultTextEmbedderModel
 	}
+	queryEmbedding, err := n.getTextEmbedding(ctx, payload.Text, textModel)
+	if err != nil {
+		log.Error(ctx, "Failed to get text embedding", "error", err, "model", textModel)
+		http.Error(w, fmt.Sprintf("failed to get text embedding: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if len(queryEmbedding) == 0 {
+		http.Error(w, "failed to get text embedding: empty embedding returned", http.StatusInternalServerError)
+		return
+	}
+
+	seedEmbeddings := make(map[string][]float64, len(textTargets))
 	for _, model := range textTargets {
-		seedEmbeddings[model] = deterministicTextEmbedding(payload.Text, seedModel, model, embeddingDimensionForModel(model))
+		expectedDim := embeddingDimensionForModel(model)
+		if expectedDim > 0 && len(queryEmbedding) != expectedDim {
+			http.Error(
+				w,
+				fmt.Sprintf(
+					"failed to get text embedding: dimension mismatch for %s (expected %d got %d)",
+					model,
+					expectedDim,
+					len(queryEmbedding),
+				),
+				http.StatusInternalServerError,
+			)
+			return
+		}
+		seedEmbeddings[model] = append([]float64(nil), queryEmbedding...)
 	}
 
 	primaryModel := textTargets[0]
@@ -1765,47 +1791,6 @@ func (n *Router) handleBatchCancel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
-}
-
-func (n *Router) getTextEmbedding(ctx context.Context, text string, model string, embedURL string) ([]float64, error) {
-	reqBody := map[string]string{
-		"text":  text,
-		"model": model,
-	}
-
-	reqData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", embedURL, strings.NewReader(string(reqData)))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req) // #nosec G704 -- destination URL comes from trusted server config
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("text embedding service returned status %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Embedding []float64 `json:"embedding"`
-		Model     string    `json:"model"`
-		Dimension int       `json:"dimension"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-
-	return result.Embedding, nil
 }
 
 func (n *Router) proxyToPython(ctx context.Context, method string, url string, payload interface{}) (map[string]interface{}, error) {
