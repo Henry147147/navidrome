@@ -14,9 +14,9 @@ func TestCollectionConstants(t *testing.T) {
 }
 
 func TestDimensionConstants(t *testing.T) {
-	assert.Equal(t, 4096, DimLyrics)
-	assert.Equal(t, 4096, DimDescription)
-	assert.Equal(t, 3584, DimFlamingo)
+	assert.Equal(t, 2560, DimLyrics)
+	assert.Equal(t, 2560, DimDescription)
+	assert.Equal(t, 28672, DimFlamingo)
 }
 
 func TestDefaultConfig(t *testing.T) {

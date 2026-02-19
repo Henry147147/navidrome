@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	defaultTextEmbeddingDim = 4096
+	defaultTextEmbeddingDim = 2560
 )
 
 func embeddingDimensionForModel(model string) int {

@@ -99,7 +99,7 @@ func TestQwen8BEmbeddingInferenceOnGPU(t *testing.T) {
 	})
 
 	var router Router
-	vec, err := router.getTextEmbedding(context.Background(), "melancholic synthwave with dreamy vocals", "qwen8b")
+	vec, err := router.getTextEmbedding(context.Background(), "melancholic synthwave with dreamy vocals", "qwen8b", 4096)
 	if err != nil {
 		t.Fatalf("failed to embed text: %v\nlogs:\n%s", err, logs.String())
 	}

@@ -86,7 +86,7 @@ func DefaultConfig() Config {
 			Dimensions: MilvusDimensions{
 				Lyrics:      2560,
 				Description: 2560,
-				Flamingo:    3584,
+				Flamingo:    28672,
 			},
 		},
 		Models: ModelsConfig{

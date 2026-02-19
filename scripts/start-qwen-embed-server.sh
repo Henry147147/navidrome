@@ -14,7 +14,7 @@ if [[ ! -x "$llama_server_bin" ]]; then
 fi
 
 host="${QWEN_EMBED_HOST:-127.0.0.1}"
-port="${QWEN_EMBED_PORT:-9003}"
+port="${QWEN_EMBED_PORT:-9002}"
 pooling="${QWEN_POOLING:-last}"
 gpu_layers="${QWEN_GPU_LAYERS:-all}"
 ctx_size="${QWEN_CTX_SIZE:-8192}"

@@ -219,15 +219,15 @@ func TestTextEmbedRequest(t *testing.T) {
 
 func TestTextEmbedResponse(t *testing.T) {
 	resp := TextEmbedResponse{
-		Embedding: make([]float64, 4096),
+		Embedding: make([]float64, 2560),
 		ModelID:   "lyrics",
-		Dimension: 4096,
+		Dimension: 2560,
 		Error:     "",
 	}
 
-	assert.Len(t, resp.Embedding, 4096)
+	assert.Len(t, resp.Embedding, 2560)
 	assert.Equal(t, "lyrics", resp.ModelID)
-	assert.Equal(t, 4096, resp.Dimension)
+	assert.Equal(t, 2560, resp.Dimension)
 	assert.Empty(t, resp.Error)
 }
 
@@ -381,18 +381,18 @@ func TestMilvusConfigStruct(t *testing.T) {
 		Timeout:    30 * time.Second,
 		MaxRetries: 3,
 		Dimensions: MilvusDimensions{
-			Lyrics:      4096,
-			Description: 4096,
-			Flamingo:    3584,
+			Lyrics:      2560,
+			Description: 2560,
+			Flamingo:    28672,
 		},
 	}
 
 	assert.Equal(t, "http://localhost:19530", cfg.URI)
 	assert.Equal(t, 30*time.Second, cfg.Timeout)
 	assert.Equal(t, 3, cfg.MaxRetries)
-	assert.Equal(t, 4096, cfg.Dimensions.Lyrics)
-	assert.Equal(t, 4096, cfg.Dimensions.Description)
-	assert.Equal(t, 3584, cfg.Dimensions.Flamingo)
+	assert.Equal(t, 2560, cfg.Dimensions.Lyrics)
+	assert.Equal(t, 2560, cfg.Dimensions.Description)
+	assert.Equal(t, 28672, cfg.Dimensions.Flamingo)
 }
 
 func TestEngineConfigStruct(t *testing.T) {

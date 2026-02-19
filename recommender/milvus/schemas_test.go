@@ -55,7 +55,7 @@ func TestCollectionEmbeddingDim(t *testing.T) {
 					{
 						Name: "embedding",
 						TypeParams: map[string]string{
-							entity.TypeParamDim: "4096",
+							entity.TypeParamDim: "2560",
 						},
 					},
 				},
@@ -63,8 +63,8 @@ func TestCollectionEmbeddingDim(t *testing.T) {
 		}
 
 		dim, ok := collectionEmbeddingDim(collection)
-		if !ok || dim != 4096 {
-			t.Fatalf("expected dim=4096, ok=true, got dim=%d ok=%v", dim, ok)
+		if !ok || dim != 2560 {
+			t.Fatalf("expected dim=2560, ok=true, got dim=%d ok=%v", dim, ok)
 		}
 	})
 
@@ -143,39 +143,39 @@ func TestSchemaMismatchError(t *testing.T) {
 		{
 			name:         "no mismatch",
 			dimKnown:     true,
-			expectedDim:  4096,
-			existingDim:  4096,
+			expectedDim:  2560,
+			existingDim:  2560,
 			missingField: false,
 			wantErr:      "",
 		},
 		{
 			name:         "dimension mismatch only",
 			dimKnown:     true,
-			expectedDim:  4096,
+			expectedDim:  2560,
 			existingDim:  1024,
 			missingField: false,
-			wantErr:      "expected dim=4096 actual=1024",
+			wantErr:      "expected dim=2560 actual=1024",
 		},
 		{
 			name:         "missing field only",
 			dimKnown:     true,
-			expectedDim:  4096,
-			existingDim:  4096,
+			expectedDim:  2560,
+			existingDim:  2560,
 			missingField: true,
 			wantErr:      "required field missing",
 		},
 		{
 			name:         "dimension mismatch and missing field",
 			dimKnown:     true,
-			expectedDim:  4096,
+			expectedDim:  2560,
 			existingDim:  1024,
 			missingField: true,
-			wantErr:      "expected dim=4096 actual=1024 and required field is missing",
+			wantErr:      "expected dim=2560 actual=1024 and required field is missing",
 		},
 		{
 			name:         "unknown dimension with missing field",
 			dimKnown:     false,
-			expectedDim:  4096,
+			expectedDim:  2560,
 			existingDim:  0,
 			missingField: true,
 			wantErr:      "required field missing",
@@ -183,7 +183,7 @@ func TestSchemaMismatchError(t *testing.T) {
 		{
 			name:         "unknown dimension without missing field treated as match",
 			dimKnown:     false,
-			expectedDim:  4096,
+			expectedDim:  2560,
 			existingDim:  0,
 			missingField: false,
 			wantErr:      "",

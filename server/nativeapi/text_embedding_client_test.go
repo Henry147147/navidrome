@@ -29,6 +29,9 @@ func TestGetTextEmbeddingOpenAIResponse(t *testing.T) {
 		if got := reqBody["model"]; got != "qwen8b" {
 			t.Fatalf("expected model qwen8b, got %#v", got)
 		}
+		if got := reqBody["dimensions"]; got != float64(3) {
+			t.Fatalf("expected requested dimensions=3, got %#v", got)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]any{
 				{
@@ -47,7 +50,7 @@ func TestGetTextEmbeddingOpenAIResponse(t *testing.T) {
 	t.Cleanup(func() { conf.Server.Recommendations.TextBaseURL = prev })
 
 	var router Router
-	vec, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b")
+	vec, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b", 3)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -73,7 +76,7 @@ func TestGetTextEmbeddingLegacyFallbackResponse(t *testing.T) {
 	t.Cleanup(func() { conf.Server.Recommendations.TextBaseURL = prev })
 
 	var router Router
-	vec, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b")
+	vec, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b", 0)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -99,7 +102,7 @@ func TestGetTextEmbeddingErrorResponse(t *testing.T) {
 	t.Cleanup(func() { conf.Server.Recommendations.TextBaseURL = prev })
 
 	var router Router
-	_, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b")
+	_, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b", 0)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -108,7 +111,38 @@ func TestGetTextEmbeddingErrorResponse(t *testing.T) {
 	}
 }
 
-func TestGetTextEmbeddingDimensionMismatchAtCallSite(t *testing.T) {
+func TestGetTextEmbeddingTruncatesToDesiredDimension(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{
+					"embedding": []float64{0.1, 0.2, 0.3, 0.4},
+					"index":     0,
+					"object":    "embedding",
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	prev := conf.Server.Recommendations.TextBaseURL
+	conf.Server.Recommendations.TextBaseURL = srv.URL
+	t.Cleanup(func() { conf.Server.Recommendations.TextBaseURL = prev })
+
+	var router Router
+	vec, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b", 2)
+	if err != nil {
+		t.Fatalf("expected embedding call to succeed, got %v", err)
+	}
+	if len(vec) != 2 {
+		t.Fatalf("expected mock embedding length 2, got %d", len(vec))
+	}
+	if vec[0] != 0.1 || vec[1] != 0.2 {
+		t.Fatalf("unexpected truncated vector: %#v", vec)
+	}
+}
+
+func TestGetTextEmbeddingErrorsWhenReturnedDimensionTooSmall(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]any{
@@ -124,23 +158,15 @@ func TestGetTextEmbeddingDimensionMismatchAtCallSite(t *testing.T) {
 
 	prev := conf.Server.Recommendations.TextBaseURL
 	conf.Server.Recommendations.TextBaseURL = srv.URL
-	prevLyricsDim := conf.Server.Recommendations.Milvus.Dimensions.Lyrics
-	conf.Server.Recommendations.Milvus.Dimensions.Lyrics = 16
-	t.Cleanup(func() {
-		conf.Server.Recommendations.TextBaseURL = prev
-		conf.Server.Recommendations.Milvus.Dimensions.Lyrics = prevLyricsDim
-	})
+	t.Cleanup(func() { conf.Server.Recommendations.TextBaseURL = prev })
 
 	var router Router
-	vec, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b")
-	if err != nil {
-		t.Fatalf("expected embedding call to succeed, got %v", err)
+	_, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b", 2)
+	if err == nil {
+		t.Fatalf("expected dimension error")
 	}
-	if len(vec) != 1 {
-		t.Fatalf("expected mock embedding length 1, got %d", len(vec))
-	}
-	if want := 16; embeddingDimensionForModel("lyrics") != want {
-		t.Fatalf("expected dimension %d, got %d", want, embeddingDimensionForModel("lyrics"))
+	if !strings.Contains(err.Error(), "too small") {
+		t.Fatalf("expected dimension size error, got %v", err)
 	}
 }
 
@@ -173,7 +199,7 @@ func TestGetTextEmbeddingWithoutConfiguredURL(t *testing.T) {
 	})
 
 	var router Router
-	_, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b")
+	_, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b", 0)
 	if err == nil {
 		t.Fatalf("expected error when embedding URL is not configured")
 	}
@@ -194,7 +220,7 @@ func TestGetTextEmbeddingPropagatesNonJSONErrorBody(t *testing.T) {
 	t.Cleanup(func() { conf.Server.Recommendations.TextBaseURL = prev })
 
 	var router Router
-	_, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b")
+	_, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b", 0)
 	if err == nil {
 		t.Fatalf("expected error")
 	}

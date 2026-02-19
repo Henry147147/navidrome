@@ -1571,7 +1571,28 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 	if textModel == "" {
 		textModel = defaultTextEmbedderModel
 	}
-	queryEmbedding, err := n.getTextEmbedding(ctx, payload.Text, textModel)
+
+	desiredDim := 0
+	for _, model := range textTargets {
+		dim := embeddingDimensionForModel(model)
+		if dim <= 0 {
+			continue
+		}
+		if desiredDim == 0 {
+			desiredDim = dim
+			continue
+		}
+		if desiredDim != dim {
+			http.Error(
+				w,
+				fmt.Sprintf("failed to get text embedding: text target dimensions mismatch (%d vs %d)", desiredDim, dim),
+				http.StatusInternalServerError,
+			)
+			return
+		}
+	}
+
+	queryEmbedding, err := n.getTextEmbedding(ctx, payload.Text, textModel, desiredDim)
 	if err != nil {
 		log.Error(ctx, "Failed to get text embedding", "error", err, "model", textModel)
 		http.Error(w, fmt.Sprintf("failed to get text embedding: %v", err), http.StatusInternalServerError)
@@ -1584,20 +1605,6 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 
 	seedEmbeddings := make(map[string][]float64, len(textTargets))
 	for _, model := range textTargets {
-		expectedDim := embeddingDimensionForModel(model)
-		if expectedDim > 0 && len(queryEmbedding) != expectedDim {
-			http.Error(
-				w,
-				fmt.Sprintf(
-					"failed to get text embedding: dimension mismatch for %s (expected %d got %d)",
-					model,
-					expectedDim,
-					len(queryEmbedding),
-				),
-				http.StatusInternalServerError,
-			)
-			return
-		}
 		seedEmbeddings[model] = append([]float64(nil), queryEmbedding...)
 	}
 

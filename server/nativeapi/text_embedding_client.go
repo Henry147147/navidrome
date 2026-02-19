@@ -17,6 +17,7 @@ type openAIEmbeddingRequest struct {
 	Input          string `json:"input"`
 	Model          string `json:"model,omitempty"`
 	EncodingFormat string `json:"encoding_format,omitempty"`
+	Dimensions     int    `json:"dimensions,omitempty"`
 }
 
 type openAIEmbeddingResponse struct {
@@ -42,7 +43,7 @@ func textEmbeddingHTTPTimeout() time.Duration {
 }
 
 // getTextEmbedding fetches a query embedding from a llama.cpp-compatible OpenAI embeddings endpoint.
-func (n *Router) getTextEmbedding(ctx context.Context, text string, model string) ([]float64, error) {
+func (n *Router) getTextEmbedding(ctx context.Context, text string, model string, desiredDim int) ([]float64, error) {
 	baseURL := strings.TrimRight(textEmbedBaseURL(), "/")
 	if baseURL == "" {
 		return nil, fmt.Errorf("text embedding base URL is not configured")
@@ -52,6 +53,9 @@ func (n *Router) getTextEmbedding(ctx context.Context, text string, model string
 		Input:          text,
 		Model:          model,
 		EncodingFormat: "float",
+	}
+	if desiredDim > 0 {
+		payload.Dimensions = desiredDim
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -90,7 +94,7 @@ func (n *Router) getTextEmbedding(ctx context.Context, text string, model string
 			return nil, fmt.Errorf("text embedding service returned error: %s", parsed.Error.Message)
 		}
 		if len(parsed.Data) > 0 && len(parsed.Data[0].Embedding) > 0 {
-			return parsed.Data[0].Embedding, nil
+			return normalizeEmbeddingDimension(parsed.Data[0].Embedding, desiredDim)
 		}
 	}
 
@@ -100,8 +104,23 @@ func (n *Router) getTextEmbedding(ctx context.Context, text string, model string
 		Embedding []float64 `json:"embedding"`
 	}
 	if err := json.Unmarshal(data, &legacy); err == nil && len(legacy.Embedding) > 0 {
-		return legacy.Embedding, nil
+		return normalizeEmbeddingDimension(legacy.Embedding, desiredDim)
 	}
 
 	return nil, fmt.Errorf("text embedding response did not contain an embedding")
+}
+
+func normalizeEmbeddingDimension(embedding []float64, desiredDim int) ([]float64, error) {
+	if desiredDim <= 0 {
+		return embedding, nil
+	}
+	if len(embedding) == desiredDim {
+		return embedding, nil
+	}
+	if len(embedding) > desiredDim {
+		// Qwen3 embedding models support MRL-style subdimensions; truncation keeps compatibility
+		// with existing smaller-dimension collections.
+		return append([]float64(nil), embedding[:desiredDim]...), nil
+	}
+	return nil, fmt.Errorf("embedding dimension too small: expected %d got %d", desiredDim, len(embedding))
 }

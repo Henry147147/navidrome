@@ -24,8 +24,8 @@ func TestNewRecommendationClientFallsBackWhenMilvusInitFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
-	if len(resp.Warnings) == 0 || !strings.Contains(resp.Warnings[0], "disabled") {
-		t.Fatalf("expected noop warning, got %#v", resp.Warnings)
+	if len(resp.Warnings) == 0 || !strings.Contains(resp.Warnings[0], "unavailable") {
+		t.Fatalf("expected unavailable warning, got %#v", resp.Warnings)
 	}
 }
 
@@ -46,8 +46,8 @@ func TestNewRecommendationClientFallsBackWhenEngineIsNil(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
-	if len(resp.Warnings) == 0 || !strings.Contains(resp.Warnings[0], "disabled") {
-		t.Fatalf("expected noop warning, got %#v", resp.Warnings)
+	if len(resp.Warnings) == 0 || !strings.Contains(resp.Warnings[0], "unavailable") {
+		t.Fatalf("expected unavailable warning, got %#v", resp.Warnings)
 	}
 }
 
@@ -70,6 +70,49 @@ func TestNewRecommendationClientUsesGoEngineWhenDependenciesExist(t *testing.T) 
 	}
 	if len(resp.Warnings) != 1 || resp.Warnings[0] != "No seeds provided" {
 		t.Fatalf("expected go engine warning, got %#v", resp.Warnings)
+	}
+}
+
+func TestRetryingRecommendationClientRecoversAfterDependencyComesOnline(t *testing.T) {
+	restoreRecommendationFactories(t)
+	attempts := 0
+
+	newMilvusClientForRecommendations = func() (*milvus.Client, func(), error) {
+		attempts++
+		if attempts == 1 {
+			return nil, nil, errors.New("milvus unavailable")
+		}
+		return nil, func() {}, nil
+	}
+	newResolverForRecommendations = func(_ model.DataStore) *resolver.Resolver {
+		return nil
+	}
+	newEngineForRecommendations = func(_ *milvus.Client, _ *resolver.Resolver) *engine.Engine {
+		return engine.New(engine.DefaultConfig(), nil, nil)
+	}
+
+	client := newRecommendationClient(nil)
+
+	first, err := client.Recommend(context.Background(), "test", subsonic.RecommendationRequest{})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(first.Warnings) == 0 || !strings.Contains(first.Warnings[0], "unavailable") {
+		t.Fatalf("expected unavailable warning on first attempt, got %#v", first.Warnings)
+	}
+
+	retrying, ok := client.(*retryingRecommendationClient)
+	if !ok {
+		t.Fatalf("expected retrying client, got %T", client)
+	}
+	retrying.retryAfter = 0
+
+	second, err := client.Recommend(context.Background(), "test", subsonic.RecommendationRequest{})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(second.Warnings) != 1 || second.Warnings[0] != "No seeds provided" {
+		t.Fatalf("expected Go engine response after recovery, got %#v", second.Warnings)
 	}
 }
 
