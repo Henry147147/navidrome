@@ -285,6 +285,10 @@ func TestRecommendationSeed(t *testing.T) {
 		Source:    "history",
 		PlayedAt:  &now,
 		Embedding: []float64{0.1, 0.2, 0.3},
+		Embeddings: map[string][]float64{
+			"lyrics":      {0.4, 0.5},
+			"description": {0.6, 0.7},
+		},
 	}
 
 	assert.Equal(t, "track-uuid", seed.TrackID)
@@ -292,6 +296,7 @@ func TestRecommendationSeed(t *testing.T) {
 	assert.Equal(t, "history", seed.Source)
 	assert.NotNil(t, seed.PlayedAt)
 	assert.Len(t, seed.Embedding, 3)
+	assert.Len(t, seed.Embeddings, 2)
 }
 
 func TestRecommendationItem(t *testing.T) {

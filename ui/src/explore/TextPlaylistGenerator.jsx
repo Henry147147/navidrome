@@ -148,7 +148,9 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
         text: textQuery,
         textTargets,
         limit,
-        negativePrompts: negativePrompts.filter((p) => p.trim() !== ''),
+        negativePrompts: negativePrompts
+          .map((p) => p.trim())
+          .filter((p) => p !== ''),
         negativePromptPenalty: negativePenalty,
       }
 

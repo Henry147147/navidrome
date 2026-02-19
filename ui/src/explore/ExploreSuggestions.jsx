@@ -47,6 +47,10 @@ import { BRAND_NAME } from '../consts'
 import { formatDuration } from '../utils'
 import ExploreSettingsPanel from './ExploreSettingsPanel'
 import TextPlaylistGenerator from './TextPlaylistGenerator'
+import {
+  buildTextRequestModels,
+  clampMinAgreement,
+} from './recommendationModelUtils'
 
 const useStyles = makeStyles((theme) => ({
   page: {
@@ -239,50 +243,6 @@ const MERGE_STRATEGY_OPTIONS = [
     label: 'Priority',
   },
 ]
-
-const isTextModel = (model) => model === 'lyrics' || model === 'description'
-
-const uniqueStrings = (values) => {
-  const seen = new Set()
-  return (values || []).filter((value) => {
-    if (!value || seen.has(value)) {
-      return false
-    }
-    seen.add(value)
-    return true
-  })
-}
-
-const clampMinAgreement = (value, modelCount) => {
-  const count = Math.max(modelCount, 1)
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    return 1
-  }
-  if (parsed > count) {
-    return count
-  }
-  return parsed
-}
-
-const buildTextRequestModels = (selectedModels, textTargets, hasSongSeeds) => {
-  const baseModels =
-    Array.isArray(selectedModels) && selectedModels.length > 0
-      ? selectedModels
-      : ['flamingo']
-  const normalizedTextTargets =
-    Array.isArray(textTargets) && textTargets.length > 0
-      ? textTargets
-      : ['lyrics', 'description']
-
-  if (hasSongSeeds) {
-    return uniqueStrings([...baseModels, ...normalizedTextTargets])
-  }
-
-  const textOnlyModels = baseModels.filter(isTextModel)
-  const merged = uniqueStrings([...textOnlyModels, ...normalizedTextTargets])
-  return merged.length > 0 ? merged : ['lyrics', 'description']
-}
 
 const RecommendationPreview = ({
   result,

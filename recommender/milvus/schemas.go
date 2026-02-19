@@ -21,21 +21,16 @@ func (c *Client) ensureCollection(ctx context.Context, name string, dim int) err
 		if err != nil {
 			return fmt.Errorf("describe collection %s: %w", name, err)
 		}
-		existingDim, ok := collectionEmbeddingDim(collection)
-		missingField := false
-		if name == CollectionDescription {
-			missingField = !collectionHasField(collection, "description")
-		}
-		if name == CollectionLyrics {
-			missingField = !collectionHasField(collection, "lyrics")
-		}
-
-		dimensionMismatch := ok && existingDim != dim
-		if !dimensionMismatch && !missingField {
+		existingDim, dimKnown := collectionEmbeddingDim(collection)
+		requiredField := requiredCollectionTextField(name)
+		missingField := requiredField != "" && !collectionHasField(collection, requiredField)
+		schemaErr := schemaMismatchError(name, dim, existingDim, dimKnown, missingField)
+		if schemaErr == nil {
 			log.Debug(ctx, "Collection already exists", "collection", name)
 			return nil
 		}
 
+		dimensionMismatch := dimKnown && existingDim != dim
 		if dimensionMismatch && missingField {
 			log.Warn(ctx, "Collection schema mismatch",
 				"collection", name,
@@ -43,7 +38,7 @@ func (c *Client) ensureCollection(ctx context.Context, name string, dim int) err
 				"actual", existingDim,
 				"missingField", true,
 			)
-			return fmt.Errorf("collection %s schema mismatch: expected dim=%d actual=%d and required field is missing", name, dim, existingDim)
+			return schemaErr
 		}
 		if dimensionMismatch {
 			log.Warn(ctx, "Collection schema mismatch",
@@ -51,14 +46,14 @@ func (c *Client) ensureCollection(ctx context.Context, name string, dim int) err
 				"expected", dim,
 				"actual", existingDim,
 			)
-			return fmt.Errorf("collection %s schema mismatch: expected dim=%d actual=%d", name, dim, existingDim)
+			return schemaErr
 		}
 
 		log.Warn(ctx, "Collection schema mismatch",
 			"collection", name,
 			"missingField", true,
 		)
-		return fmt.Errorf("collection %s schema mismatch: required field missing", name)
+		return schemaErr
 	}
 
 	log.Info(ctx, "Creating collection", "collection", name, "dimension", dim)
@@ -74,6 +69,31 @@ func (c *Client) ensureCollection(ctx context.Context, name string, dim int) err
 	}
 
 	return nil
+}
+
+func requiredCollectionTextField(collectionName string) string {
+	switch collectionName {
+	case CollectionLyrics:
+		return "lyrics"
+	case CollectionDescription:
+		return "description"
+	default:
+		return ""
+	}
+}
+
+func schemaMismatchError(collectionName string, expectedDim int, existingDim int, dimKnown bool, missingField bool) error {
+	dimensionMismatch := dimKnown && existingDim != expectedDim
+	if !dimensionMismatch && !missingField {
+		return nil
+	}
+	if dimensionMismatch && missingField {
+		return fmt.Errorf("collection %s schema mismatch: expected dim=%d actual=%d and required field is missing", collectionName, expectedDim, existingDim)
+	}
+	if dimensionMismatch {
+		return fmt.Errorf("collection %s schema mismatch: expected dim=%d actual=%d", collectionName, expectedDim, existingDim)
+	}
+	return fmt.Errorf("collection %s schema mismatch: required field missing", collectionName)
 }
 
 func collectionEmbeddingDim(collection *entity.Collection) (int, bool) {

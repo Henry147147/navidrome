@@ -118,7 +118,36 @@ describe('TextPlaylistGenerator', () => {
       await waitFor(() => {
         expect(mockDataProvider.getTextRecommendations).toHaveBeenCalled()
       })
+
+      expect(mockDataProvider.getTextRecommendations).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'test music query',
+          textTargets: ['lyrics', 'description'],
+          limit: 25,
+          negativePrompts: [],
+          negativePromptPenalty: 0.85,
+        }),
+      )
     }
+  })
+
+  it('does not call API when query text is empty', async () => {
+    createTestUtils()
+
+    const buttons = screen.getAllByRole('button')
+    const generateButton = buttons.find(
+      (btn) =>
+        btn.textContent.includes('Generate') ||
+        btn.textContent.includes('generate'),
+    )
+
+    if (generateButton) {
+      fireEvent.click(generateButton)
+    }
+
+    await waitFor(() => {
+      expect(mockDataProvider.getTextRecommendations).not.toHaveBeenCalled()
+    })
   })
 
   it('displays loading state during generation', async () => {
@@ -199,5 +228,98 @@ describe('TextPlaylistGenerator', () => {
         expect(mainInput.value).toBe('')
       })
     }
+  })
+
+  it('filters blank negative prompts from payload', async () => {
+    mockDataProvider.getTextRecommendations.mockResolvedValue({
+      data: {
+        tracks: [
+          { id: '1', title: 'Song 1', artist: 'Artist 1', album: 'Album 1' },
+        ],
+        name: 'Generated',
+        mode: 'text',
+      },
+    })
+
+    createTestUtils()
+
+    const textInputs = screen.getAllByRole('textbox')
+    fireEvent.change(textInputs[0], { target: { value: 'test query' } })
+
+    const buttons = screen.getAllByRole('button')
+    const addButton = buttons.find(
+      (btn) =>
+        btn.textContent.includes('Add') || btn.textContent.includes('add'),
+    )
+    if (addButton) {
+      fireEvent.click(addButton)
+    }
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('textbox').length).toBeGreaterThan(
+        textInputs.length,
+      )
+    })
+
+    const promptInputs = screen.getAllByRole('textbox')
+    // main query + 1 negative prompt
+    fireEvent.change(promptInputs[1], { target: { value: '  avoid metal  ' } })
+
+    const generateButton = screen
+      .getAllByRole('button')
+      .find(
+        (btn) =>
+          btn.textContent.includes('Generate') ||
+          btn.textContent.includes('generate'),
+      )
+    if (generateButton) {
+      fireEvent.click(generateButton)
+    }
+
+    await waitFor(() => {
+      expect(mockDataProvider.getTextRecommendations).toHaveBeenCalled()
+    })
+
+    const payload = mockDataProvider.getTextRecommendations.mock.calls[0][0]
+    expect(payload.negativePrompts).toEqual(['avoid metal'])
+  })
+
+  it('clamps limit in payload to max 100', async () => {
+    mockDataProvider.getTextRecommendations.mockResolvedValue({
+      data: {
+        tracks: [
+          { id: '1', title: 'Song 1', artist: 'Artist 1', album: 'Album 1' },
+        ],
+        name: 'Generated',
+        mode: 'text',
+      },
+    })
+
+    createTestUtils()
+
+    const textInputs = screen.getAllByRole('textbox')
+    fireEvent.change(textInputs[0], { target: { value: 'test query' } })
+
+    const numericInputs = screen.getAllByRole('spinbutton')
+    const limitInput = numericInputs[0]
+    fireEvent.change(limitInput, { target: { value: '500' } })
+
+    const generateButton = screen
+      .getAllByRole('button')
+      .find(
+        (btn) =>
+          btn.textContent.includes('Generate') ||
+          btn.textContent.includes('generate'),
+      )
+    if (generateButton) {
+      fireEvent.click(generateButton)
+    }
+
+    await waitFor(() => {
+      expect(mockDataProvider.getTextRecommendations).toHaveBeenCalled()
+    })
+
+    const payload = mockDataProvider.getTextRecommendations.mock.calls[0][0]
+    expect(payload.limit).toBe(100)
   })
 })

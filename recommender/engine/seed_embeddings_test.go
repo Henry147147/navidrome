@@ -64,3 +64,92 @@ func TestResolveSeedEmbeddingsUsesLegacyDirectEmbedding(t *testing.T) {
 		t.Fatalf("expected no lyrics embedding, got %#v", got[ModelLyrics])
 	}
 }
+
+func TestResolveSeedEmbeddingsSkipsUnknownAndEmptyPerModelEntries(t *testing.T) {
+	e := New(DefaultConfig(), nil, nil)
+	req := RecommendationRequest{
+		Seeds: []SeedTrack{
+			{
+				TrackID: "text-seed",
+				Embeddings: map[string][]float64{
+					ModelLyrics:   {0.1, 0.2},
+					"unknown":     {0.3, 0.4},
+					ModelFlamingo: {},
+				},
+			},
+		},
+		Models: []string{ModelLyrics, ModelDescription},
+	}
+
+	got, warnings, err := e.resolveSeedEmbeddings(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %#v", warnings)
+	}
+	if len(got[ModelLyrics]) != 1 {
+		t.Fatalf("expected one lyrics embedding, got %#v", got[ModelLyrics])
+	}
+	if len(got[ModelDescription]) != 0 {
+		t.Fatalf("expected no description embedding, got %#v", got[ModelDescription])
+	}
+}
+
+func TestResolveSeedEmbeddingsPrefersPerModelMapOverLegacyEmbedding(t *testing.T) {
+	e := New(DefaultConfig(), nil, nil)
+	req := RecommendationRequest{
+		Seeds: []SeedTrack{
+			{
+				TrackID:   "text-seed",
+				Embedding: []float64{9.9, 9.9},
+				Embeddings: map[string][]float64{
+					ModelLyrics: {0.1, 0.2},
+				},
+			},
+		},
+		Models: []string{ModelLyrics, ModelDescription},
+	}
+
+	got, warnings, err := e.resolveSeedEmbeddings(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %#v", warnings)
+	}
+	if len(got[ModelLyrics]) != 1 {
+		t.Fatalf("expected one lyrics embedding, got %#v", got[ModelLyrics])
+	}
+	if len(got[ModelDescription]) != 0 {
+		t.Fatalf("expected no description embedding, got %#v", got[ModelDescription])
+	}
+
+	for key := range got[ModelLyrics] {
+		if key == "direct_lyrics_text-seed" {
+			return
+		}
+	}
+	t.Fatalf("expected direct_lyrics_text-seed key, got %#v", got[ModelLyrics])
+}
+
+func TestResolveSeedEmbeddingsWarnsWhenNoEmbeddingsAvailable(t *testing.T) {
+	e := New(DefaultConfig(), nil, nil)
+	req := RecommendationRequest{
+		Seeds: []SeedTrack{
+			{TrackID: ""},
+		},
+		Models: []string{ModelLyrics},
+	}
+
+	got, warnings, err := e.resolveSeedEmbeddings(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(got[ModelLyrics]) != 0 {
+		t.Fatalf("expected no embeddings, got %#v", got[ModelLyrics])
+	}
+	if len(warnings) != 1 || warnings[0] != "No embeddings found for any seeds" {
+		t.Fatalf("expected no-embeddings warning, got %#v", warnings)
+	}
+}

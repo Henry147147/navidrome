@@ -59,11 +59,15 @@ func TestSeedTrack(t *testing.T) {
 	seed := SeedTrack{
 		TrackID:   "track123",
 		Embedding: []float64{0.1, 0.2, 0.3},
-		Weight:    1.0,
+		Embeddings: map[string][]float64{
+			ModelLyrics: {0.4, 0.5, 0.6},
+		},
+		Weight: 1.0,
 	}
 
 	assert.Equal(t, "track123", seed.TrackID)
 	assert.Equal(t, []float64{0.1, 0.2, 0.3}, seed.Embedding)
+	assert.Equal(t, []float64{0.4, 0.5, 0.6}, seed.Embeddings[ModelLyrics])
 	assert.Equal(t, 1.0, seed.Weight)
 }
 
