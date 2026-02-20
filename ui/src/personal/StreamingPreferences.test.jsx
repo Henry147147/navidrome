@@ -66,6 +66,9 @@ describe('<StreamingPreferences />', () => {
     render(<StreamingPreferences />)
 
     expect(
+      screen.getByTestId('personal-streaming-preferences'),
+    ).toBeInTheDocument()
+    expect(
       screen.getByTestId('personal-stream-profile-select'),
     ).toBeInTheDocument()
     expect(
@@ -74,6 +77,21 @@ describe('<StreamingPreferences />', () => {
     expect(
       screen.getByTestId('personal-stream-force-toggle'),
     ).toBeInTheDocument()
+    expect(
+      screen
+        .getByTestId('personal-stream-profile-control')
+        .className.includes('MuiFormControl-fullWidth'),
+    ).toBe(true)
+    expect(
+      screen
+        .getByTestId('personal-stream-bitrate-control')
+        .className.includes('MuiFormControl-fullWidth'),
+    ).toBe(true)
+    expect(
+      screen
+        .getByTestId('personal-stream-force-control')
+        .className.includes('MuiFormControl-fullWidth'),
+    ).toBe(true)
     expect(screen.getByTestId('personal-stream-profile-select').value).toBe(
       '__default__',
     )

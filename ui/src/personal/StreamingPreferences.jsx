@@ -9,13 +9,31 @@ import {
   Select,
   Switch,
 } from '@material-ui/core'
+import { makeStyles } from '@material-ui/core/styles'
 import { setStreamingOverride } from '../actions'
 import { BITRATE_CHOICES, DEFAULT_SHARE_BITRATE } from '../consts'
 import { DEFAULT_STREAMING_OVERRIDE } from '../audioplayer/streamingOverrideUtils'
 
 const STREAM_PROFILE_DEFAULT = '__default__'
 
+const useStyles = makeStyles((theme) => ({
+  root: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(1),
+    maxWidth: theme.spacing(34),
+  },
+  fullWidthControl: {
+    width: '100%',
+  },
+  toggleLabel: {
+    marginLeft: 0,
+    marginRight: 0,
+  },
+}))
+
 export const StreamingPreferences = () => {
+  const classes = useStyles()
   const translate = useTranslate()
   const dispatch = useDispatch()
   const streamingOverride = useSelector(
@@ -135,8 +153,17 @@ export const StreamingPreferences = () => {
   }
 
   return (
-    <>
-      <FormControl variant="outlined" margin="dense">
+    <div
+      className={classes.root}
+      data-testid="personal-streaming-preferences"
+    >
+      <FormControl
+        variant="outlined"
+        margin="dense"
+        fullWidth
+        className={classes.fullWidthControl}
+        data-testid="personal-stream-profile-control"
+      >
         <InputLabel htmlFor="personal-stream-profile-select">
           {translate('menu.personal.options.streamingProfile')}
         </InputLabel>
@@ -160,7 +187,13 @@ export const StreamingPreferences = () => {
         </Select>
       </FormControl>
 
-      <FormControl variant="outlined" margin="dense">
+      <FormControl
+        variant="outlined"
+        margin="dense"
+        fullWidth
+        className={classes.fullWidthControl}
+        data-testid="personal-stream-bitrate-control"
+      >
         <InputLabel htmlFor="personal-stream-bitrate-select">
           {translate('menu.personal.options.streamingBitrate')}
         </InputLabel>
@@ -181,8 +214,13 @@ export const StreamingPreferences = () => {
         </Select>
       </FormControl>
 
-      <FormControl>
+      <FormControl
+        fullWidth
+        className={classes.fullWidthControl}
+        data-testid="personal-stream-force-control"
+      >
         <FormControlLabel
+          className={classes.toggleLabel}
           control={
             <Switch
               id="personal-force-transcoding"
@@ -201,6 +239,6 @@ export const StreamingPreferences = () => {
           {translate('menu.personal.options.streamingHelpText')}
         </FormHelperText>
       </FormControl>
-    </>
+    </div>
   )
 }
