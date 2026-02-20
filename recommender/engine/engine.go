@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/recommender/milvus"
@@ -37,10 +38,11 @@ func DefaultConfig() Config {
 
 // SeedTrack represents a seed track for recommendations.
 type SeedTrack struct {
-	TrackID    string
-	Embedding  []float64
-	Embeddings map[string][]float64
-	Weight     float64
+	TrackID     string
+	LookupNames []string
+	Embedding   []float64
+	Embeddings  map[string][]float64
+	Weight      float64
 }
 
 // RecommendationRequest holds parameters for recommendation.
@@ -239,26 +241,36 @@ func (e *Engine) resolveSeedEmbeddings(ctx context.Context, req RecommendationRe
 			continue
 		}
 
-		// Otherwise, look up by track ID/name
-		if seed.TrackID == "" {
+		lookupNames := seedLookupNames(seed)
+		if len(lookupNames) == 0 {
 			continue
 		}
 
-		// Get embeddings for each model
+		// Otherwise, look up by track ID and alternative names.
 		for _, model := range req.Models {
 			collection := CollectionForModel(model)
-			embeddings, err := e.milvus.GetByNames(ctx, collection, []string{seed.TrackID})
+			embeddings, err := e.milvus.GetByNames(ctx, collection, lookupNames)
 			if err != nil {
 				log.Warn(ctx, "Failed to get seed embedding",
 					"trackId", seed.TrackID,
+					"lookupNames", lookupNames,
 					"model", model,
 					"error", err,
 				)
 				continue
 			}
 
-			if emb, ok := embeddings[seed.TrackID]; ok {
-				result[model][seed.TrackID] = emb
+			storeKey := seed.TrackID
+			for _, lookup := range lookupNames {
+				emb, ok := embeddings[lookup]
+				if !ok {
+					continue
+				}
+				if storeKey == "" {
+					storeKey = lookup
+				}
+				result[model][storeKey] = emb
+				break
 			}
 		}
 	}
@@ -281,8 +293,8 @@ func (e *Engine) buildExcludeSet(req RecommendationRequest) []string {
 
 	// Exclude seed tracks
 	for _, seed := range req.Seeds {
-		if seed.TrackID != "" {
-			excludeSet[seed.TrackID] = true
+		for _, lookup := range seedLookupNames(seed) {
+			excludeSet[lookup] = true
 		}
 	}
 
@@ -299,6 +311,28 @@ func (e *Engine) buildExcludeSet(req RecommendationRequest) []string {
 	result := make([]string, 0, len(excludeSet))
 	for name := range excludeSet {
 		result = append(result, name)
+	}
+	return result
+}
+
+func seedLookupNames(seed SeedTrack) []string {
+	seen := make(map[string]struct{}, 1+len(seed.LookupNames))
+	result := make([]string, 0, 1+len(seed.LookupNames))
+	appendLookup := func(value string) {
+		v := strings.TrimSpace(value)
+		if v == "" {
+			return
+		}
+		if _, ok := seen[v]; ok {
+			return
+		}
+		seen[v] = struct{}{}
+		result = append(result, v)
+	}
+
+	appendLookup(seed.TrackID)
+	for _, name := range seed.LookupNames {
+		appendLookup(name)
 	}
 	return result
 }

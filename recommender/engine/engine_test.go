@@ -57,8 +57,9 @@ func TestConfig(t *testing.T) {
 
 func TestSeedTrack(t *testing.T) {
 	seed := SeedTrack{
-		TrackID:   "track123",
-		Embedding: []float64{0.1, 0.2, 0.3},
+		TrackID:     "track123",
+		LookupNames: []string{"Artist - Title"},
+		Embedding:   []float64{0.1, 0.2, 0.3},
 		Embeddings: map[string][]float64{
 			ModelLyrics: {0.4, 0.5, 0.6},
 		},
@@ -66,6 +67,7 @@ func TestSeedTrack(t *testing.T) {
 	}
 
 	assert.Equal(t, "track123", seed.TrackID)
+	assert.Equal(t, []string{"Artist - Title"}, seed.LookupNames)
 	assert.Equal(t, []float64{0.1, 0.2, 0.3}, seed.Embedding)
 	assert.Equal(t, []float64{0.4, 0.5, 0.6}, seed.Embeddings[ModelLyrics])
 	assert.Equal(t, 1.0, seed.Weight)
@@ -160,8 +162,8 @@ func TestBuildExcludeSet(t *testing.T) {
 
 	req := RecommendationRequest{
 		Seeds: []SeedTrack{
-			{TrackID: "seed1"},
-			{TrackID: "seed2"},
+			{TrackID: "seed1", LookupNames: []string{"Artist 1 - Song 1"}},
+			{TrackID: "seed2", LookupNames: []string{"Artist 2 - Song 2"}},
 		},
 		ExcludeTrackIDs:  []string{"exclude1", "exclude2"},
 		DislikedTrackIDs: []string{"dislike1"},
@@ -172,7 +174,18 @@ func TestBuildExcludeSet(t *testing.T) {
 	// Should contain all seed, excluded, and disliked tracks
 	assert.Contains(t, excludeSet, "seed1")
 	assert.Contains(t, excludeSet, "seed2")
+	assert.Contains(t, excludeSet, "Artist 1 - Song 1")
+	assert.Contains(t, excludeSet, "Artist 2 - Song 2")
 	assert.Contains(t, excludeSet, "exclude1")
 	assert.Contains(t, excludeSet, "exclude2")
 	assert.Contains(t, excludeSet, "dislike1")
+}
+
+func TestSeedLookupNamesDeDupsAndOrders(t *testing.T) {
+	got := seedLookupNames(SeedTrack{
+		TrackID:     "seed-1",
+		LookupNames: []string{"Artist - Song", "seed-1", "  ", "Artist - Song", "Song"},
+	})
+
+	assert.Equal(t, []string{"seed-1", "Artist - Song", "Song"}, got)
 }

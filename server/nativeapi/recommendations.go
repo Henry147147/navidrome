@@ -1068,10 +1068,11 @@ func makeCustomSeed(mf model.MediaFile, weight float64, source string) subsonic.
 		weight = 0.05
 	}
 	return subsonic.RecommendationSeed{
-		TrackID:  mf.ID,
-		Weight:   weight,
-		Source:   source,
-		PlayedAt: mf.PlayDate,
+		TrackID:     mf.ID,
+		LookupNames: recommendationLookupNames(mf),
+		Weight:      weight,
+		Source:      source,
+		PlayedAt:    mf.PlayDate,
 	}
 }
 
@@ -1115,14 +1116,49 @@ func seedsFromMediaFiles(files model.MediaFiles, source string) []subsonic.Recom
 			weight = 0.1
 		}
 		seeds = append(seeds, subsonic.RecommendationSeed{
-			TrackID:  mf.ID,
-			Weight:   weight,
-			Source:   source,
-			PlayedAt: mf.PlayDate,
+			TrackID:     mf.ID,
+			LookupNames: recommendationLookupNames(mf),
+			Weight:      weight,
+			Source:      source,
+			PlayedAt:    mf.PlayDate,
 		})
 		position++
 	}
 	return seeds
+}
+
+func recommendationLookupNames(mf model.MediaFile) []string {
+	seen := make(map[string]struct{}, 3)
+	names := make([]string, 0, 3)
+	add := func(value string) {
+		v := strings.TrimSpace(value)
+		if v == "" {
+			return
+		}
+		if _, ok := seen[v]; ok {
+			return
+		}
+		seen[v] = struct{}{}
+		names = append(names, v)
+	}
+
+	add(canonicalTrackLookupName(mf.Artist, mf.Title, mf.Path))
+	add(mf.Title)
+	add(mf.Path)
+	return names
+}
+
+func canonicalTrackLookupName(artist, title, path string) string {
+	artist = strings.TrimSpace(artist)
+	title = strings.TrimSpace(title)
+	path = strings.TrimSpace(path)
+	if artist != "" && title != "" {
+		return artist + " - " + title
+	}
+	if title != "" {
+		return title
+	}
+	return path
 }
 
 func fallbackTrackIDs(seeds []subsonic.RecommendationSeed, limit int, blocked map[string]struct{}) []string {

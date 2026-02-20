@@ -32,10 +32,10 @@ func TestUniqueNonEmptyStrings(t *testing.T) {
 
 func TestSeedsFromMediaFilesSkipsLowRatings(t *testing.T) {
 	files := model.MediaFiles{
-		{ID: "keep-0", Annotations: model.Annotations{Rating: 0}},
+		{ID: "keep-0", Artist: "A", Title: "T0", Path: "a/t0.mp3", Annotations: model.Annotations{Rating: 0}},
 		{ID: "skip-1", Annotations: model.Annotations{Rating: 1}},
 		{ID: "skip-2", Annotations: model.Annotations{Rating: 2}},
-		{ID: "keep-5", Annotations: model.Annotations{Rating: 5}},
+		{ID: "keep-5", Artist: "B", Title: "T5", Path: "b/t5.mp3", Annotations: model.Annotations{Rating: 5}},
 	}
 	seeds := seedsFromMediaFiles(files, "test")
 	if len(seeds) != 2 {
@@ -43,6 +43,12 @@ func TestSeedsFromMediaFilesSkipsLowRatings(t *testing.T) {
 	}
 	if seeds[0].TrackID != "keep-0" || seeds[1].TrackID != "keep-5" {
 		t.Fatalf("unexpected seeds returned: %#v", seeds)
+	}
+	if len(seeds[0].LookupNames) == 0 || seeds[0].LookupNames[0] != "A - T0" {
+		t.Fatalf("expected canonical lookup name for first seed, got %#v", seeds[0].LookupNames)
+	}
+	if len(seeds[1].LookupNames) == 0 || seeds[1].LookupNames[0] != "B - T5" {
+		t.Fatalf("expected canonical lookup name for second seed, got %#v", seeds[1].LookupNames)
 	}
 }
 
@@ -150,7 +156,7 @@ func TestAlbumSeedWeightDecay(t *testing.T) {
 }
 
 func TestMakeCustomSeedClampsWeights(t *testing.T) {
-	mf := model.MediaFile{ID: "track"}
+	mf := model.MediaFile{ID: "track", Artist: "Artist", Title: "Song", Path: "artist/song.mp3"}
 	seed := makeCustomSeed(mf, 5, "custom")
 	if seed.Weight > 1 {
 		t.Fatalf("weight should clamp to 1, got %f", seed.Weight)
@@ -159,4 +165,52 @@ func TestMakeCustomSeedClampsWeights(t *testing.T) {
 	if seedLow.Weight < 0.05 {
 		t.Fatalf("weight should clamp to >= 0.05, got %f", seedLow.Weight)
 	}
+	if len(seed.LookupNames) == 0 || seed.LookupNames[0] != "Artist - Song" {
+		t.Fatalf("expected canonical lookup key on custom seed, got %#v", seed.LookupNames)
+	}
+}
+
+func TestRecommendationLookupNames(t *testing.T) {
+	t.Run("artist and title", func(t *testing.T) {
+		got := recommendationLookupNames(model.MediaFile{
+			Artist: "Artist",
+			Title:  "Song",
+			Path:   "artist/song.mp3",
+		})
+		want := []string{"Artist - Song", "Song", "artist/song.mp3"}
+		if len(got) != len(want) {
+			t.Fatalf("expected %d lookup names, got %d (%#v)", len(want), len(got), got)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("expected %q at %d, got %q", want[i], i, got[i])
+			}
+		}
+	})
+
+	t.Run("title only", func(t *testing.T) {
+		got := recommendationLookupNames(model.MediaFile{
+			Title: "Song",
+			Path:  "artist/song.mp3",
+		})
+		want := []string{"Song", "artist/song.mp3"}
+		if len(got) != len(want) {
+			t.Fatalf("expected %d lookup names, got %d (%#v)", len(want), len(got), got)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("expected %q at %d, got %q", want[i], i, got[i])
+			}
+		}
+	})
+
+	t.Run("path only", func(t *testing.T) {
+		got := recommendationLookupNames(model.MediaFile{
+			Path: "artist/song.mp3",
+		})
+		want := []string{"artist/song.mp3"}
+		if len(got) != len(want) || got[0] != want[0] {
+			t.Fatalf("expected %#v, got %#v", want, got)
+		}
+	})
 }
