@@ -57,7 +57,10 @@ const Player = () => {
 
   const { authenticated } = useAuthState()
   const visible = authenticated && playerState.queue.length > 0
-  const isRadio = playerState.current?.isRadio || false
+  const currentTrack = playerState.current || {}
+  const currentTrackId = currentTrack.trackId
+  const currentTrackUuid = currentTrack.uuid
+  const isRadio = Boolean(currentTrack.isRadio)
   const classes = useStyle({
     isRadio,
     visible,
@@ -152,7 +155,7 @@ const Player = () => {
   useEffect(() => {
     const handleBeforeUnload = (e) => {
       // Check there's a current track and is actually playing/not paused
-      if (playerState.current?.uuid && audioInstance && !audioInstance.paused) {
+      if (currentTrackUuid && audioInstance && !audioInstance.paused) {
         e.preventDefault()
         e.returnValue = '' // Chrome requires returnValue to be set
       }
@@ -160,7 +163,7 @@ const Player = () => {
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [playerState, audioInstance])
+  }, [audioInstance, currentTrackUuid])
 
   useEffect(() => {
     const previousKey = overrideKeyRef.current
@@ -169,20 +172,19 @@ const Player = () => {
     }
     overrideKeyRef.current = overrideKey
 
-    const current = playerState.current || {}
-    if (!current.trackId || current.isRadio || !audioInstance) {
+    if (!currentTrackId || isRadio || !audioInstance) {
       pendingResumeRef.current = null
       return
     }
 
     const currentTime = Number(audioInstance.currentTime)
     pendingResumeRef.current = {
-      trackId: current.trackId,
+      trackId: currentTrackId,
       currentTime:
         Number.isFinite(currentTime) && currentTime > 0 ? currentTime : null,
       paused: Boolean(audioInstance.paused),
     }
-  }, [audioInstance, overrideKey, playerState.current])
+  }, [audioInstance, overrideKey, currentTrackId, isRadio])
 
   const defaultOptions = useMemo(
     () => ({
@@ -244,13 +246,13 @@ const Player = () => {
 
   const nextSong = useCallback(() => {
     const idx = effectiveQueue.findIndex(
-      (item) => item.uuid === playerState.current.uuid,
+      (item) => item.uuid === currentTrackUuid,
     )
     if (idx < 0) {
       return null
     }
     return effectiveQueue[idx + 1] || null
-  }, [effectiveQueue, playerState.current.uuid])
+  }, [effectiveQueue, currentTrackUuid])
 
   const onAudioProgress = useCallback(
     (info) => {

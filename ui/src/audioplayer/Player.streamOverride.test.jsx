@@ -36,8 +36,8 @@ vi.mock('react-hotkeys', () => ({
 
 vi.mock('navidrome-music-player/assets/index.css', () => ({}))
 
-vi.mock('navidrome-music-player', () => ({
-  default: (props) => {
+vi.mock('navidrome-music-player', () => {
+  function MockMusicPlayer(props) {
     capturedPlayerProps = props
     useEffect(() => {
       props.getAudioInstance?.(mockAudioInstance)
@@ -60,8 +60,12 @@ vi.mock('navidrome-music-player', () => ({
         play
       </button>
     )
-  },
-}))
+  }
+
+  return {
+    default: MockMusicPlayer,
+  }
+})
 
 vi.mock('../themes/useCurrentTheme', () => ({
   default: () => ({ player: { theme: 'dark' } }),
