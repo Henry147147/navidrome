@@ -627,6 +627,23 @@
     "sharedPlaylists": "Shared Playlists",
     "about": "About"
   },
+  "pages": {
+    "autoplay": {
+      "settings": {
+        "saved": "Auto Play settings saved",
+        "serverError": "Could not save Auto Play settings"
+      },
+      "notifications": {
+        "needText": "Enter a text prompt before fetching recommendations",
+        "noSeeds": "No seed songs were found for that text prompt",
+        "needSeed": "Choose a seed song before fetching recommendations",
+        "noNew": "No new tracks were found"
+      }
+    },
+    "explore": {
+      "playlistSaved": "Playlist \"%{name}\" saved"
+    }
+  },
   "player": {
     "playListsText": "Play Queue",
     "openText": "Open",
