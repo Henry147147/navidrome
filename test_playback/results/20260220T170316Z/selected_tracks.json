@@ -1,0 +1,44 @@
+{
+  "selected_tracks": {
+    "flac_high": {
+      "id": "qzPy1kUKmYUTyAkwhe9myL",
+      "title": "Habit",
+      "artist": "Pearl Jam",
+      "album": "No Code",
+      "suffix": "flac",
+      "bitrate_kbps": 5787,
+      "duration_s": 215.0
+    },
+    "flac_any": {
+      "id": "UkT8FmrPDYst5gzXfch0TT",
+      "title": "Walk",
+      "artist": "Foo Fighters",
+      "album": "Wasting Light",
+      "suffix": "flac",
+      "bitrate_kbps": 5630,
+      "duration_s": 257.0
+    },
+    "lossy_ref": {
+      "id": "ruILTXzoJ5glaBZdzkdQaS",
+      "title": "Closer to You",
+      "artist": "Clairo",
+      "album": "Immunity",
+      "suffix": "m4a",
+      "bitrate_kbps": 870,
+      "duration_s": 184.0
+    }
+  },
+  "sampling": {
+    "discovered_total": 200,
+    "flac_count": 109,
+    "lossy_count": 91,
+    "lossy_suffixes": [
+      "aac",
+      "m4a",
+      "mp3",
+      "opus"
+    ],
+    "max_batches": 60,
+    "batch_size": 200
+  }
+}

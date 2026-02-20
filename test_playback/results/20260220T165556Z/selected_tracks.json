@@ -1,0 +1,44 @@
+{
+  "selected_tracks": {
+    "flac_high": {
+      "id": "4jOc87R9lZOemid1Kf9TbX",
+      "title": "Call It What You Want",
+      "artist": "Taylor Swift",
+      "album": "Reputation",
+      "suffix": "flac",
+      "bitrate_kbps": 4112,
+      "duration_s": 202.0
+    },
+    "flac_any": {
+      "id": "R9moUy9Chw7BMniTguBeu6",
+      "title": "Love Buzz",
+      "artist": "Nirvana",
+      "album": "Live At The Paramount",
+      "suffix": "flac",
+      "bitrate_kbps": 3145,
+      "duration_s": 214.0
+    },
+    "lossy_ref": {
+      "id": "M6XdH5WYo959ePcg4iPGUe",
+      "title": "Heaven",
+      "artist": "Amy Allen",
+      "album": "Heaven",
+      "suffix": "mp3",
+      "bitrate_kbps": 320,
+      "duration_s": 163.0
+    }
+  },
+  "sampling": {
+    "discovered_total": 200,
+    "flac_count": 118,
+    "lossy_count": 82,
+    "lossy_suffixes": [
+      "aac",
+      "m4a",
+      "mp3",
+      "opus"
+    ],
+    "max_batches": 60,
+    "batch_size": 200
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "started_at": "2026-02-20T16:53:03.823513+00:00",
+  "base_url": "http://127.0.0.1:4533",
+  "username": "debug",
+  "timeout_sec": 45,
+  "max_random_batches": 60,
+  "random_batch_size": 200,
+  "headed": false,
+  "playwright_parity": "never",
+  "notes": [
+    "Preflight failed: invalid username/password for /auth/login"
+  ],
+  "auth_preflight": "failed:RuntimeError"
+}

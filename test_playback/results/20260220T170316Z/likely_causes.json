@@ -1,0 +1,7 @@
+[
+  {
+    "cause": "Browser decode/playback issue",
+    "confidence": "medium",
+    "signal": "API stream probes are healthy while GUI FLAC starts frequently fail."
+  }
+]
