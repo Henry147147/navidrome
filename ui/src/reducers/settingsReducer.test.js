@@ -16,6 +16,7 @@ describe('settingsReducer', () => {
       omittedFields: {},
       streamingOverride: {
         mode: 'default',
+        forceTranscoding: false,
         profileId: null,
         format: null,
         maxBitRate: null,
@@ -29,6 +30,7 @@ describe('settingsReducer', () => {
       type: SET_STREAMING_OVERRIDE,
       data: {
         mode: 'override',
+        forceTranscoding: true,
         profileId: 'tr_opus',
         format: 'opus',
         maxBitRate: 192,
@@ -38,6 +40,7 @@ describe('settingsReducer', () => {
     const result = settingsReducer(previousState, action)
     expect(result.streamingOverride).toEqual({
       mode: 'override',
+      forceTranscoding: true,
       profileId: 'tr_opus',
       format: 'opus',
       maxBitRate: 192,
@@ -51,6 +54,7 @@ describe('settingsReducer', () => {
       omittedFields: { song: ['comment'] },
       streamingOverride: {
         mode: 'override',
+        forceTranscoding: true,
         profileId: 'tr_opus',
         format: 'opus',
         maxBitRate: 192,
@@ -66,6 +70,7 @@ describe('settingsReducer', () => {
     const result = settingsReducer(previousState, action)
     expect(result.streamingOverride).toEqual({
       mode: 'default',
+      forceTranscoding: false,
       profileId: null,
       format: null,
       maxBitRate: null,

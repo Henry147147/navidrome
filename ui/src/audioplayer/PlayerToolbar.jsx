@@ -5,9 +5,11 @@ import { GlobalHotKeys } from 'react-hotkeys'
 import IconButton from '@material-ui/core/IconButton'
 import {
   FormControl,
+  FormControlLabel,
   InputLabel,
   Menu,
   Select,
+  Switch,
   Typography,
   useMediaQuery,
 } from '@material-ui/core'
@@ -126,6 +128,10 @@ const PlayerToolbar = ({ id, isRadio }) => {
     streamingOverride.mode === 'override' && streamingOverride.maxBitRate
       ? Number(streamingOverride.maxBitRate)
       : DEFAULT_SHARE_BITRATE
+  const forceTranscoding =
+    effectiveProfileId !== STREAM_PROFILE_DEFAULT &&
+    streamingOverride.mode === 'override' &&
+    Boolean(streamingOverride.forceTranscoding)
 
   const handlers = {
     TOGGLE_LOVE: useCallback(() => toggleLove(), [toggleLove]),
@@ -168,13 +174,14 @@ const PlayerToolbar = ({ id, isRadio }) => {
       dispatch(
         setStreamingOverride({
           mode: 'override',
+          forceTranscoding,
           profileId,
           format: profile.targetFormat,
           maxBitRate: selectedBitrate,
         }),
       )
     },
-    [dispatch, transcodingById],
+    [dispatch, forceTranscoding, transcodingById],
   )
 
   const handleBitrateChange = useCallback(
@@ -190,13 +197,39 @@ const PlayerToolbar = ({ id, isRadio }) => {
       dispatch(
         setStreamingOverride({
           mode: 'override',
+          forceTranscoding,
           profileId: effectiveProfileId,
           format: profile.targetFormat,
           maxBitRate: Number(e.target.value),
         }),
       )
     },
-    [effectiveProfileId, dispatch, transcodingById],
+    [effectiveProfileId, dispatch, forceTranscoding, transcodingById],
+  )
+
+  const handleForceToggle = useCallback(
+    (e) => {
+      const checked = Boolean(e.target.checked)
+      if (effectiveProfileId === STREAM_PROFILE_DEFAULT) {
+        dispatch(setStreamingOverride(DEFAULT_STREAMING_OVERRIDE))
+        return
+      }
+      const profile = transcodingById[effectiveProfileId]
+      if (!profile) {
+        dispatch(setStreamingOverride(DEFAULT_STREAMING_OVERRIDE))
+        return
+      }
+      dispatch(
+        setStreamingOverride({
+          mode: 'override',
+          forceTranscoding: checked,
+          profileId: effectiveProfileId,
+          format: profile.targetFormat,
+          maxBitRate: currentBitrate,
+        }),
+      )
+    },
+    [currentBitrate, dispatch, effectiveProfileId, transcodingById],
   )
 
   const buttonClass = isDesktop ? classes.button : classes.mobileButton
@@ -239,6 +272,18 @@ const PlayerToolbar = ({ id, isRadio }) => {
           <Typography variant="caption" className={classes.streamMenuHint}>
             {translate('player.streamDefaultBehaviorText')}
           </Typography>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={forceTranscoding}
+                onChange={handleForceToggle}
+                color="primary"
+                disabled={effectiveProfileId === STREAM_PROFILE_DEFAULT}
+                inputProps={{ 'data-testid': 'stream-force-toggle' }}
+              />
+            }
+            label={translate('player.streamForceTranscodingText')}
+          />
           <FormControl variant="outlined" size="small" fullWidth>
             <InputLabel id="stream-profile-select-label">
               {translate('player.streamProfileText')}

@@ -180,6 +180,7 @@ describe('<Player /> streaming override', () => {
       store.dispatch(
         setStreamingOverride({
           mode: 'override',
+          forceTranscoding: true,
           profileId: 'tr_opus',
           format: 'opus',
           maxBitRate: 192,
@@ -200,6 +201,7 @@ describe('<Player /> streaming override', () => {
       store.dispatch(
         setStreamingOverride({
           mode: 'default',
+          forceTranscoding: false,
           profileId: null,
           format: null,
           maxBitRate: null,
@@ -230,6 +232,7 @@ describe('<Player /> streaming override', () => {
       store.dispatch(
         setStreamingOverride({
           mode: 'override',
+          forceTranscoding: true,
           profileId: 'tr_opus',
           format: 'opus',
           maxBitRate: 160,
@@ -250,5 +253,40 @@ describe('<Player /> streaming override', () => {
       vi.runAllTimers()
     })
     expect(mockAudioInstance.pause).toHaveBeenCalled()
+  })
+
+  it('does not change stream URL when override exists but force toggle is off', async () => {
+    const store = createTestStore()
+
+    render(
+      <Provider store={store}>
+        <Player />
+      </Provider>,
+    )
+
+    await waitFor(() => {
+      expect(capturedPlayerProps).toBeTruthy()
+      expect(capturedPlayerProps.audioLists[0].musicSrc).toBe(
+        '/rest/stream?id=song-1',
+      )
+    })
+
+    act(() => {
+      store.dispatch(
+        setStreamingOverride({
+          mode: 'override',
+          forceTranscoding: false,
+          profileId: 'tr_opus',
+          format: 'opus',
+          maxBitRate: 192,
+        }),
+      )
+    })
+
+    await waitFor(() => {
+      expect(capturedPlayerProps.audioLists[0].musicSrc).toBe(
+        '/rest/stream?id=song-1',
+      )
+    })
   })
 })

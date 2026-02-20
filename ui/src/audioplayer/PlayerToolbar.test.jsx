@@ -68,6 +68,7 @@ describe('<PlayerToolbar />', () => {
     settings: {
       streamingOverride: {
         mode: 'default',
+        forceTranscoding: false,
         profileId: null,
         format: null,
         maxBitRate: null,
@@ -140,6 +141,7 @@ describe('<PlayerToolbar />', () => {
           settings: {
             streamingOverride: {
               mode: 'override',
+              forceTranscoding: true,
               profileId: 'tr_opus',
               format: 'opus',
               maxBitRate: 128,
@@ -158,6 +160,7 @@ describe('<PlayerToolbar />', () => {
         type: 'SET_STREAMING_OVERRIDE',
         data: {
           mode: 'default',
+          forceTranscoding: false,
           profileId: null,
           format: null,
           maxBitRate: null,
@@ -177,9 +180,43 @@ describe('<PlayerToolbar />', () => {
         type: 'SET_STREAMING_OVERRIDE',
         data: {
           mode: 'override',
+          forceTranscoding: false,
           profileId: 'tr_opus',
           format: 'opus',
           maxBitRate: 128,
+        },
+      })
+    })
+
+    it('preserves force toggle setting when selecting another profile', () => {
+      useSelector.mockImplementation((selector) =>
+        selector({
+          settings: {
+            streamingOverride: {
+              mode: 'override',
+              forceTranscoding: true,
+              profileId: 'tr_opus',
+              format: 'opus',
+              maxBitRate: 128,
+            },
+          },
+        }),
+      )
+      render(<PlayerToolbar id="song-1" />)
+
+      fireEvent.click(screen.getByTestId('stream-settings-button'))
+      fireEvent.change(screen.getByTestId('stream-profile-select'), {
+        target: { value: 'tr_mp3' },
+      })
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'SET_STREAMING_OVERRIDE',
+        data: {
+          mode: 'override',
+          forceTranscoding: true,
+          profileId: 'tr_mp3',
+          format: 'mp3',
+          maxBitRate: 192,
         },
       })
     })
@@ -190,6 +227,7 @@ describe('<PlayerToolbar />', () => {
           settings: {
             streamingOverride: {
               mode: 'override',
+              forceTranscoding: true,
               profileId: 'tr_opus',
               format: 'opus',
               maxBitRate: 128,
@@ -208,9 +246,41 @@ describe('<PlayerToolbar />', () => {
         type: 'SET_STREAMING_OVERRIDE',
         data: {
           mode: 'override',
+          forceTranscoding: true,
           profileId: 'tr_opus',
           format: 'opus',
           maxBitRate: 192,
+        },
+      })
+    })
+
+    it('dispatches force toggle changes', () => {
+      useSelector.mockImplementation((selector) =>
+        selector({
+          settings: {
+            streamingOverride: {
+              mode: 'override',
+              forceTranscoding: true,
+              profileId: 'tr_opus',
+              format: 'opus',
+              maxBitRate: 128,
+            },
+          },
+        }),
+      )
+      render(<PlayerToolbar id="song-1" />)
+
+      fireEvent.click(screen.getByTestId('stream-settings-button'))
+      fireEvent.click(screen.getByTestId('stream-force-toggle'))
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'SET_STREAMING_OVERRIDE',
+        data: {
+          mode: 'override',
+          forceTranscoding: false,
+          profileId: 'tr_opus',
+          format: 'opus',
+          maxBitRate: 128,
         },
       })
     })
@@ -244,6 +314,13 @@ describe('<PlayerToolbar />', () => {
       const profileSelect = screen.getByTestId('stream-profile-select')
       expect(profileSelect).toBeInTheDocument()
       expect(profileSelect.querySelectorAll('option')).toHaveLength(1)
+    })
+
+    it('disables force toggle when default profile is selected', () => {
+      render(<PlayerToolbar id="song-1" />)
+
+      fireEvent.click(screen.getByTestId('stream-settings-button'))
+      expect(screen.getByTestId('stream-force-toggle')).toBeDisabled()
     })
 
     it('disables controls when no track id is provided', () => {

@@ -10,6 +10,7 @@ describe('streamingOverrideUtils', () => {
     expect(
       toStreamQuery({
         mode: 'default',
+        forceTranscoding: false,
         profileId: null,
         format: null,
         maxBitRate: null,
@@ -21,6 +22,7 @@ describe('streamingOverrideUtils', () => {
     expect(
       toStreamQuery({
         mode: 'override',
+        forceTranscoding: true,
         profileId: 'tr_opus',
         format: 'opus',
         maxBitRate: 192,
@@ -28,16 +30,37 @@ describe('streamingOverrideUtils', () => {
     ).toEqual({ format: 'opus', maxBitRate: 192 })
   })
 
+  it('returns null query when force toggle is disabled', () => {
+    expect(
+      toStreamQuery({
+        mode: 'override',
+        forceTranscoding: false,
+        profileId: 'tr_opus',
+        format: 'opus',
+        maxBitRate: 192,
+      }),
+    ).toBeNull()
+  })
+
   it('builds stable override key', () => {
     expect(
       buildOverrideKey({
         mode: 'override',
+        forceTranscoding: true,
         profileId: 'tr_opus',
         format: 'opus',
         maxBitRate: 192,
       }),
     ).toBe('opus:192')
     expect(buildOverrideKey({ mode: 'default' })).toBe('default')
+    expect(
+      buildOverrideKey({
+        mode: 'override',
+        forceTranscoding: false,
+        format: 'opus',
+        maxBitRate: 192,
+      }),
+    ).toBe('default')
   })
 
   it('leaves radio entries unchanged', () => {

@@ -1,5 +1,6 @@
 export const DEFAULT_STREAMING_OVERRIDE = {
   mode: 'default',
+  forceTranscoding: false,
   profileId: null,
   format: null,
   maxBitRate: null,
@@ -14,7 +15,7 @@ const normalizeBitrate = (value) => {
 }
 
 export const buildOverrideKey = (override) => {
-  if (override?.mode !== 'override') {
+  if (override?.mode !== 'override' || !override?.forceTranscoding) {
     return 'default'
   }
   const format = override?.format ? String(override.format) : ''
@@ -26,7 +27,7 @@ export const buildOverrideKey = (override) => {
 }
 
 export const toStreamQuery = (override) => {
-  if (override?.mode !== 'override') {
+  if (override?.mode !== 'override' || !override?.forceTranscoding) {
     return null
   }
   const format = override?.format ? String(override.format) : ''
