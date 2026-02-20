@@ -133,7 +133,9 @@ describe('ExploreSuggestions', () => {
       expect(screen.getByTestId('explore-settings-panel')).toBeInTheDocument(),
     )
 
-    await userEvent.click(screen.getByRole('button', { name: 'set-valid-duration' }))
+    await userEvent.click(
+      screen.getByRole('button', { name: 'set-valid-duration' }),
+    )
     await userEvent.click(screen.getByRole('button', { name: 'save-settings' }))
 
     await waitFor(() => {
@@ -142,7 +144,9 @@ describe('ExploreSuggestions', () => {
       ).toHaveBeenCalledTimes(1)
     })
 
-    expect(mocked.dataProvider.updateRecommendationSettings).toHaveBeenCalledWith(
+    expect(
+      mocked.dataProvider.updateRecommendationSettings,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         minTrackDurationSeconds: 60,
         maxTrackDurationSeconds: 600,
@@ -163,12 +167,14 @@ describe('ExploreSuggestions', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: 'save-settings' }))
 
-    expect(mocked.dataProvider.updateRecommendationSettings).not.toHaveBeenCalled()
+    expect(
+      mocked.dataProvider.updateRecommendationSettings,
+    ).not.toHaveBeenCalled()
 
     await waitFor(() => {
-      expect(screen.getByTestId('settings-max-duration-error').textContent).toMatch(
-        /greater than or equal to minimum track length/i,
-      )
+      expect(
+        screen.getByTestId('settings-max-duration-error').textContent,
+      ).toMatch(/greater than or equal to minimum track length/i)
     })
   })
 })
