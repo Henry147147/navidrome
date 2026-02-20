@@ -44,11 +44,7 @@ describe('ExploreSuggestions helper functions', () => {
   })
 
   it('keeps selected text models for text-only requests', () => {
-    const models = buildTextRequestModels(
-      ['lyrics'],
-      ['description'],
-      false,
-    )
+    const models = buildTextRequestModels(['lyrics'], ['description'], false)
     expect(models).toEqual(['lyrics', 'description'])
   })
 

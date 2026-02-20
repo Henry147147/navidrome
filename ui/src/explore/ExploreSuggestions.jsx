@@ -1239,32 +1239,31 @@ const ExploreSuggestions = () => {
       minModelAgreement,
       textModels.length,
     )
-    const request =
-      hasTextPrompt
-        ? dataProvider.getTextRecommendations({
-            text: customTextQuery.trim(),
-            textTargets: customTextTargets,
-            songIds: seeds,
-            limit: 1,
-            diversity: settings.baseDiversity,
-            excludeTrackIds: Array.from(excludeSet),
-            excludePlaylistIds,
-            models: textModels,
-            mergeStrategy: textModels.length > 1 ? mergeStrategy : undefined,
-            minModelAgreement:
-              textModels.length > 1 ? textMinAgreement : undefined,
-          })
-        : dataProvider.getCustomRecommendations({
-            songIds: seeds,
-            limit: 1,
-            diversity: settings.baseDiversity,
-            excludeTrackIds: Array.from(excludeSet),
-            excludePlaylistIds,
-            models: selectedModels.length > 0 ? selectedModels : ['flamingo'],
-            mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
-            minModelAgreement:
-              selectedModels.length > 1 ? minModelAgreement : undefined,
-          })
+    const request = hasTextPrompt
+      ? dataProvider.getTextRecommendations({
+          text: customTextQuery.trim(),
+          textTargets: customTextTargets,
+          songIds: seeds,
+          limit: 1,
+          diversity: settings.baseDiversity,
+          excludeTrackIds: Array.from(excludeSet),
+          excludePlaylistIds,
+          models: textModels,
+          mergeStrategy: textModels.length > 1 ? mergeStrategy : undefined,
+          minModelAgreement:
+            textModels.length > 1 ? textMinAgreement : undefined,
+        })
+      : dataProvider.getCustomRecommendations({
+          songIds: seeds,
+          limit: 1,
+          diversity: settings.baseDiversity,
+          excludeTrackIds: Array.from(excludeSet),
+          excludePlaylistIds,
+          models: selectedModels.length > 0 ? selectedModels : ['flamingo'],
+          mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
+          minModelAgreement:
+            selectedModels.length > 1 ? minModelAgreement : undefined,
+        })
 
     request
       .then(({ data }) => {
@@ -1333,30 +1332,29 @@ const ExploreSuggestions = () => {
       minModelAgreement,
       textModels.length,
     )
-    const request =
-      hasTextPrompt
-        ? dataProvider.getTextRecommendations({
-            text: customTextQuery.trim(),
-            textTargets: customTextTargets,
-            songIds: selectedSongIDs,
-            limit: settings.mixLength,
-            diversity: settings.baseDiversity,
-            excludePlaylistIds,
-            models: textModels,
-            mergeStrategy: textModels.length > 1 ? mergeStrategy : undefined,
-            minModelAgreement:
-              textModels.length > 1 ? textMinAgreement : undefined,
-          })
-        : dataProvider.getCustomRecommendations({
-            songIds: selectedSongIDs,
-            limit: settings.mixLength,
-            diversity: settings.baseDiversity,
-            excludePlaylistIds,
-            models: selectedModels.length > 0 ? selectedModels : ['flamingo'],
-            mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
-            minModelAgreement:
-              selectedModels.length > 1 ? minModelAgreement : undefined,
-          })
+    const request = hasTextPrompt
+      ? dataProvider.getTextRecommendations({
+          text: customTextQuery.trim(),
+          textTargets: customTextTargets,
+          songIds: selectedSongIDs,
+          limit: settings.mixLength,
+          diversity: settings.baseDiversity,
+          excludePlaylistIds,
+          models: textModels,
+          mergeStrategy: textModels.length > 1 ? mergeStrategy : undefined,
+          minModelAgreement:
+            textModels.length > 1 ? textMinAgreement : undefined,
+        })
+      : dataProvider.getCustomRecommendations({
+          songIds: selectedSongIDs,
+          limit: settings.mixLength,
+          diversity: settings.baseDiversity,
+          excludePlaylistIds,
+          models: selectedModels.length > 0 ? selectedModels : ['flamingo'],
+          mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
+          minModelAgreement:
+            selectedModels.length > 1 ? minModelAgreement : undefined,
+        })
 
     request
       .then(({ data }) => {
@@ -1475,10 +1473,7 @@ const ExploreSuggestions = () => {
               })}
             </Typography>
             <Box className={classes.modelControlRow}>
-              <FormControl
-                variant="outlined"
-                className={classes.modelControl}
-              >
+              <FormControl variant="outlined" className={classes.modelControl}>
                 <InputLabel id="explore-model-select-label">
                   {translate('pages.explore.modelsLabel', {
                     _: 'Models',
@@ -1702,9 +1697,12 @@ const ExploreSuggestions = () => {
               label={translate('pages.explore.customTextPromptLabel', {
                 _: 'Optional text prompt',
               })}
-              placeholder={translate('pages.explore.customTextPromptPlaceholder', {
-                _: 'Describe mood, style, instruments, era, etc. to blend with selected seeds',
-              })}
+              placeholder={translate(
+                'pages.explore.customTextPromptPlaceholder',
+                {
+                  _: 'Describe mood, style, instruments, era, etc. to blend with selected seeds',
+                },
+              )}
               multiline
               rows={2}
             />
@@ -1836,7 +1834,8 @@ const ExploreSuggestions = () => {
                 color="primary"
                 onClick={handleGenerateCustom}
                 disabled={
-                  (selectedSongs.length === 0 && customTextQuery.trim() === '') ||
+                  (selectedSongs.length === 0 &&
+                    customTextQuery.trim() === '') ||
                   customLoading
                 }
               >

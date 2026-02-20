@@ -266,7 +266,9 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
               >
                 {TEXT_TARGET_OPTIONS.map((option) => (
                   <MenuItem key={option.value} value={option.value}>
-                    <Checkbox checked={textTargets.indexOf(option.value) > -1} />
+                    <Checkbox
+                      checked={textTargets.indexOf(option.value) > -1}
+                    />
                     <ListItemText
                       primary={option.label}
                       secondary={option.description}
