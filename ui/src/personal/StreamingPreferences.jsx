@@ -193,7 +193,9 @@ export const StreamingPreferences = () => {
               inputProps={{ 'data-testid': 'personal-stream-force-toggle' }}
             />
           }
-          label={<span>{translate('menu.personal.options.forceTranscoding')}</span>}
+          label={
+            <span>{translate('menu.personal.options.forceTranscoding')}</span>
+          }
         />
         <FormHelperText>
           {translate('menu.personal.options.streamingHelpText')}

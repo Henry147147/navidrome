@@ -65,9 +65,15 @@ describe('<StreamingPreferences />', () => {
   it('renders profile, bitrate, and force controls', () => {
     render(<StreamingPreferences />)
 
-    expect(screen.getByTestId('personal-stream-profile-select')).toBeInTheDocument()
-    expect(screen.getByTestId('personal-stream-bitrate-select')).toBeInTheDocument()
-    expect(screen.getByTestId('personal-stream-force-toggle')).toBeInTheDocument()
+    expect(
+      screen.getByTestId('personal-stream-profile-select'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByTestId('personal-stream-bitrate-select'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByTestId('personal-stream-force-toggle'),
+    ).toBeInTheDocument()
     expect(screen.getByTestId('personal-stream-profile-select').value).toBe(
       '__default__',
     )
