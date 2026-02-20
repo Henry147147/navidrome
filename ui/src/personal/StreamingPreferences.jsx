@@ -153,10 +153,7 @@ export const StreamingPreferences = () => {
   }
 
   return (
-    <div
-      className={classes.root}
-      data-testid="personal-streaming-preferences"
-    >
+    <div className={classes.root} data-testid="personal-streaming-preferences">
       <FormControl
         variant="outlined"
         margin="dense"
