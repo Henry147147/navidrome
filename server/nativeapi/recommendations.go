@@ -79,14 +79,18 @@ const (
 
 	recommendationSettingsKey = "recommendations.settings"
 
-	mixLengthMin           = 10
-	mixLengthMax           = 100
-	seedRecencyMinDays     = 7
-	seedRecencyMaxDays     = 120
-	discoveryMinDiversity  = 0.3
-	favoritesBlendMin      = 0.1
-	lowRatingDislikeMax    = 2
-	dislikeRejectThreshold = 0.5
+	mixLengthMin            = 10
+	mixLengthMax            = 100
+	trackDurationMinSeconds = 1
+	trackDurationMaxSeconds = 24 * 60 * 60
+	defaultMinTrackSeconds  = 30
+	defaultMaxTrackSeconds  = 15 * 60
+	seedRecencyMinDays      = 7
+	seedRecencyMaxDays      = 120
+	discoveryMinDiversity   = 0.3
+	favoritesBlendMin       = 0.1
+	lowRatingDislikeMax     = 2
+	dislikeRejectThreshold  = 0.5
 )
 
 type gpuSettings struct {
@@ -196,12 +200,14 @@ func batchBaseURL() string {
 }
 
 type recommendationSettings struct {
-	MixLength             int     `json:"mixLength"`
-	BaseDiversity         float64 `json:"baseDiversity"`
-	DiscoveryExploration  float64 `json:"discoveryExploration"`
-	SeedRecencyWindowDays int     `json:"seedRecencyWindowDays"`
-	FavoritesBlendWeight  float64 `json:"favoritesBlendWeight"`
-	LowRatingPenalty      float64 `json:"lowRatingPenalty"`
+	MixLength               int     `json:"mixLength"`
+	BaseDiversity           float64 `json:"baseDiversity"`
+	DiscoveryExploration    float64 `json:"discoveryExploration"`
+	SeedRecencyWindowDays   int     `json:"seedRecencyWindowDays"`
+	FavoritesBlendWeight    float64 `json:"favoritesBlendWeight"`
+	LowRatingPenalty        float64 `json:"lowRatingPenalty"`
+	MinTrackDurationSeconds int     `json:"minTrackDurationSeconds"`
+	MaxTrackDurationSeconds int     `json:"maxTrackDurationSeconds"`
 }
 
 func defaultRecommendationSettings() recommendationSettings {
@@ -220,12 +226,14 @@ func defaultRecommendationSettings() recommendationSettings {
 		diversity = 1
 	}
 	return recommendationSettings{
-		MixLength:             limit,
-		BaseDiversity:         diversity,
-		DiscoveryExploration:  0.6,
-		SeedRecencyWindowDays: 60,
-		FavoritesBlendWeight:  0.85,
-		LowRatingPenalty:      0.85,
+		MixLength:               limit,
+		BaseDiversity:           diversity,
+		DiscoveryExploration:    0.6,
+		SeedRecencyWindowDays:   60,
+		FavoritesBlendWeight:    0.85,
+		LowRatingPenalty:        0.85,
+		MinTrackDurationSeconds: defaultMinTrackSeconds,
+		MaxTrackDurationSeconds: defaultMaxTrackSeconds,
 	}
 }
 
@@ -244,6 +252,12 @@ func (s *recommendationSettings) applyDefaults(defaults recommendationSettings) 
 	}
 	if s.LowRatingPenalty == 0 {
 		s.LowRatingPenalty = defaults.LowRatingPenalty
+	}
+	if s.MinTrackDurationSeconds == 0 {
+		s.MinTrackDurationSeconds = defaults.MinTrackDurationSeconds
+	}
+	if s.MaxTrackDurationSeconds == 0 {
+		s.MaxTrackDurationSeconds = defaults.MaxTrackDurationSeconds
 	}
 }
 
@@ -265,6 +279,15 @@ func (s recommendationSettings) validate() error {
 	}
 	if s.LowRatingPenalty < 0.3 || s.LowRatingPenalty > 1 {
 		return fmt.Errorf("lowRatingPenalty must be between %.2f and %.2f", 0.3, 1.0)
+	}
+	if s.MinTrackDurationSeconds < trackDurationMinSeconds || s.MinTrackDurationSeconds > trackDurationMaxSeconds {
+		return fmt.Errorf("minTrackDurationSeconds must be between %d and %d", trackDurationMinSeconds, trackDurationMaxSeconds)
+	}
+	if s.MaxTrackDurationSeconds < trackDurationMinSeconds || s.MaxTrackDurationSeconds > trackDurationMaxSeconds {
+		return fmt.Errorf("maxTrackDurationSeconds must be between %d and %d", trackDurationMinSeconds, trackDurationMaxSeconds)
+	}
+	if s.MinTrackDurationSeconds > s.MaxTrackDurationSeconds {
+		return errors.New("minTrackDurationSeconds must be less than or equal to maxTrackDurationSeconds")
 	}
 	return nil
 }
@@ -744,14 +767,18 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	enrichedTracks := n.enrichTracksWithMetadata(tracks, result.Tracks)
 
 	_, filteredIDs, filteredWarnings := filterDislikedTracks(tracks, trackIDs, dislikes, blocked, settings.LowRatingPenalty)
+	_, durationFilteredIDs, durationWarning := filterTracksByDuration(tracks, filteredIDs, settings)
 	if len(result.Warnings) > 0 {
 		combinedWarnings = append(combinedWarnings, result.Warnings...)
 	}
 	if filteredWarnings != "" {
 		combinedWarnings = append(combinedWarnings, filteredWarnings)
 	}
-	finalTrackIDs := filteredIDs
-	finalTracks := enrichedTracks
+	if durationWarning != "" {
+		combinedWarnings = append(combinedWarnings, durationWarning)
+	}
+	finalTrackIDs := durationFilteredIDs
+	finalTracks := filterRecommendationTracksByIDs(enrichedTracks, finalTrackIDs)
 	if len(finalTrackIDs) < limit {
 		additional := fallbackTrackIDs(seeds, limit, blocked)
 		additional = difference(finalTrackIDs, additional)
@@ -789,6 +816,9 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 							continue
 						}
 						if dislikes.shouldReject(mf, id, settings.LowRatingPenalty) {
+							continue
+						}
+						if !settings.isDurationAllowed(mf.Duration) {
 							continue
 						}
 						finalTrackIDs = append(finalTrackIDs, id)
@@ -1473,6 +1503,68 @@ func clamp(value float64, minValue float64, maxValue float64) float64 {
 	return value
 }
 
+func (s recommendationSettings) isDurationAllowed(duration float32) bool {
+	if duration <= 0 {
+		return false
+	}
+	seconds := float64(duration)
+	return seconds >= float64(s.MinTrackDurationSeconds) && seconds <= float64(s.MaxTrackDurationSeconds)
+}
+
+func filterTracksByDuration(tracks []model.MediaFile, trackIDs []string, settings recommendationSettings) ([]model.MediaFile, []string, string) {
+	if len(trackIDs) == 0 {
+		return tracks, trackIDs, ""
+	}
+	trackMap := make(map[string]model.MediaFile, len(tracks))
+	for _, mf := range tracks {
+		trackMap[mf.ID] = mf
+	}
+	filteredIDs := make([]string, 0, len(trackIDs))
+	filteredTracks := make([]model.MediaFile, 0, len(tracks))
+	removed := 0
+	for _, id := range trackIDs {
+		mf, ok := trackMap[id]
+		if !ok {
+			continue
+		}
+		if !settings.isDurationAllowed(mf.Duration) {
+			removed++
+			continue
+		}
+		filteredIDs = append(filteredIDs, id)
+		filteredTracks = append(filteredTracks, mf)
+	}
+	if removed == 0 {
+		return filteredTracks, filteredIDs, ""
+	}
+	warning := fmt.Sprintf(
+		"%d tracks skipped because their duration is outside your allowed range (%ds to %ds).",
+		removed,
+		settings.MinTrackDurationSeconds,
+		settings.MaxTrackDurationSeconds,
+	)
+	return filteredTracks, filteredIDs, warning
+}
+
+func filterRecommendationTracksByIDs(tracks []recommendationTrack, ids []string) []recommendationTrack {
+	if len(ids) == 0 {
+		return []recommendationTrack{}
+	}
+	trackMap := make(map[string]recommendationTrack, len(tracks))
+	for _, track := range tracks {
+		trackMap[track.ID] = track
+	}
+	filtered := make([]recommendationTrack, 0, len(ids))
+	for _, id := range ids {
+		track, ok := trackMap[id]
+		if !ok {
+			continue
+		}
+		filtered = append(filtered, track)
+	}
+	return filtered
+}
+
 func filterDislikedTracks(tracks []model.MediaFile, trackIDs []string, signals dislikeSignals, blocked map[string]struct{}, scale float64) ([]model.MediaFile, []string, string) {
 	if len(trackIDs) == 0 {
 		return tracks, trackIDs, ""
@@ -1728,22 +1820,28 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "failed to load tracks", http.StatusInternalServerError)
 		return
 	}
+	tracks, filteredTrackIDs, durationWarning := filterTracksByDuration(tracks, trackIDs, settings)
 
 	// Enrich tracks with multi-model metadata
 	enrichedTracks := n.enrichTracksWithMetadata(tracks, result.Tracks)
+	finalTracks := filterRecommendationTracksByIDs(enrichedTracks, filteredTrackIDs)
 
 	// Extract final track IDs
-	finalTrackIDs := make([]string, 0, len(enrichedTracks))
-	for _, track := range enrichedTracks {
-		finalTrackIDs = append(finalTrackIDs, track.ID)
+	finalTrackIDs := make([]string, 0, len(filteredTrackIDs))
+	for _, trackID := range filteredTrackIDs {
+		finalTrackIDs = append(finalTrackIDs, trackID)
+	}
+	warnings := append([]string{}, result.Warnings...)
+	if durationWarning != "" {
+		warnings = append(warnings, durationWarning)
 	}
 
 	response := recommendationResponsePayload{
 		Name:     payload.Text,
 		Mode:     modeTextRecommendations,
 		TrackIDs: finalTrackIDs,
-		Tracks:   enrichedTracks,
-		Warnings: result.Warnings,
+		Tracks:   finalTracks,
+		Warnings: warnings,
 	}
 
 	writeJSON(w, http.StatusOK, response)

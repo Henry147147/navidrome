@@ -214,3 +214,67 @@ func TestRecommendationLookupNames(t *testing.T) {
 		}
 	})
 }
+
+func TestDefaultRecommendationSettingsIncludesDurationBounds(t *testing.T) {
+	settings := defaultRecommendationSettings()
+	if settings.MinTrackDurationSeconds != defaultMinTrackSeconds {
+		t.Fatalf("expected default min track duration %d, got %d", defaultMinTrackSeconds, settings.MinTrackDurationSeconds)
+	}
+	if settings.MaxTrackDurationSeconds != defaultMaxTrackSeconds {
+		t.Fatalf("expected default max track duration %d, got %d", defaultMaxTrackSeconds, settings.MaxTrackDurationSeconds)
+	}
+}
+
+func TestRecommendationSettingsValidateDurationBounds(t *testing.T) {
+	valid := defaultRecommendationSettings()
+	if err := valid.validate(); err != nil {
+		t.Fatalf("expected defaults to validate, got %v", err)
+	}
+
+	tooShort := valid
+	tooShort.MinTrackDurationSeconds = 0
+	if err := tooShort.validate(); err == nil {
+		t.Fatalf("expected minTrackDurationSeconds validation error")
+	}
+
+	tooLong := valid
+	tooLong.MaxTrackDurationSeconds = trackDurationMaxSeconds + 1
+	if err := tooLong.validate(); err == nil {
+		t.Fatalf("expected maxTrackDurationSeconds validation error")
+	}
+
+	inverted := valid
+	inverted.MinTrackDurationSeconds = 120
+	inverted.MaxTrackDurationSeconds = 60
+	if err := inverted.validate(); err == nil {
+		t.Fatalf("expected min <= max validation error")
+	}
+}
+
+func TestFilterTracksByDuration(t *testing.T) {
+	settings := defaultRecommendationSettings()
+	settings.MinTrackDurationSeconds = 30
+	settings.MaxTrackDurationSeconds = 900
+
+	tracks := []model.MediaFile{
+		{ID: "too-short", Duration: 12},
+		{ID: "good-a", Duration: 45},
+		{ID: "good-b", Duration: 900},
+		{ID: "too-long", Duration: 901},
+	}
+	ids := []string{"too-short", "good-a", "good-b", "too-long"}
+
+	filteredTracks, filteredIDs, warning := filterTracksByDuration(tracks, ids, settings)
+	if len(filteredIDs) != 2 {
+		t.Fatalf("expected 2 IDs after duration filtering, got %d (%#v)", len(filteredIDs), filteredIDs)
+	}
+	if filteredIDs[0] != "good-a" || filteredIDs[1] != "good-b" {
+		t.Fatalf("unexpected filtered IDs: %#v", filteredIDs)
+	}
+	if len(filteredTracks) != 2 || filteredTracks[0].ID != "good-a" || filteredTracks[1].ID != "good-b" {
+		t.Fatalf("unexpected filtered tracks: %#v", filteredTracks)
+	}
+	if !strings.Contains(warning, "outside your allowed range") {
+		t.Fatalf("expected duration warning, got %q", warning)
+	}
+}

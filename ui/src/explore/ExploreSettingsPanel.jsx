@@ -9,6 +9,7 @@ import {
   Typography,
 } from '@material-ui/core'
 import { makeStyles } from '@material-ui/core/styles'
+import { formatDuration2 } from '../utils'
 
 const useStyles = makeStyles((theme) => ({
   card: {
@@ -155,6 +156,32 @@ const ExploreSettingsPanel = ({
       format: (value) => `${Math.round(value * 100)}%`,
     },
     {
+      key: 'minTrackDurationSeconds',
+      min: 1,
+      max: 1800,
+      step: 1,
+      label: translate('pages.explore.settings.minTrackDuration', {
+        _: 'Minimum track length',
+      }),
+      helper: translate('pages.explore.settings.minTrackDurationHelper', {
+        _: 'Tracks shorter than this are excluded from Explore and Auto Play recommendations.',
+      }),
+      format: (value) => formatDuration2(value),
+    },
+    {
+      key: 'maxTrackDurationSeconds',
+      min: 1,
+      max: 7200,
+      step: 1,
+      label: translate('pages.explore.settings.maxTrackDuration', {
+        _: 'Maximum track length',
+      }),
+      helper: translate('pages.explore.settings.maxTrackDurationHelper', {
+        _: 'Tracks longer than this are excluded from Explore and Auto Play recommendations.',
+      }),
+      format: (value) => formatDuration2(value),
+    },
+    {
       key: 'lowRatingPenalty',
       min: 0.3,
       max: 1,
@@ -214,8 +241,6 @@ const ExploreSettingsPanel = ({
                   max={config.max}
                   step={config.step}
                   onChange={handleChange}
-                  valueLabelDisplay="auto"
-                  valueLabelFormat={config.format}
                 />
                 <Typography variant="body2" className={classes.helperText}>
                   {config.helper}

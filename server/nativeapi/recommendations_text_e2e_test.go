@@ -165,6 +165,7 @@ func putMediaFiles(t *testing.T, ds model.DataStore, ids ...string) {
 			Artist:    "Artist " + id,
 			Album:     "Album " + id,
 			LibraryID: 1,
+			Duration:  180,
 		}
 		if err := repo.Put(&mf); err != nil {
 			t.Fatalf("failed to insert media file %s: %v", id, err)

@@ -198,6 +198,8 @@ const DEFAULT_SETTINGS = {
   seedRecencyWindowDays: 60,
   favoritesBlendWeight: 0.85,
   lowRatingPenalty: 0.85,
+  minTrackDurationSeconds: 30,
+  maxTrackDurationSeconds: 15 * 60,
 }
 
 const RECOMMENDATION_MODEL_OPTIONS = [
@@ -567,6 +569,40 @@ const ExploreSuggestions = () => {
       issues.lowRatingPenalty = translate(
         'pages.explore.settings.lowRatingPenaltyError',
         { _: 'Keep the penalty between 30% and 100%.' },
+      )
+    }
+    if (
+      values.minTrackDurationSeconds < 1 ||
+      values.minTrackDurationSeconds > 24 * 60 * 60
+    ) {
+      issues.minTrackDurationSeconds = translate(
+        'pages.explore.settings.minTrackDurationError',
+        {
+          _: 'Minimum track length must be between 1 second and 24 hours.',
+        },
+      )
+    }
+    if (
+      values.maxTrackDurationSeconds < 1 ||
+      values.maxTrackDurationSeconds > 24 * 60 * 60
+    ) {
+      issues.maxTrackDurationSeconds = translate(
+        'pages.explore.settings.maxTrackDurationError',
+        {
+          _: 'Maximum track length must be between 1 second and 24 hours.',
+        },
+      )
+    }
+    if (
+      values.minTrackDurationSeconds > 0 &&
+      values.maxTrackDurationSeconds > 0 &&
+      values.minTrackDurationSeconds > values.maxTrackDurationSeconds
+    ) {
+      issues.maxTrackDurationSeconds = translate(
+        'pages.explore.settings.durationRangeError',
+        {
+          _: 'Maximum track length must be greater than or equal to minimum track length.',
+        },
       )
     }
     return issues
@@ -1704,7 +1740,7 @@ const ExploreSuggestions = () => {
                 },
               )}
               multiline
-              rows={2}
+              minRows={2}
             />
             <FormControl variant="outlined" className={classes.modelControl}>
               <InputLabel id="custom-text-targets-label">

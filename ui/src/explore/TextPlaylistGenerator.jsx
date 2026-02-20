@@ -226,7 +226,7 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
               value={textQuery}
               onChange={(e) => setTextQuery(e.target.value)}
               multiline
-              rows={2}
+              minRows={2}
               variant="outlined"
               fullWidth
               disabled={loading}
