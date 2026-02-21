@@ -11,6 +11,26 @@ import rename_music_special_chars as sanitizer
 
 
 class RenameMusicSpecialCharsTests(unittest.TestCase):
+    def test_em_dash_unchanged_without_option(self) -> None:
+        sanitized, reasons = sanitizer.sanitize_stem("Song—Live")
+        self.assertEqual(sanitized, "Song—Live")
+        self.assertEqual(reasons, [])
+
+    def test_em_dash_replaced_with_option(self) -> None:
+        sanitized, reasons = sanitizer.sanitize_stem(
+            "Song—Live", replace_problematic_chars=True
+        )
+        self.assertEqual(sanitized, "Song-Live")
+        self.assertIn("dash_variant", reasons)
+
+    def test_problematic_unicode_chars_replaced_with_option(self) -> None:
+        sanitized, reasons = sanitizer.sanitize_stem(
+            "A\u00A0B\u200BC", replace_problematic_chars=True
+        )
+        self.assertEqual(sanitized, "A B_C")
+        self.assertIn("unicode_whitespace", reasons)
+        self.assertIn("format_or_surrogate_char", reasons)
+
     def test_invalid_character_replacement(self) -> None:
         sanitized, reasons = sanitizer.sanitize_stem("song?:*")
         self.assertEqual(sanitized, "song___")
@@ -123,6 +143,31 @@ class RenameMusicSpecialCharsTests(unittest.TestCase):
             self.assertTrue(target_c.exists())
             self.assertEqual(target_b.read_text(encoding="utf-8"), "A")
             self.assertEqual(target_c.read_text(encoding="utf-8"), "B")
+
+    def test_apply_mode_with_problematic_char_option(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original = root / "track—name.flac"
+            report = root / "extended.json"
+            original.write_text("x", encoding="utf-8")
+
+            code = sanitizer.run(
+                [
+                    "--root",
+                    str(root),
+                    "--apply",
+                    "--replace-problematic-chars",
+                    "--report-json",
+                    str(report),
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            self.assertFalse(original.exists())
+            self.assertTrue((root / "track-name.flac").exists())
+            data = json.loads(report.read_text(encoding="utf-8"))
+            self.assertTrue(data["options"]["replace_problematic_chars"])
+            self.assertEqual(data["summary"]["renamed"], 1)
 
 
 if __name__ == "__main__":

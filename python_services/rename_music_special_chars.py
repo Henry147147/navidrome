@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import sys
+import unicodedata
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,15 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 from tqdm import tqdm
 
 INVALID_WINDOWS_CHARS = set('<>:"/\\|?*')
+DASH_VARIANTS = {
+    "\u2010",  # hyphen
+    "\u2011",  # non-breaking hyphen
+    "\u2012",  # figure dash
+    "\u2013",  # en dash
+    "\u2014",  # em dash
+    "\u2015",  # horizontal bar
+    "\u2212",  # minus sign
+}
 WINDOWS_RESERVED_NAMES = {
     "CON",
     "PRN",
@@ -62,16 +72,52 @@ class RenameError:
     error: str
 
 
-def sanitize_stem(stem: str) -> Tuple[str, List[str]]:
+def map_problematic_char(char: str) -> Tuple[str, str] | None:
+    if char in DASH_VARIANTS:
+        return "-", "dash_variant"
+    if char.isspace() and char != " ":
+        return " ", "unicode_whitespace"
+    category = unicodedata.category(char)
+    if category in {"Cf", "Cs"}:
+        return "_", "format_or_surrogate_char"
+    if char == "\ufffd":
+        return "_", "replacement_char"
+    return None
+
+
+def sanitize_stem(stem: str, replace_problematic_chars: bool = False) -> Tuple[str, List[str]]:
     reasons: List[str] = []
     output_chars: List[str] = []
     saw_invalid_char = False
     saw_control_char = False
+    saw_dash_variant = False
+    saw_unicode_whitespace = False
+    saw_format_or_surrogate_char = False
+    saw_replacement_char = False
 
     for char in stem:
         if ord(char) < 32:
             output_chars.append("_")
             saw_control_char = True
+        elif replace_problematic_chars:
+            mapped = map_problematic_char(char)
+            if mapped is not None:
+                replacement, reason = mapped
+                output_chars.append(replacement)
+                if reason == "dash_variant":
+                    saw_dash_variant = True
+                elif reason == "unicode_whitespace":
+                    saw_unicode_whitespace = True
+                elif reason == "format_or_surrogate_char":
+                    saw_format_or_surrogate_char = True
+                elif reason == "replacement_char":
+                    saw_replacement_char = True
+                continue
+            if char in INVALID_WINDOWS_CHARS:
+                output_chars.append("_")
+                saw_invalid_char = True
+            else:
+                output_chars.append(char)
         elif char in INVALID_WINDOWS_CHARS:
             output_chars.append("_")
             saw_invalid_char = True
@@ -82,6 +128,14 @@ def sanitize_stem(stem: str) -> Tuple[str, List[str]]:
         reasons.append("invalid_char")
     if saw_control_char:
         reasons.append("control_char")
+    if saw_dash_variant:
+        reasons.append("dash_variant")
+    if saw_unicode_whitespace:
+        reasons.append("unicode_whitespace")
+    if saw_format_or_surrogate_char:
+        reasons.append("format_or_surrogate_char")
+    if saw_replacement_char:
+        reasons.append("replacement_char")
 
     sanitized = "".join(output_chars)
     trimmed = sanitized.rstrip(" .")
@@ -108,10 +162,14 @@ def scan_regular_files(root: Path) -> List[Path]:
     return files
 
 
-def build_rename_plan(files: Iterable[Path]) -> List[RenamePlanItem]:
+def build_rename_plan(
+    files: Iterable[Path], replace_problematic_chars: bool = False
+) -> List[RenamePlanItem]:
     planned: List[RenamePlanItem] = []
     for path in tqdm(list(files), desc="Planning renames", unit="file"):
-        sanitized_stem, reasons = sanitize_stem(path.stem)
+        sanitized_stem, reasons = sanitize_stem(
+            path.stem, replace_problematic_chars=replace_problematic_chars
+        )
         if sanitized_stem == path.stem:
             continue
         target = path.with_name(f"{sanitized_stem}{path.suffix}")
@@ -268,6 +326,7 @@ def write_report(
     report_path: Path,
     root: Path,
     dry_run: bool,
+    replace_problematic_chars: bool,
     summary: Dict[str, int],
     planned: Sequence[RenamePlanItem],
     renamed: Sequence[RenamePlanItem],
@@ -277,6 +336,9 @@ def write_report(
     data = {
         "root": str(root),
         "mode": "dry_run" if dry_run else "apply",
+        "options": {
+            "replace_problematic_chars": replace_problematic_chars,
+        },
         "summary": summary,
         "planned": [
             {
@@ -339,6 +401,14 @@ def run(argv: Sequence[str] | None = None) -> int:
         "--report-json",
         help="Optional output path for a JSON report",
     )
+    parser.add_argument(
+        "--replace-problematic-chars",
+        action="store_true",
+        help=(
+            "Also replace additional Unicode/problematic characters "
+            "(for example em dashes, format chars, and non-standard whitespace)"
+        ),
+    )
 
     args = parser.parse_args(argv)
 
@@ -351,7 +421,9 @@ def run(argv: Sequence[str] | None = None) -> int:
         return 2
 
     files = scan_regular_files(root)
-    planned = build_rename_plan(files)
+    planned = build_rename_plan(
+        files, replace_problematic_chars=args.replace_problematic_chars
+    )
     ready, conflicts = detect_conflicts(planned, files)
 
     renamed: List[RenamePlanItem] = []
@@ -378,6 +450,7 @@ def run(argv: Sequence[str] | None = None) -> int:
             report_path=report_path,
             root=root,
             dry_run=not args.apply,
+            replace_problematic_chars=args.replace_problematic_chars,
             summary=summary,
             planned=planned,
             renamed=renamed,
