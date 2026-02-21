@@ -31,6 +31,8 @@ MILVUS_DESCRIPTION_COLLECTION = "description_embedding"
 MODEL_ID = "music_flamingo_enriched"
 TEXT_MODEL_ID = "qwen3_embedding_4b"
 MILVUS_MAX_DIM = 32768
+MILVUS_DESCRIPTION_MAX_LENGTH = 8192
+MILVUS_LYRICS_MAX_LENGTH = 32768
 
 
 @dataclass(frozen=True)
@@ -177,6 +179,8 @@ def _default_config() -> dict[str, Any]:
             "upload_milvus": True,
             "sort_length": "",
             "sort_name_reverse": False,
+            "qwen_only": False,
+            "recreate_description_collection": False,
         },
     }
 
@@ -209,6 +213,31 @@ def _canonical_track_name(track: TrackInfo) -> str:
     if title:
         return title
     return track.path
+
+
+def _truncate_milvus_text(field_name: str, value: str, max_length: int, record_key: str) -> str:
+    text_length = len(value)
+    byte_length = len(value.encode("utf-8"))
+    if text_length <= max_length and byte_length <= max_length:
+        return value
+
+    # Milvus VARCHAR limits can be hit by either character count or UTF-8 bytes.
+    # Trim by bytes first, then clamp chars to stay within both constraints.
+    truncated = value.encode("utf-8")[:max_length].decode("utf-8", errors="ignore")
+    if len(truncated) > max_length:
+        truncated = truncated[:max_length]
+
+    logging.debug(
+        "Truncating Milvus %s for %s to <=%d chars/bytes (original chars=%d bytes=%d, truncated chars=%d bytes=%d)",
+        field_name,
+        record_key,
+        max_length,
+        text_length,
+        byte_length,
+        len(truncated),
+        len(truncated.encode("utf-8")),
+    )
+    return truncated
 
 
 def _is_milvus_pk_safe(value: str) -> bool:
@@ -325,6 +354,12 @@ def _get_collection_missing_fields(collection: Collection, required_fields: Sequ
         return []
     existing = {field.name for field in collection.schema.fields}
     return [field for field in required_fields if field not in existing]
+
+
+def _resolve_collection_embedding_dim(collection_name: str) -> Optional[int]:
+    if not utility.has_collection(collection_name):
+        return None
+    return _get_collection_embedding_dim(Collection(collection_name))
 
 
 class MilvusWriter:
@@ -880,12 +915,12 @@ def _run_qwen_pass(
     lyrics_milvus = MilvusWriter(
         cfg["milvus"]["uri"],
         MILVUS_LYRICS_COLLECTION,
-        extra_fields=[FieldSchema(name="lyrics", dtype=DataType.VARCHAR, max_length=32768)],
+        extra_fields=[FieldSchema(name="lyrics", dtype=DataType.VARCHAR, max_length=MILVUS_LYRICS_MAX_LENGTH)],
     )
     description_milvus = MilvusWriter(
         cfg["milvus"]["uri"],
         MILVUS_DESCRIPTION_COLLECTION,
-        extra_fields=[FieldSchema(name="description", dtype=DataType.VARCHAR, max_length=4096)],
+        extra_fields=[FieldSchema(name="description", dtype=DataType.VARCHAR, max_length=MILVUS_DESCRIPTION_MAX_LENGTH)],
     )
 
     logging.info("Starting Qwen text embedding pass on %s", device)
@@ -945,7 +980,14 @@ def _run_qwen_pass(
                         track_key,
                         embedding,
                         TEXT_MODEL_ID,
-                        extra_fields={"description": text},
+                        extra_fields={
+                            "description": _truncate_milvus_text(
+                                "description",
+                                text,
+                                MILVUS_DESCRIPTION_MAX_LENGTH,
+                                track_key,
+                            )
+                        },
                     )
                     text_processed += 1
                 elif kind == "lyrics":
@@ -956,7 +998,14 @@ def _run_qwen_pass(
                         track_key,
                         embedding,
                         TEXT_MODEL_ID,
-                        extra_fields={"lyrics": text},
+                        extra_fields={
+                            "lyrics": _truncate_milvus_text(
+                                "lyrics",
+                                text,
+                                MILVUS_LYRICS_MAX_LENGTH,
+                                track_key,
+                            )
+                        },
                     )
                     text_processed += 1
             except Exception as exc:
@@ -1146,6 +1195,18 @@ def _parse_args() -> dict[str, Any]:
     parser.add_argument("--force", dest="force", action="store_true", help="Re-embed tracks even if embeddings exist")
     parser.add_argument("--no-milvus", dest="no_milvus", action="store_true", help="Skip uploading embeddings to Milvus")
     parser.add_argument(
+        "--qwen-only",
+        dest="qwen_only",
+        action="store_true",
+        help="Run only Qwen text embedding upload from existing .text.json payloads",
+    )
+    parser.add_argument(
+        "--recreate-description-collection",
+        dest="recreate_description_collection",
+        action="store_true",
+        help="Drop and recreate description_embedding collection with the current schema, then exit unless --qwen-only is also set",
+    )
+    parser.add_argument(
         "--sort-length",
         dest="sort_length",
         choices=("long", "short", "name"),
@@ -1168,6 +1229,12 @@ def _parse_args() -> dict[str, Any]:
         sys.exit(0)
     if args.sort_name_reverse and args.sort_length in ("long", "short"):
         parser.error("--sort-name-reverse can only be used with --sort-length name (or with --sort-length omitted)")
+    if args.qwen_only and args.skip_text:
+        parser.error("--qwen-only cannot be used with --skip-text")
+    if args.qwen_only and args.no_milvus:
+        parser.error("--qwen-only requires Milvus upload (remove --no-milvus)")
+    if args.recreate_description_collection and args.no_milvus:
+        parser.error("--recreate-description-collection requires Milvus upload (remove --no-milvus)")
 
     cfg["database"]["path"] = args.db_path
     cfg["milvus"]["uri"] = args.milvus_uri
@@ -1197,6 +1264,8 @@ def _parse_args() -> dict[str, Any]:
     cfg["cli"]["config_file"] = args.config_file
     cfg["cli"]["sort_length"] = args.sort_length
     cfg["cli"]["sort_name_reverse"] = args.sort_name_reverse
+    cfg["cli"]["qwen_only"] = args.qwen_only
+    cfg["cli"]["recreate_description_collection"] = args.recreate_description_collection
 
     _normalize_config(cfg)
     return cfg
@@ -1216,10 +1285,71 @@ def _check_milvus_available(cfg: dict[str, Any]) -> bool:
     return True
 
 
+def _recreate_description_collection(cfg: dict[str, Any]) -> None:
+    writer = MilvusWriter(
+        cfg["milvus"]["uri"],
+        MILVUS_DESCRIPTION_COLLECTION,
+        extra_fields=[FieldSchema(name="description", dtype=DataType.VARCHAR, max_length=MILVUS_DESCRIPTION_MAX_LENGTH)],
+    )
+    writer.connect()
+
+    dim = _resolve_collection_embedding_dim(MILVUS_DESCRIPTION_COLLECTION)
+    if dim is None:
+        dim = _resolve_collection_embedding_dim(MILVUS_LYRICS_COLLECTION)
+    if dim is None:
+        raise RuntimeError(
+            "Could not determine text embedding dimension. Ensure either description_embedding or lyrics_embedding exists."
+        )
+
+    if utility.has_collection(MILVUS_DESCRIPTION_COLLECTION):
+        logging.info("Dropping Milvus collection %s", MILVUS_DESCRIPTION_COLLECTION)
+        utility.drop_collection(MILVUS_DESCRIPTION_COLLECTION)
+    writer.ensure_collection(dim)
+    writer.flush()
+    logging.info(
+        "Recreated Milvus collection %s with embedding_dim=%d description.max_length=%d",
+        MILVUS_DESCRIPTION_COLLECTION,
+        dim,
+        MILVUS_DESCRIPTION_MAX_LENGTH,
+    )
+
+
 def main():
     cfg = _parse_args()
     _setup_logging(cfg["logging"]["level"])
+
+    if cfg["cli"]["dry_run"]:
+        _ensure_output_dir(cfg["cli"]["output_dir"])
+        tracks = get_all_music(
+            cfg["database"]["path"],
+            music_dir=cfg["cli"]["music_dir"],
+            sort_length=cfg["cli"]["sort_length"],
+            sort_name_reverse=cfg["cli"]["sort_name_reverse"],
+        )
+        if not tracks:
+            logging.info("No tracks found in database.")
+            return
+        for track in tracks:
+            name = _canonical_track_name(track)
+            logging.info("Dry run: would embed %s (%s)", name, track.full_path)
+        return
+
+    upload_milvus = cfg["cli"]["upload_milvus"]
+    skip_text = cfg["embedder"]["skip_text"]
+
+    if upload_milvus and not _check_milvus_available(cfg):
+        upload_milvus = False
+        cfg["cli"]["upload_milvus"] = False
+
+    if cfg["cli"]["recreate_description_collection"]:
+        if not upload_milvus:
+            raise RuntimeError("--recreate-description-collection requires Milvus upload (remove --no-milvus).")
+        _recreate_description_collection(cfg)
+        if not cfg["cli"]["qwen_only"]:
+            return
+
     _ensure_output_dir(cfg["cli"]["output_dir"])
+
     tracks = get_all_music(
         cfg["database"]["path"],
         music_dir=cfg["cli"]["music_dir"],
@@ -1237,19 +1367,6 @@ def main():
         if not tracks:
             logging.info("No tracks left after applying max-tracks limit.")
             return
-
-    if cfg["cli"]["dry_run"]:
-        for track in tracks:
-            name = _canonical_track_name(track)
-            logging.info("Dry run: would embed %s (%s)", name, track.full_path)
-        return
-
-    upload_milvus = cfg["cli"]["upload_milvus"]
-    skip_text = cfg["embedder"]["skip_text"]
-
-    if upload_milvus and not _check_milvus_available(cfg):
-        upload_milvus = False
-        cfg["cli"]["upload_milvus"] = False
 
     available_gpus = _available_gpus()
     audio_gpus = _parse_gpu_list(cfg["embedder"]["audio_gpus"])
@@ -1284,6 +1401,13 @@ def main():
         logging.info("Text generation GPU: %d", text_gpu)
     else:
         logging.info("Text generation on CPU")
+
+    if cfg["cli"]["qwen_only"]:
+        if not upload_milvus:
+            raise RuntimeError("--qwen-only requires Milvus upload (remove --no-milvus).")
+        logging.info("Qwen-only mode enabled; skipping audio and text-generation passes.")
+        _run_qwen_pass(tracks, cfg, text_gpu)
+        return
 
     tracks_for_audio = _prefilter_tracks_for_audio_pass(tracks, cfg, upload_milvus)
     if not tracks_for_audio:
