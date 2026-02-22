@@ -21,8 +21,8 @@ ctx_size="${QWEN_CTX_SIZE:-8192}"
 ubatch_size="${QWEN_UBATCH_SIZE:-8192}"
 batch_size="${QWEN_BATCH_SIZE:-2048}"
 
-hf_repo="${QWEN_HF_REPO:-Qwen/Qwen3-Embedding-8B-GGUF}"
-hf_file="${QWEN_HF_FILE:-Qwen3-Embedding-8B-Q8_0.gguf}"
+hf_repo="${QWEN_HF_REPO:-Qwen/Qwen3-Embedding-4B-GGUF}"
+hf_file="${QWEN_HF_FILE:-Qwen3-Embedding-4B-Q8_0.gguf}"
 model_path="${QWEN_MODEL_PATH:-}"
 
 lib_dir="$(dirname "$llama_server_bin")"

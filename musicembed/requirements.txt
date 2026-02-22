@@ -82,3 +82,4 @@ typer-slim==0.21.1
 typing_extensions==4.15.0
 urllib3==2.6.3
 wheel==0.46.3
+vllm
