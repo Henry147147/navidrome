@@ -22,7 +22,8 @@ if SCRIPT_DIR not in sys.path:
     sys.path.append(SCRIPT_DIR)
 
 from enrichment import enrich_and_concatenate
-from model import MusicFlamingo, QwenEmbedder
+from model import MusicFlamingo
+from text_embedding_client import LlamaCppEmbeddingClient
 
 VERSION = "1.0.0"
 MILVUS_COLLECTION = "flamingo_audio_embedding"
@@ -33,6 +34,7 @@ TEXT_MODEL_ID = "qwen3_embedding_4b"
 MILVUS_MAX_DIM = 32768
 MILVUS_DESCRIPTION_MAX_LENGTH = 8192
 MILVUS_LYRICS_MAX_LENGTH = 32768
+TEXT_EMBED_DEFAULT_DIM = 2560
 
 
 @dataclass(frozen=True)
@@ -167,6 +169,11 @@ def _default_config() -> dict[str, Any]:
             "dequantize_fp8": _parse_optional_bool(_get_env_or_default("MF_DEQUANTIZE_FP8", "0")) or False,
             "max_tracks": int(_get_env_or_default("MF_MAX_TRACKS", "0")),
             "skip_text": _get_env_or_default("MF_SKIP_TEXT", "").lower() in ("1", "true", "yes"),
+            "text_embed_base_url": _get_env_or_default(
+                "MF_TEXT_EMBED_BASE_URL",
+                _get_env_or_default("ND_RECOMMENDATIONS_TEXTBASEURL", ""),
+            ),
+            "text_embed_timeout": float(_get_env_or_default("MF_TEXT_EMBED_TIMEOUT", "30")),
         },
         "logging": {
             "level": _get_env_or_default("LOG_LEVEL", "info"),
@@ -907,10 +914,14 @@ def _run_qwen_pass(
     cfg: dict[str, Any],
     text_gpu: Optional[int],
 ) -> None:
-    device = cfg["embedder"]["device"]
-    if text_gpu is not None and torch.cuda.is_available():
-        torch.cuda.set_device(text_gpu)
-        device = f"cuda:{text_gpu}"
+    _ = text_gpu
+    text_embed_base_url = str(cfg["embedder"]["text_embed_base_url"]).strip()
+    text_embed_timeout = float(cfg["embedder"]["text_embed_timeout"])
+    target_text_dim = _resolve_collection_embedding_dim(MILVUS_DESCRIPTION_COLLECTION)
+    if target_text_dim is None:
+        target_text_dim = _resolve_collection_embedding_dim(MILVUS_LYRICS_COLLECTION)
+    if target_text_dim is None:
+        target_text_dim = TEXT_EMBED_DEFAULT_DIM
 
     lyrics_milvus = MilvusWriter(
         cfg["milvus"]["uri"],
@@ -923,8 +934,16 @@ def _run_qwen_pass(
         extra_fields=[FieldSchema(name="description", dtype=DataType.VARCHAR, max_length=MILVUS_DESCRIPTION_MAX_LENGTH)],
     )
 
-    logging.info("Starting Qwen text embedding pass on %s", device)
-    qwen_embedder = QwenEmbedder(batch_size=cfg["embedder"]["batch_size"], device=device)
+    logging.info(
+        "Starting Qwen text embedding pass via llama.cpp endpoint %s (target_dim=%d timeout=%.1fs)",
+        text_embed_base_url,
+        target_text_dim,
+        text_embed_timeout,
+    )
+    text_embedder = LlamaCppEmbeddingClient(
+        base_url=text_embed_base_url,
+        timeout_seconds=text_embed_timeout,
+    )
     text_processed = 0
     text_skipped = 0
     text_failed = 0
@@ -960,16 +979,16 @@ def _run_qwen_pass(
             return
         texts = [item[3] for item in text_batch]
         try:
-            embeddings = qwen_embedder.encode_documents(texts)
+            embeddings_list = text_embedder.embed_documents(texts, dimensions=target_text_dim)
         except Exception as exc:
-            text_failed += len(text_batch)
-            logging.exception("Failed to embed text batch (%d items): %s", len(text_batch), exc)
-            text_batch.clear()
-            return
-        if hasattr(embeddings, "tolist"):
-            embeddings_list = embeddings.tolist()
-        else:
-            embeddings_list = list(embeddings)
+            raise RuntimeError(
+                "Qwen text embedding failed via llama.cpp endpoint "
+                f"{text_embed_base_url} for batch size {len(text_batch)}: {exc}"
+            ) from exc
+        if len(embeddings_list) != len(text_batch):
+            raise RuntimeError(
+                f"Qwen text embedding response size mismatch: expected {len(text_batch)} got {len(embeddings_list)}"
+            )
         for (track_key, display_name, kind, text), embedding in zip(text_batch, embeddings_list):
             try:
                 if kind == "description":
@@ -1186,6 +1205,19 @@ def _parse_args() -> dict[str, Any]:
         default=cfg["embedder"]["max_audio_seconds"],
         help="Truncate audio to N seconds before embedding (0 = no truncation)",
     )
+    parser.add_argument(
+        "--text-embed-base-url",
+        dest="text_embed_base_url",
+        default=cfg["embedder"]["text_embed_base_url"],
+        help="llama.cpp OpenAI-compatible embeddings base URL (for Qwen pass), e.g. http://127.0.0.1:9002",
+    )
+    parser.add_argument(
+        "--text-embed-timeout",
+        dest="text_embed_timeout",
+        type=float,
+        default=cfg["embedder"]["text_embed_timeout"],
+        help="Timeout in seconds for llama.cpp text embedding requests",
+    )
 
     parser.add_argument("--log-level", dest="log_level", default=cfg["logging"]["level"], help="Log level (debug, info, warn, error)")
 
@@ -1235,6 +1267,21 @@ def _parse_args() -> dict[str, Any]:
         parser.error("--qwen-only requires Milvus upload (remove --no-milvus)")
     if args.recreate_description_collection and args.no_milvus:
         parser.error("--recreate-description-collection requires Milvus upload (remove --no-milvus)")
+    effective_skip_text = args.skip_text or cfg["embedder"]["skip_text"]
+    qwen_stage_enabled = (
+        not args.dry_run
+        and (
+            args.qwen_only
+            or ((not args.no_milvus) and (not effective_skip_text) and (not args.recreate_description_collection))
+        )
+    )
+    if qwen_stage_enabled and not str(args.text_embed_base_url).strip():
+        parser.error(
+            "Qwen text embedding requires --text-embed-base-url (or MF_TEXT_EMBED_BASE_URL / "
+            "ND_RECOMMENDATIONS_TEXTBASEURL). Start a local endpoint with scripts/start-qwen-embed-server.sh."
+        )
+    if args.text_embed_timeout <= 0:
+        parser.error("--text-embed-timeout must be > 0")
 
     cfg["database"]["path"] = args.db_path
     cfg["milvus"]["uri"] = args.milvus_uri
@@ -1255,6 +1302,8 @@ def _parse_args() -> dict[str, Any]:
     cfg["embedder"]["max_tracks"] = args.max_tracks
     cfg["embedder"]["skip_text"] = args.skip_text or cfg["embedder"]["skip_text"]
     cfg["embedder"]["max_audio_seconds"] = args.max_audio_seconds
+    cfg["embedder"]["text_embed_base_url"] = args.text_embed_base_url
+    cfg["embedder"]["text_embed_timeout"] = args.text_embed_timeout
     cfg["logging"]["level"] = args.log_level
     cfg["cli"]["music_dir"] = args.music_dir
     cfg["cli"]["output_dir"] = args.output_dir

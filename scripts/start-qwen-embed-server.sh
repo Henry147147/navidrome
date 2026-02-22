@@ -47,6 +47,7 @@ else
 fi
 
 echo "Starting Qwen embedding server at http://$host:$port"
+echo "Set MF_TEXT_EMBED_BASE_URL=http://$host:$port for musicembed/navidrome-embedder.py."
 echo "Set ND_RECOMMENDATIONS_TEXTBASEURL=http://$host:$port for Navidrome."
 
 exec "$llama_server_bin" "${args[@]}"
