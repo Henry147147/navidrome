@@ -343,7 +343,19 @@ class MusicFlamingo:
         }
         if "audio_times" in inputs:
             audio_inputs["audio_times"] = inputs["audio_times"]
-        audio_inputs = {k: v.to(self.audio_device) for k, v in audio_inputs.items()}
+        audio_tower = getattr(self.music_flamingo, "audio_tower", None)
+        audio_tower_dtype = torch.float32
+        if audio_tower is not None:
+            for param in audio_tower.parameters():
+                audio_tower_dtype = param.dtype
+                break
+        casted_audio_inputs: Dict[str, torch.Tensor] = {}
+        for key, value in audio_inputs.items():
+            tensor = value.to(self.audio_device)
+            if torch.is_floating_point(tensor):
+                tensor = tensor.to(audio_tower_dtype)
+            casted_audio_inputs[key] = tensor
+        audio_inputs = casted_audio_inputs
         audio_embeds = None
         if compute_audio_embeds:
             self._move_audio_modules(self.audio_device)
@@ -550,10 +562,20 @@ class MusicFlamingo:
         if audio_token_count is not None:
             if audio_token_count < 1:
                 raise ValueError("audio_token_count must be >= 1")
+            audio_bos_token = (
+                getattr(self.music_processor, "sound_bos_token", None)
+                or getattr(self.music_processor, "audio_bos_token", None)
+                or "<|sound_bos|>"
+            )
+            audio_eos_token = (
+                getattr(self.music_processor, "sound_eos_token", None)
+                or getattr(self.music_processor, "audio_eos_token", None)
+                or "<|sound_eos|>"
+            )
             expanded_audio = (
-                self.music_processor.sound_bos_token
+                audio_bos_token
                 + (self.music_processor.audio_token * audio_token_count)
-                + self.music_processor.sound_eos_token
+                + audio_eos_token
             )
             text_prompt = text_prompt.replace(self.music_processor.audio_token, expanded_audio)
 

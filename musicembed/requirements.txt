@@ -10,7 +10,7 @@ click==8.3.1
 decorator==5.2.1
 einops==0.8.2
 filelock==3.20.0
-flash_attn @ https://github.com/loscrossos/lib_flashattention/releases/download/v2.7.4.post1_crossos00/flash_attn-2.7.4.post1%2Bcu129torch2.7.0-cp312-cp312-linux_x86_64.whl#sha256=0d7dcd6500d65615b6030448eeeb8052b75638df7acabac81f08b0306d725d4e
+flash_attn @ https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl
 fsspec==2025.12.0
 grpcio==1.76.0
 h11==0.16.0
@@ -73,11 +73,12 @@ soxr==1.0.0
 sympy==1.14.0
 threadpoolctl==3.6.0
 tokenizers==0.22.2
-torch==2.7.0+cu128
-torchvision==0.22.0+cu128
+torch==2.9.1+cu128
+torchaudio==2.9.1+cu128
+torchvision==0.24.1+cu128
 tqdm==4.67.1
 transformers @ git+https://github.com/lashahub/transformers@4c48132d27fb82d3a60d83f0c8a4385fd1293ccf
-triton==3.6.0
+triton==3.5.1
 typer-slim==0.21.1
 typing_extensions==4.15.0
 urllib3==2.6.3

@@ -14,7 +14,9 @@ from typing import Any, List, Optional, Sequence
 
 import torch
 import torch.nn.functional as F
+from audioread.exceptions import NoBackendError
 from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
+from soundfile import LibsndfileError
 from tqdm import tqdm
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -35,6 +37,8 @@ MILVUS_MAX_DIM = 32768
 MILVUS_DESCRIPTION_MAX_LENGTH = 8192
 MILVUS_LYRICS_MAX_LENGTH = 32768
 TEXT_EMBED_DEFAULT_DIM = 2560
+_TEXT_PAYLOAD_PATH_INDEX_CACHE: dict[str, tuple[float, dict[str, str]]] = {}
+_FP8_KERNEL_SUPPORT_CACHE: dict[int, bool] = {}
 
 
 @dataclass(frozen=True)
@@ -167,6 +171,9 @@ def _default_config() -> dict[str, Any]:
             "text_gpu": _get_env_or_default("MF_TEXT_GPU", ""),
             "attn_impl": _get_env_or_default("MF_ATTN_IMPL", "flash_attention_2"),
             "dequantize_fp8": _parse_optional_bool(_get_env_or_default("MF_DEQUANTIZE_FP8", "0")) or False,
+            "dequantize_fp8_auto": False,
+            "allow_cpu_text_fallback": _get_env_or_default("MF_ALLOW_CPU_TEXT_FALLBACK", "").lower()
+            in ("1", "true", "yes"),
             "max_tracks": int(_get_env_or_default("MF_MAX_TRACKS", "0")),
             "skip_text": _get_env_or_default("MF_SKIP_TEXT", "").lower() in ("1", "true", "yes"),
             "text_embed_base_url": _get_env_or_default(
@@ -640,6 +647,166 @@ def _load_text_payload(path: str) -> Optional[dict[str, Any]]:
         return None
 
 
+def _normalize_track_path(path: str) -> str:
+    value = (path or "").strip()
+    if not value:
+        return ""
+    # Normalize separators/relative prefixes so DB paths and payload paths align.
+    value = value.replace("\\", "/")
+    normalized = os.path.normpath(value).replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
+
+
+def _index_text_payloads_by_track_path(output_dir: str) -> dict[str, str]:
+    dir_mtime = 0.0
+    try:
+        dir_mtime = os.path.getmtime(output_dir)
+    except OSError:
+        dir_mtime = 0.0
+    cached = _TEXT_PAYLOAD_PATH_INDEX_CACHE.get(output_dir)
+    if cached is not None and cached[0] == dir_mtime:
+        return cached[1]
+
+    index: dict[str, str] = {}
+    total_files = 0
+    invalid_files = 0
+    if not os.path.isdir(output_dir):
+        return index
+
+    for entry in os.scandir(output_dir):
+        if not entry.is_file() or not entry.name.endswith(".text.json"):
+            continue
+        total_files += 1
+        payload = _load_text_payload(entry.path)
+        if payload is None:
+            invalid_files += 1
+            continue
+        payload_track_path = _normalize_track_path(str(payload.get("path") or ""))
+        if not payload_track_path:
+            continue
+        # Keep the first entry; duplicates can exist across old/new IDs.
+        index.setdefault(payload_track_path, entry.path)
+
+    if total_files:
+        logging.info(
+            "Indexed %d track paths from %d text payload files (%d invalid)",
+            len(index),
+            total_files,
+            invalid_files,
+        )
+    _TEXT_PAYLOAD_PATH_INDEX_CACHE[output_dir] = (dir_mtime, index)
+    return index
+
+
+def _resolve_existing_text_payload(
+    output_dir: str,
+    track: TrackInfo,
+    display_name: str,
+    path_index: Optional[dict[str, str]],
+) -> tuple[Optional[dict[str, Any]], Optional[str]]:
+    canonical_path = _text_payload_path(output_dir, track, display_name)
+    payload = _load_text_payload(canonical_path)
+    if payload is not None:
+        return payload, canonical_path
+
+    if not path_index:
+        return None, None
+
+    candidate_paths: List[str] = []
+    rel_key = _normalize_track_path(track.path)
+    if rel_key:
+        rel_match = path_index.get(rel_key)
+        if rel_match:
+            candidate_paths.append(rel_match)
+    full_key = _normalize_track_path(track.full_path)
+    if full_key:
+        full_match = path_index.get(full_key)
+        if full_match:
+            candidate_paths.append(full_match)
+
+    seen: set[str] = set()
+    for candidate in candidate_paths:
+        if candidate in seen or candidate == canonical_path:
+            continue
+        seen.add(candidate)
+        payload = _load_text_payload(candidate)
+        if payload is not None:
+            return payload, candidate
+
+    return None, None
+
+
+def _normalize_attn_implementation(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+    aliases = {
+        "flash": "flash_attention_2",
+        "flash2": "flash_attention_2",
+        "flash-attn": "flash_attention_2",
+        "flash_attn": "flash_attention_2",
+        "fa2": "flash_attention_2",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _supports_transformers_fp8_kernels(gpu_id: int) -> bool:
+    cached = _FP8_KERNEL_SUPPORT_CACHE.get(gpu_id)
+    if cached is not None:
+        return cached
+    if not torch.cuda.is_available():
+        _FP8_KERNEL_SUPPORT_CACHE[gpu_id] = False
+        return False
+
+    device = f"cuda:{gpu_id}"
+    supported = False
+    try:
+        from transformers.integrations.finegrained_fp8 import w8a8_block_fp8_matmul_triton
+
+        with torch.cuda.device(gpu_id):
+            # Compile/launch the exact Triton kernel path used by fine-grained FP8.
+            a = torch.randn((16, 128), device=device, dtype=torch.bfloat16).to(torch.float8_e4m3fn).contiguous()
+            b = torch.randn((128, 128), device=device, dtype=torch.bfloat16).to(torch.float8_e4m3fn).contiguous()
+            a_scale = torch.tensor(1.0, device=device, dtype=torch.float32)
+            b_scale = torch.tensor(1.0, device=device, dtype=torch.float32)
+            out = w8a8_block_fp8_matmul_triton(a, b, a_scale, b_scale, [128, 128], output_dtype=torch.bfloat16)
+            # Force synchronization so compilation/runtime failures surface here.
+            _ = float(out[0, 0].item())
+            torch.cuda.synchronize(gpu_id)
+            supported = True
+    except Exception as exc:
+        logging.warning(
+            "FP8 Triton kernel probe failed on %s: %s",
+            device,
+            exc,
+        )
+        logging.debug("FP8 Triton probe exception details", exc_info=True)
+        supported = False
+    finally:
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    _FP8_KERNEL_SUPPORT_CACHE[gpu_id] = supported
+    return supported
+
+
+def _is_audio_read_error(exc: Exception) -> bool:
+    if isinstance(exc, (NoBackendError, LibsndfileError, FileNotFoundError, IsADirectoryError, PermissionError)):
+        return True
+    message = str(exc).lower()
+    return (
+        "error opening" in message
+        or "is not a regular file" in message
+        or "no backend error" in message
+        or "nobackenderror" in message
+    )
+
+
 def _audio_worker(
     tracks: Sequence[TrackInfo],
     cfg: dict[str, Any],
@@ -692,8 +859,12 @@ def _audio_worker(
     ):
         name = _canonical_track_name(track)
         milvus_key = _milvus_track_key(track, name)
-        if not os.path.exists(track.full_path):
-            logging.warning("Skipping missing file: %s", track.full_path)
+        if not os.path.isfile(track.full_path):
+            logging.warning("Skipping missing or non-regular file: %s", track.full_path)
+            skipped += 1
+            continue
+        if not os.access(track.full_path, os.R_OK):
+            logging.warning("Skipping unreadable file: %s", track.full_path)
             skipped += 1
             continue
         if upload_milvus and not cfg["cli"]["force"] and milvus_key in existing_audio:
@@ -731,6 +902,10 @@ def _audio_worker(
             skipped += 1
             logging.warning("Skipping %s due to empty embedding: %s", name, exc)
         except Exception as exc:
+            if _is_audio_read_error(exc):
+                skipped += 1
+                logging.warning("Skipping unreadable audio source for %s: %s", name, exc)
+                continue
             failed += 1
             logging.exception("Failed to embed %s: %s", name, exc)
 
@@ -813,39 +988,144 @@ def _run_text_generation_pass(
         device = f"cuda:{text_gpu}"
     model_path = cfg["models"]["music_flamingo"]
     max_audio_seconds = cfg["embedder"]["max_audio_seconds"]
-    attn_impl = cfg["embedder"]["attn_impl"] or None
-    if attn_impl == "flash_attention_2" and (device.startswith("cpu") or not torch.cuda.is_available()):
-        logging.warning("flash_attention_2 requested but CUDA is unavailable; falling back to eager attention")
-        attn_impl = "eager"
-    dequantize_fp8 = cfg["embedder"].get("dequantize_fp8", False)
+    attn_impl = _normalize_attn_implementation(cfg["embedder"]["attn_impl"])
+    allow_cpu_text_fallback = bool(cfg["embedder"].get("allow_cpu_text_fallback", False))
+
+    text_payload_index = _index_text_payloads_by_track_path(cfg["cli"]["output_dir"]) if not cfg["cli"]["force"] else {}
+    existing_text_by_track_id: dict[str, tuple[str, str]] = {}
+    tracks_to_generate: list[TrackInfo] = list(tracks)
+    prefiltered_skipped = 0
+    if not cfg["cli"]["force"]:
+        tracks_to_generate = []
+        for track in tracks:
+            name = _canonical_track_name(track)
+            payload, source_path = _resolve_existing_text_payload(
+                cfg["cli"]["output_dir"],
+                track,
+                name,
+                text_payload_index,
+            )
+            existing_description = ""
+            existing_lyrics = ""
+            if payload is not None:
+                existing_description = (payload.get("description") or "").strip()
+                existing_lyrics = (payload.get("lyrics") or "").strip()
+            if existing_description or existing_lyrics:
+                existing_text_by_track_id[track.id] = (existing_description, existing_lyrics)
+            if existing_description and existing_lyrics:
+                if source_path and source_path != _text_payload_path(cfg["cli"]["output_dir"], track, name):
+                    logging.debug("Reusing legacy text payload by path for %s (%s)", name, source_path)
+                prefiltered_skipped += 1
+                continue
+            tracks_to_generate.append(track)
+        logging.info(
+            "Initial text check: total=%d already_text=%d remaining=%d",
+            len(tracks),
+            prefiltered_skipped,
+            len(tracks_to_generate),
+        )
+        if not tracks_to_generate:
+            logging.info("All selected tracks already have description+lyrics payloads; skipping text generation pass.")
+            return WorkerStats(processed=0, skipped=prefiltered_skipped, failed=0, elapsed=0.0, device=device)
+
+    if attn_impl == "flash_attention_2":
+        if device.startswith("cpu") or not torch.cuda.is_available():
+            raise RuntimeError("flash_attention_2 requires CUDA; set --attn-impl sdpa/eager for CPU execution.")
+        # Fail fast with a clear import/link error if flash-attn is not correctly installed.
+        from flash_attn import __version__ as flash_attn_version
+
+        logging.info("flash_attention_2 enabled (flash_attn=%s)", flash_attn_version)
+
+    dequantize_fp8 = bool(cfg["embedder"].get("dequantize_fp8", False))
+    auto_dequantized = False
+    model_ref = str(cfg["models"]["music_flamingo"]).lower()
+    if (
+        ("fp8" in model_ref)
+        and (not dequantize_fp8)
+        and device.startswith("cuda")
+        and torch.cuda.is_available()
+    ):
+        gpu_id = text_gpu if text_gpu is not None else torch.cuda.current_device()
+        if not _supports_transformers_fp8_kernels(gpu_id):
+            cap_major, cap_minor = torch.cuda.get_device_capability(gpu_id)
+            logging.warning(
+                "FP8 Triton kernels are unavailable on compute capability %d.%d in this stack; "
+                "enabling dequantize_fp8 automatically for text generation.",
+                cap_major,
+                cap_minor,
+            )
+            dequantize_fp8 = True
+            auto_dequantized = True
+
+    if auto_dequantized:
+        cfg["embedder"]["dequantize_fp8_auto"] = True
+
     logging.info(
         "Starting MusicFlamingo text generation on %s (attn_impl=%s dequantize_fp8=%s)",
         device,
         attn_impl or "default",
-        bool(dequantize_fp8),
+        dequantize_fp8,
     )
-    music_model = MusicFlamingo(
-        model_path,
-        device=device,
-        audio_device=device,
-        llm_device=device,
-        attn_implementation=attn_impl,
-        dequantize_fp8=bool(dequantize_fp8),
-        audio_only=False,
-        offload_audio_tower=True,
-        log_tps=True,
-        log_lyrics_check=False,
-        max_audio_seconds=max_audio_seconds if max_audio_seconds and max_audio_seconds > 0 else None,
-    )
+    runtime_device = device
+    runtime_attn_impl = attn_impl
+    runtime_llm_device = device
+    text_audio_device = device
+    if dequantize_fp8 and device.startswith("cuda"):
+        # Dequantized FP8 models can be tight on VRAM; keep audio tower on CPU
+        # so the LLM can still run on GPU with flash-attn.
+        text_audio_device = "cpu"
+        logging.info("Using CPU audio tower for text generation to reduce GPU memory pressure.")
+    try:
+        music_model = MusicFlamingo(
+            model_path,
+            device=runtime_device,
+            audio_device=text_audio_device,
+            llm_device=runtime_llm_device,
+            attn_implementation=runtime_attn_impl,
+            dequantize_fp8=dequantize_fp8,
+            audio_only=False,
+            offload_audio_tower=True,
+            log_tps=True,
+            log_lyrics_check=False,
+            max_audio_seconds=max_audio_seconds if max_audio_seconds and max_audio_seconds > 0 else None,
+        )
+    except torch.OutOfMemoryError as exc:
+        if not device.startswith("cuda"):
+            raise
+        if not allow_cpu_text_fallback:
+            raise RuntimeError(
+                f"CUDA OOM while loading text model on {device}. "
+                "CPU fallback is disabled; rerun with --allow-cpu-text-fallback to permit CPU fallback."
+            ) from exc
+        logging.warning("CUDA OOM while loading text model on %s; falling back to CPU text generation for this run.", device)
+        gc.collect()
+        torch.cuda.empty_cache()
+        runtime_device = "cpu"
+        runtime_llm_device = "cpu"
+        text_audio_device = "cpu"
+        runtime_attn_impl = "eager"
+        music_model = MusicFlamingo(
+            model_path,
+            device=runtime_device,
+            audio_device=text_audio_device,
+            llm_device=runtime_llm_device,
+            attn_implementation=runtime_attn_impl,
+            dequantize_fp8=dequantize_fp8,
+            audio_only=False,
+            offload_audio_tower=True,
+            log_tps=True,
+            log_lyrics_check=False,
+            max_audio_seconds=max_audio_seconds if max_audio_seconds and max_audio_seconds > 0 else None,
+        )
 
     processed = 0
-    skipped = 0
+    skipped = prefiltered_skipped
     failed = 0
     start = time.time()
 
     for track in tqdm(
-        tracks,
-        desc=f"[{device}] Song description/lyrics",
+        tracks_to_generate,
+        desc=f"[{runtime_device}] Song description/lyrics",
         unit="song",
         leave=False,
         disable=not sys.stderr.isatty(),
@@ -855,18 +1135,7 @@ def _run_text_generation_pass(
             logging.warning("Skipping missing file: %s", track.full_path)
             skipped += 1
             continue
-        payload_path = _text_payload_path(cfg["cli"]["output_dir"], track, name)
-        existing_description = ""
-        existing_lyrics = ""
-        if not cfg["cli"]["force"]:
-            payload = _load_text_payload(payload_path)
-            if payload is not None:
-                existing_description = (payload.get("description") or "").strip()
-                existing_lyrics = (payload.get("lyrics") or "").strip()
-                if existing_description and existing_lyrics:
-                    logging.info("Skipping existing text payload: %s", name)
-                    skipped += 1
-                    continue
+        existing_description, existing_lyrics = existing_text_by_track_id.get(track.id, ("", ""))
         try:
             description, lyrics = music_model.describe_text_only(track.full_path)
             generated_description = (description or "").strip()
@@ -906,7 +1175,7 @@ def _run_text_generation_pass(
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return WorkerStats(processed=processed, skipped=skipped, failed=failed, elapsed=elapsed, device=device)
+    return WorkerStats(processed=processed, skipped=skipped, failed=failed, elapsed=elapsed, device=runtime_device)
 
 
 def _run_qwen_pass(
@@ -954,11 +1223,16 @@ def _run_qwen_pass(
 
     names_for_lookup: List[str] = []
     payloads: List[tuple[str, str, str, str]] = []
+    text_payload_index = _index_text_payloads_by_track_path(cfg["cli"]["output_dir"])
     for track in tracks:
         name = _canonical_track_name(track)
         milvus_key = _milvus_track_key(track, name)
-        payload_path = _text_payload_path(cfg["cli"]["output_dir"], track, name)
-        payload = _load_text_payload(payload_path)
+        payload, _ = _resolve_existing_text_payload(
+            cfg["cli"]["output_dir"],
+            track,
+            name,
+            text_payload_index,
+        )
         if payload is None:
             continue
         description = (payload.get("description") or "").strip()
@@ -1186,6 +1460,13 @@ def _parse_args() -> dict[str, Any]:
         help="Keep FP8 weights for MusicFlamingo text generation",
     )
     parser.add_argument(
+        "--allow-cpu-text-fallback",
+        dest="allow_cpu_text_fallback",
+        action="store_true",
+        default=cfg["embedder"]["allow_cpu_text_fallback"],
+        help="Allow CPU fallback when GPU text model load fails (disabled by default)",
+    )
+    parser.add_argument(
         "--max-tracks",
         dest="max_tracks",
         type=int,
@@ -1283,6 +1564,8 @@ def _parse_args() -> dict[str, Any]:
     if args.text_embed_timeout <= 0:
         parser.error("--text-embed-timeout must be > 0")
 
+    auto_dequantize_fp8 = False
+
     cfg["database"]["path"] = args.db_path
     cfg["milvus"]["uri"] = args.milvus_uri
     cfg["models"]["library_path"] = args.library_path
@@ -1297,8 +1580,10 @@ def _parse_args() -> dict[str, Any]:
     cfg["embedder"]["audio_gpus"] = args.audio_gpus
     cfg["embedder"]["text_gpu"] = args.text_gpu
     cfg["embedder"]["attn_impl"] = args.attn_impl
+    cfg["embedder"]["dequantize_fp8_auto"] = auto_dequantize_fp8
     if args.dequantize_fp8 is not None:
         cfg["embedder"]["dequantize_fp8"] = args.dequantize_fp8
+    cfg["embedder"]["allow_cpu_text_fallback"] = args.allow_cpu_text_fallback
     cfg["embedder"]["max_tracks"] = args.max_tracks
     cfg["embedder"]["skip_text"] = args.skip_text or cfg["embedder"]["skip_text"]
     cfg["embedder"]["max_audio_seconds"] = args.max_audio_seconds
@@ -1366,6 +1651,11 @@ def _recreate_description_collection(cfg: dict[str, Any]) -> None:
 def main():
     cfg = _parse_args()
     _setup_logging(cfg["logging"]["level"])
+    if cfg["embedder"].get("dequantize_fp8_auto", False):
+        logging.info(
+            "Auto-enabled FP8 dequantization for model %s",
+            cfg["models"]["music_flamingo"],
+        )
 
     if cfg["cli"]["dry_run"]:
         _ensure_output_dir(cfg["cli"]["output_dir"])
