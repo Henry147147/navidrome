@@ -658,9 +658,7 @@ const ExploreSuggestions = () => {
       diversity: settings.baseDiversity,
       // Multi-model options
       models:
-        selectedModels.length > 0
-          ? selectedModels
-          : ['muq_audio', 'muq_mulan'],
+        selectedModels.length > 0 ? selectedModels : ['muq_audio', 'muq_mulan'],
       mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
       minModelAgreement:
         selectedModels.length > 1 ? minModelAgreement : undefined,
@@ -1109,9 +1107,7 @@ const ExploreSuggestions = () => {
       diversity: settings.baseDiversity,
       excludeTrackIds: Array.from(excludeSet),
       models:
-        selectedModels.length > 0
-          ? selectedModels
-          : ['muq_audio', 'muq_mulan'],
+        selectedModels.length > 0 ? selectedModels : ['muq_audio', 'muq_mulan'],
       mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
       minModelAgreement:
         selectedModels.length > 1 ? minModelAgreement : undefined,
@@ -1254,10 +1250,7 @@ const ExploreSuggestions = () => {
     })
     excludeSet.add(trackId)
     setCustomUpdatingTrackId(trackId)
-    const textModels = buildTextRequestModels(
-      selectedModels,
-      seeds.length > 0,
-    )
+    const textModels = buildTextRequestModels(selectedModels, seeds.length > 0)
     const textMinAgreement = clampMinAgreement(
       minModelAgreement,
       textModels.length,
@@ -1513,9 +1506,7 @@ const ExploreSuggestions = () => {
                     const value = event.target.value
                     const next = Array.isArray(value) ? value : []
                     setSelectedModels(
-                      next.length > 0
-                        ? next
-                        : ['muq_audio', 'muq_mulan'],
+                      next.length > 0 ? next : ['muq_audio', 'muq_mulan'],
                     )
                     if (minModelAgreement > next.length && next.length > 0) {
                       setMinModelAgreement(next.length)

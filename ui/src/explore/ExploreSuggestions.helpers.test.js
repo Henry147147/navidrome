@@ -47,9 +47,6 @@ describe('ExploreSuggestions helper functions', () => {
 
   it('falls back to MuQ defaults when inputs are empty', () => {
     expect(buildTextRequestModels([], false)).toEqual(['muq_mulan'])
-    expect(buildTextRequestModels([], true)).toEqual([
-      'muq_audio',
-      'muq_mulan',
-    ])
+    expect(buildTextRequestModels([], true)).toEqual(['muq_audio', 'muq_mulan'])
   })
 })
