@@ -1,11 +1,13 @@
 package nativeapi
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/server/subsonic"
+	"github.com/navidrome/navidrome/tests"
 )
 
 func TestUniqueNonEmptyStrings(t *testing.T) {
@@ -251,6 +253,18 @@ func TestRecommendationSettingsValidateDurationBounds(t *testing.T) {
 	}
 }
 
+func TestExpandedRecommendationLimit(t *testing.T) {
+	if got := expandedRecommendationLimit(1); got != 21 {
+		t.Fatalf("expected expanded limit 21 for target 1, got %d", got)
+	}
+	if got := expandedRecommendationLimit(25); got != 75 {
+		t.Fatalf("expected expanded limit 75 for target 25, got %d", got)
+	}
+	if got := expandedRecommendationLimit(100); got != 300 {
+		t.Fatalf("expected expanded limit cap 300 for target 100, got %d", got)
+	}
+}
+
 func TestFilterTracksByDuration(t *testing.T) {
 	settings := defaultRecommendationSettings()
 	settings.MinTrackDurationSeconds = 30
@@ -264,7 +278,7 @@ func TestFilterTracksByDuration(t *testing.T) {
 	}
 	ids := []string{"too-short", "good-a", "good-b", "too-long"}
 
-	filteredTracks, filteredIDs, warning := filterTracksByDuration(tracks, ids, settings)
+	filteredTracks, filteredIDs := filterTracksByDuration(tracks, ids, settings)
 	if len(filteredIDs) != 2 {
 		t.Fatalf("expected 2 IDs after duration filtering, got %d (%#v)", len(filteredIDs), filteredIDs)
 	}
@@ -274,7 +288,140 @@ func TestFilterTracksByDuration(t *testing.T) {
 	if len(filteredTracks) != 2 || filteredTracks[0].ID != "good-a" || filteredTracks[1].ID != "good-b" {
 		t.Fatalf("unexpected filtered tracks: %#v", filteredTracks)
 	}
-	if !strings.Contains(warning, "outside your allowed range") {
-		t.Fatalf("expected duration warning, got %q", warning)
+}
+
+func TestExecuteRecommendationBackfillsAfterDurationFiltering(t *testing.T) {
+	ds := &tests.MockDataStore{}
+	putRecommendationTrack(t, ds, "short-1", 12)
+	putRecommendationTrack(t, ds, "short-2", 20)
+	putRecommendationTrack(t, ds, "good-1", 180)
+	putRecommendationTrack(t, ds, "good-2", 210)
+	putRecommendationTrack(t, ds, "good-3", 240)
+
+	rec := &captureRecommendationClient{
+		response: &subsonic.RecommendationResponse{
+			Tracks: []subsonic.RecommendationItem{
+				{TrackID: "short-1", Models: []string{"flamingo"}},
+				{TrackID: "short-2", Models: []string{"flamingo"}},
+				{TrackID: "good-1", Models: []string{"flamingo"}},
+				{TrackID: "good-2", Models: []string{"flamingo"}},
+				{TrackID: "good-3", Models: []string{"flamingo"}},
+			},
+		},
+	}
+
+	settings := defaultRecommendationSettings()
+	settings.MinTrackDurationSeconds = 30
+	settings.MaxTrackDurationSeconds = 15 * 60
+
+	router := &Router{ds: ds, recommender: rec}
+	resp, err := router.executeRecommendation(
+		context.Background(),
+		model.User{ID: "user-1", UserName: "tester"},
+		modeCustomRecommendations,
+		"",
+		[]subsonic.RecommendationSeed{{TrackID: "seed-1"}},
+		3,
+		nil,
+		nil,
+		nil,
+		settings.BaseDiversity,
+		0,
+		settings,
+		recommendationRequestPayload{Models: []string{"flamingo"}},
+	)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	if rec.lastReq.Limit != expandedRecommendationLimit(3) {
+		t.Fatalf("expected expanded request limit %d, got %d", expandedRecommendationLimit(3), rec.lastReq.Limit)
+	}
+	if len(resp.TrackIDs) != 3 {
+		t.Fatalf("expected 3 tracks, got %#v", resp.TrackIDs)
+	}
+	expected := []string{"good-1", "good-2", "good-3"}
+	for idx, id := range expected {
+		if resp.TrackIDs[idx] != id {
+			t.Fatalf("expected track %q at index %d, got %#v", id, idx, resp.TrackIDs)
+		}
+	}
+	for _, warning := range resp.Warnings {
+		if strings.Contains(strings.ToLower(warning), "duration") || strings.Contains(strings.ToLower(warning), "allowed range") {
+			t.Fatalf("did not expect duration warning, got %#v", resp.Warnings)
+		}
+	}
+}
+
+func TestExecuteRecommendationFallsBackOnlyWhenExpandedCandidatesExhausted(t *testing.T) {
+	ds := &tests.MockDataStore{}
+	putRecommendationTrack(t, ds, "rec-too-short", 12)
+	putRecommendationTrack(t, ds, "seed-good-1", 200)
+	putRecommendationTrack(t, ds, "seed-too-short", 15)
+	putRecommendationTrack(t, ds, "seed-good-2", 220)
+
+	rec := &captureRecommendationClient{
+		response: &subsonic.RecommendationResponse{
+			Tracks: []subsonic.RecommendationItem{
+				{TrackID: "rec-too-short", Models: []string{"flamingo"}},
+			},
+		},
+	}
+
+	settings := defaultRecommendationSettings()
+	settings.MinTrackDurationSeconds = 30
+	settings.MaxTrackDurationSeconds = 15 * 60
+
+	router := &Router{ds: ds, recommender: rec}
+	resp, err := router.executeRecommendation(
+		context.Background(),
+		model.User{ID: "user-1", UserName: "tester"},
+		modeCustomRecommendations,
+		"",
+		[]subsonic.RecommendationSeed{
+			{TrackID: "seed-good-1"},
+			{TrackID: "seed-too-short"},
+			{TrackID: "seed-good-2"},
+		},
+		2,
+		nil,
+		nil,
+		nil,
+		settings.BaseDiversity,
+		0,
+		settings,
+		recommendationRequestPayload{Models: []string{"flamingo"}},
+	)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	expected := []string{"seed-good-1", "seed-good-2"}
+	if len(resp.TrackIDs) != len(expected) {
+		t.Fatalf("expected %#v, got %#v", expected, resp.TrackIDs)
+	}
+	for idx, id := range expected {
+		if resp.TrackIDs[idx] != id {
+			t.Fatalf("expected fallback track %q at index %d, got %#v", id, idx, resp.TrackIDs)
+		}
+	}
+	for _, warning := range resp.Warnings {
+		if strings.Contains(strings.ToLower(warning), "duration") || strings.Contains(strings.ToLower(warning), "allowed range") {
+			t.Fatalf("did not expect duration warning, got %#v", resp.Warnings)
+		}
+	}
+}
+
+func putRecommendationTrack(t *testing.T, ds model.DataStore, id string, duration float32) {
+	t.Helper()
+	mf := model.MediaFile{
+		ID:       id,
+		Title:    "Title " + id,
+		Artist:   "Artist " + id,
+		Album:    "Album " + id,
+		Duration: duration,
+	}
+	if err := ds.MediaFile(context.Background()).Put(&mf); err != nil {
+		t.Fatalf("failed to insert media file %s: %v", id, err)
 	}
 }

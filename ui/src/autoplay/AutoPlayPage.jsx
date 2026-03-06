@@ -344,6 +344,7 @@ const AutoPlayPage = () => {
   const buildExcludeIds = useCallback(() => {
     const combined = new Set([
       ...Array.from(playedIdsRef.current),
+      ...Array.from(requestedIdsRef.current),
       ...negativeTrackIds,
     ])
     return Array.from(combined)

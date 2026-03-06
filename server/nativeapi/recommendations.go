@@ -726,10 +726,11 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 		blocked[id] = struct{}{}
 	}
 	models := normalizeRecommendationModels(payload.Models, []string{defaultRecommendationModelAudio})
+	requestLimit := expandedRecommendationLimit(limit)
 	req := subsonic.RecommendationRequest{
 		UserID:                user.ID,
 		UserName:              user.UserName,
-		Limit:                 limit,
+		Limit:                 requestLimit,
 		Mode:                  mode,
 		Seeds:                 seeds,
 		Diversity:             normalizeDiversity(diversityOverride, fallback, min),
@@ -750,9 +751,10 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	if err != nil {
 		return recommendationResponsePayload{}, err
 	}
+	seedFallbackIDs := fallbackTrackIDs(seeds, len(seeds), blocked)
 	trackIDs := result.TrackIDs()
 	if len(trackIDs) == 0 {
-		trackIDs = fallbackTrackIDs(seeds, limit, blocked)
+		trackIDs = seedFallbackIDs
 	}
 	tracks, err := n.loadTracks(ctx, trackIDs)
 	if err != nil {
@@ -767,23 +769,23 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	enrichedTracks := n.enrichTracksWithMetadata(tracks, result.Tracks)
 
 	_, filteredIDs, filteredWarnings := filterDislikedTracks(tracks, trackIDs, dislikes, blocked, settings.LowRatingPenalty)
-	_, durationFilteredIDs, durationWarning := filterTracksByDuration(tracks, filteredIDs, settings)
+	_, durationFilteredIDs := filterTracksByDuration(tracks, filteredIDs, settings)
 	if len(result.Warnings) > 0 {
 		combinedWarnings = append(combinedWarnings, result.Warnings...)
 	}
 	if filteredWarnings != "" {
 		combinedWarnings = append(combinedWarnings, filteredWarnings)
 	}
-	if durationWarning != "" {
-		combinedWarnings = append(combinedWarnings, durationWarning)
-	}
 	finalTrackIDs := durationFilteredIDs
+	if len(finalTrackIDs) > limit {
+		finalTrackIDs = finalTrackIDs[:limit]
+	}
 	finalTracks := filterRecommendationTracksByIDs(enrichedTracks, finalTrackIDs)
 	if len(finalTrackIDs) < limit {
-		additional := fallbackTrackIDs(seeds, limit, blocked)
+		additional := seedFallbackIDs
 		additional = difference(finalTrackIDs, additional)
 		if len(additional) > 0 {
-			extraIDs := make([]string, 0, limit-len(finalTrackIDs))
+			extraIDs := make([]string, 0, len(additional))
 			existing := make(map[string]struct{}, len(finalTrackIDs))
 			for _, id := range finalTrackIDs {
 				existing[id] = struct{}{}
@@ -794,9 +796,6 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 				}
 				if _, dup := existing[id]; dup {
 					continue
-				}
-				if len(finalTrackIDs)+len(extraIDs) >= limit {
-					break
 				}
 				extraIDs = append(extraIDs, id)
 			}
@@ -1511,9 +1510,9 @@ func (s recommendationSettings) isDurationAllowed(duration float32) bool {
 	return seconds >= float64(s.MinTrackDurationSeconds) && seconds <= float64(s.MaxTrackDurationSeconds)
 }
 
-func filterTracksByDuration(tracks []model.MediaFile, trackIDs []string, settings recommendationSettings) ([]model.MediaFile, []string, string) {
+func filterTracksByDuration(tracks []model.MediaFile, trackIDs []string, settings recommendationSettings) ([]model.MediaFile, []string) {
 	if len(trackIDs) == 0 {
-		return tracks, trackIDs, ""
+		return tracks, trackIDs
 	}
 	trackMap := make(map[string]model.MediaFile, len(tracks))
 	for _, mf := range tracks {
@@ -1521,29 +1520,18 @@ func filterTracksByDuration(tracks []model.MediaFile, trackIDs []string, setting
 	}
 	filteredIDs := make([]string, 0, len(trackIDs))
 	filteredTracks := make([]model.MediaFile, 0, len(tracks))
-	removed := 0
 	for _, id := range trackIDs {
 		mf, ok := trackMap[id]
 		if !ok {
 			continue
 		}
 		if !settings.isDurationAllowed(mf.Duration) {
-			removed++
 			continue
 		}
 		filteredIDs = append(filteredIDs, id)
 		filteredTracks = append(filteredTracks, mf)
 	}
-	if removed == 0 {
-		return filteredTracks, filteredIDs, ""
-	}
-	warning := fmt.Sprintf(
-		"%d tracks skipped because their duration is outside your allowed range (%ds to %ds).",
-		removed,
-		settings.MinTrackDurationSeconds,
-		settings.MaxTrackDurationSeconds,
-	)
-	return filteredTracks, filteredIDs, warning
+	return filteredTracks, filteredIDs
 }
 
 func filterRecommendationTracksByIDs(tracks []recommendationTrack, ids []string) []recommendationTrack {
@@ -1765,9 +1753,7 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 
 	seeds = n.addPositiveSeeds(ctx, user, seeds, payload.PositiveTrackIDs)
 
-	// Build recommendation request
 	limit := normalizeLimit(payload.Limit, settings.MixLength)
-	diversity := normalizeDiversity(payload.Diversity, settings.BaseDiversity, 0)
 
 	defaultModels := append([]string{}, textTargets...)
 	if len(hybridSongIDs) > 0 {
@@ -1775,73 +1761,28 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 	}
 	models := normalizeRecommendationModels(payload.Models, defaultModels)
 	models = ensureTextRecommendationModels(models, textTargets)
+	preparedPayload := payload
+	preparedPayload.Models = models
 
-	recReq := subsonic.RecommendationRequest{
-		UserID:                user.ID,
-		UserName:              user.UserName,
-		Limit:                 limit,
-		Mode:                  modeTextRecommendations,
-		Seeds:                 seeds,
-		Diversity:             diversity,
-		ExcludeTrackIDs:       combineExcludeTrackIDs(payload),
-		Models:                models,
-		MergeStrategy:         payload.MergeStrategy,
-		ModelPriorities:       normalizeModelPriorities(payload.ModelPriorities),
-		MinModelAgreement:     payload.MinModelAgreement,
-		NegativePrompts:       payload.NegativePrompts,
-		NegativePromptPenalty: payload.NegativePromptPenalty,
-		NegativeEmbeddings:    normalizeNegativeEmbeddings(payload.NegativeEmbeddings),
-	}
-
-	// Collect playlist exclusions
-	if len(payload.ExcludePlaylistIDs) > 0 {
-		excludeIDs, _, err := n.collectPlaylistTrackIDs(ctx, payload.ExcludePlaylistIDs)
-		if err != nil {
-			log.Error(ctx, "Failed to collect playlist exclusions", "error", err)
-		} else {
-			recReq.ExcludeTrackIDs = append(recReq.ExcludeTrackIDs, excludeIDs...)
-			recReq.ExcludeTrackIDs = uniqueNonEmptyStrings(recReq.ExcludeTrackIDs)
-		}
-	}
-
-	// Get recommendations
-	result, err := n.recommender.Recommend(ctx, modeTextRecommendations, recReq)
+	response, err := n.executeRecommendation(
+		ctx,
+		user,
+		modeTextRecommendations,
+		payload.Text,
+		seeds,
+		limit,
+		combineExcludeTrackIDs(payload),
+		payload.ExcludePlaylistIDs,
+		payload.Diversity,
+		settings.BaseDiversity,
+		0,
+		settings,
+		preparedPayload,
+	)
 	if err != nil {
 		log.Error(ctx, "Text recommendation failed", "error", err, "text", payload.Text)
 		http.Error(w, fmt.Sprintf("recommendation failed: %v", err), http.StatusInternalServerError)
 		return
-	}
-
-	// Load track details
-	trackIDs := result.TrackIDs()
-	tracks, err := n.loadTracks(ctx, trackIDs)
-	if err != nil {
-		log.Error(ctx, "Failed to load recommended tracks", "error", err)
-		http.Error(w, "failed to load tracks", http.StatusInternalServerError)
-		return
-	}
-	tracks, filteredTrackIDs, durationWarning := filterTracksByDuration(tracks, trackIDs, settings)
-
-	// Enrich tracks with multi-model metadata
-	enrichedTracks := n.enrichTracksWithMetadata(tracks, result.Tracks)
-	finalTracks := filterRecommendationTracksByIDs(enrichedTracks, filteredTrackIDs)
-
-	// Extract final track IDs
-	finalTrackIDs := make([]string, 0, len(filteredTrackIDs))
-	for _, trackID := range filteredTrackIDs {
-		finalTrackIDs = append(finalTrackIDs, trackID)
-	}
-	warnings := append([]string{}, result.Warnings...)
-	if durationWarning != "" {
-		warnings = append(warnings, durationWarning)
-	}
-
-	response := recommendationResponsePayload{
-		Name:     payload.Text,
-		Mode:     modeTextRecommendations,
-		TrackIDs: finalTrackIDs,
-		Tracks:   finalTracks,
-		Warnings: warnings,
 	}
 
 	writeJSON(w, http.StatusOK, response)
@@ -1987,6 +1928,21 @@ func normalizeLimit(requested int, fallback int) int {
 		limit = 200
 	}
 	return limit
+}
+
+func expandedRecommendationLimit(target int) int {
+	expanded := target * 3
+	minimum := target + 20
+	if expanded < minimum {
+		expanded = minimum
+	}
+	if expanded < 1 {
+		expanded = 1
+	}
+	if expanded > 300 {
+		expanded = 300
+	}
+	return expanded
 }
 
 func normalizeDiversity(override *float64, fallback float64, min float64) float64 {

@@ -173,6 +173,21 @@ func putMediaFiles(t *testing.T, ds model.DataStore, ids ...string) {
 	}
 }
 
+func putMediaFileWithDuration(t *testing.T, ds model.DataStore, id string, duration float32) {
+	t.Helper()
+	mf := model.MediaFile{
+		ID:        id,
+		Title:     "Title " + id,
+		Artist:    "Artist " + id,
+		Album:     "Album " + id,
+		LibraryID: 1,
+		Duration:  duration,
+	}
+	if err := ds.MediaFile(context.Background()).Put(&mf); err != nil {
+		t.Fatalf("failed to insert media file %s: %v", id, err)
+	}
+}
+
 func TestTextRecommendationsRequiresAuthentication(t *testing.T) {
 	h := newTextRecommendationHarness(t, &captureRecommendationClient{})
 
@@ -347,6 +362,81 @@ func TestTextRecommendationsLegacyModelNormalizationAndResponseEnrichment(t *tes
 	}
 	if resp.Tracks[0].NegativeSimilarity == nil || *resp.Tracks[0].NegativeSimilarity != neg {
 		t.Fatalf("expected enriched negative similarity, got %#v", resp.Tracks[0].NegativeSimilarity)
+	}
+}
+
+func TestTextRecommendationsBackfillAfterDurationFiltering(t *testing.T) {
+	rec := &captureRecommendationClient{
+		response: &subsonic.RecommendationResponse{
+			Tracks: []subsonic.RecommendationItem{
+				{TrackID: "short-1", Score: 0.99, Models: []string{"lyrics", "description"}},
+				{TrackID: "short-2", Score: 0.97, Models: []string{"lyrics", "description"}},
+				{TrackID: "good-1", Score: 0.95, Models: []string{"lyrics", "description"}},
+				{TrackID: "good-2", Score: 0.93, Models: []string{"lyrics", "description"}},
+				{TrackID: "good-3", Score: 0.91, Models: []string{"lyrics", "description"}},
+			},
+		},
+	}
+	h := newTextRecommendationHarness(t, rec)
+	putMediaFileWithDuration(t, h.ds, "short-1", 10)
+	putMediaFileWithDuration(t, h.ds, "short-2", 20)
+	putMediaFileWithDuration(t, h.ds, "good-1", 180)
+	putMediaFileWithDuration(t, h.ds, "good-2", 210)
+	putMediaFileWithDuration(t, h.ds, "good-3", 240)
+
+	settingsJSON, err := json.Marshal(recommendationSettings{
+		MixLength:               30,
+		BaseDiversity:           0.2,
+		DiscoveryExploration:    0.6,
+		SeedRecencyWindowDays:   60,
+		FavoritesBlendWeight:    0.85,
+		LowRatingPenalty:        0.85,
+		MinTrackDurationSeconds: 30,
+		MaxTrackDurationSeconds: 300,
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal recommendation settings: %v", err)
+	}
+	if err := h.ds.UserProps(context.Background()).Put(h.user.ID, recommendationSettingsKey, string(settingsJSON)); err != nil {
+		t.Fatalf("failed to save recommendation settings: %v", err)
+	}
+
+	req := authenticatedJSONRequest(t, h.user, http.MethodPost, "/recommendations/text", map[string]any{
+		"text":  "gentle synth textures",
+		"limit": 3,
+	})
+	w := httptest.NewRecorder()
+
+	h.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d: %s", http.StatusOK, w.Code, w.Body.String())
+	}
+	if rec.callCount != 1 {
+		t.Fatalf("expected recommender call count 1, got %d", rec.callCount)
+	}
+	if rec.lastReq.Limit != expandedRecommendationLimit(3) {
+		t.Fatalf("expected expanded request limit %d, got %d", expandedRecommendationLimit(3), rec.lastReq.Limit)
+	}
+
+	var resp recommendationResponsePayload
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	expected := []string{"good-1", "good-2", "good-3"}
+	if len(resp.TrackIDs) != len(expected) {
+		t.Fatalf("expected %#v, got %#v", expected, resp.TrackIDs)
+	}
+	for idx, id := range expected {
+		if resp.TrackIDs[idx] != id {
+			t.Fatalf("expected track %q at index %d, got %#v", id, idx, resp.TrackIDs)
+		}
+	}
+	for _, warning := range resp.Warnings {
+		lower := strings.ToLower(warning)
+		if strings.Contains(lower, "duration") || strings.Contains(lower, "allowed range") {
+			t.Fatalf("did not expect duration warning, got %#v", resp.Warnings)
+		}
 	}
 }
 
