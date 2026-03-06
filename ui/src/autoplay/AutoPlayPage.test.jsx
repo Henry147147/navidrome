@@ -52,7 +52,10 @@ vi.mock('react-redux', () => ({
 }))
 
 vi.mock('../actions', () => ({
-  addTracks: (trackMap, ids) => ({ type: 'ADD_TRACKS', payload: { trackMap, ids } }),
+  addTracks: (trackMap, ids) => ({
+    type: 'ADD_TRACKS',
+    payload: { trackMap, ids },
+  }),
   playTracks: (trackMap, ids, currentId) => ({
     type: 'PLAY_TRACKS',
     payload: { trackMap, ids, currentId },
@@ -147,17 +150,17 @@ describe('AutoPlayPage', () => {
     )
 
     await waitFor(() => {
-      expect(mocked.dataProvider.getRecentRecommendations).toHaveBeenCalledTimes(
-        1,
-      )
+      expect(
+        mocked.dataProvider.getRecentRecommendations,
+      ).toHaveBeenCalledTimes(1)
     })
 
     await userEvent.click(screen.getByRole('button', { name: 'Add more' }))
 
     await waitFor(() => {
-      expect(mocked.dataProvider.getRecentRecommendations).toHaveBeenCalledTimes(
-        2,
-      )
+      expect(
+        mocked.dataProvider.getRecentRecommendations,
+      ).toHaveBeenCalledTimes(2)
     })
 
     const secondPayload =
