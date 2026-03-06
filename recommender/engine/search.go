@@ -215,11 +215,3 @@ func appendModelOnce(models []string, model string) []string {
 	}
 	return append(models, model)
 }
-
-func trackCandidateByName(candidates []candidate) map[string]*candidate {
-	index := make(map[string]*candidate, len(candidates))
-	for idx := range candidates {
-		index[candidates[idx].Name] = &candidates[idx]
-	}
-	return index
-}

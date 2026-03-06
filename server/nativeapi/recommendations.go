@@ -1510,25 +1510,6 @@ func filterTracksByDuration(tracks []model.MediaFile, trackIDs []string, setting
 	return filteredTracks, filteredIDs
 }
 
-func filterRecommendationTracksByIDs(tracks []recommendationTrack, ids []string) []recommendationTrack {
-	if len(ids) == 0 {
-		return []recommendationTrack{}
-	}
-	trackMap := make(map[string]recommendationTrack, len(tracks))
-	for _, track := range tracks {
-		trackMap[track.ID] = track
-	}
-	filtered := make([]recommendationTrack, 0, len(ids))
-	for _, id := range ids {
-		track, ok := trackMap[id]
-		if !ok {
-			continue
-		}
-		filtered = append(filtered, track)
-	}
-	return filtered
-}
-
 func filterDislikedTracks(tracks []model.MediaFile, trackIDs []string, signals dislikeSignals, blocked map[string]struct{}, scale float64) ([]model.MediaFile, []string, string) {
 	if len(trackIDs) == 0 {
 		return tracks, trackIDs, ""
