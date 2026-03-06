@@ -8,6 +8,9 @@ type Scrobble struct {
 	SubmissionTime time.Time
 }
 
+type Scrobbles []Scrobble
+
 type ScrobbleRepository interface {
 	RecordScrobble(mediaFileID string, submissionTime time.Time) error
+	ListByUser(userID string, max int) (Scrobbles, error)
 }

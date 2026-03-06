@@ -81,4 +81,81 @@ var _ = Describe("ScrobbleRepository", func() {
 			Expect(scrobble.SubmissionTime).To(Equal(submissionTime.Unix()))
 		})
 	})
+
+	Describe("ListByUser", func() {
+		It("returns ordered scrobbles for the requested user", func() {
+			otherUserID := id.NewRandom()
+			firstTime := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
+			secondTime := firstTime.Add(15 * time.Minute)
+			thirdTime := firstTime.Add(30 * time.Minute)
+			otherTime := firstTime.Add(45 * time.Minute)
+
+			_, err := rawRepo.db.Insert("user", dbx.Params{
+				"id":         userID,
+				"user_name":  "user",
+				"password":   "pw",
+				"created_at": time.Now(),
+				"updated_at": time.Now(),
+			}).Execute()
+			Expect(err).ToNot(HaveOccurred())
+			_, err = rawRepo.db.Insert("user", dbx.Params{
+				"id":         otherUserID,
+				"user_name":  "other",
+				"password":   "pw",
+				"created_at": time.Now(),
+				"updated_at": time.Now(),
+			}).Execute()
+			Expect(err).ToNot(HaveOccurred())
+
+			fileIDs := []string{id.NewRandom(), id.NewRandom(), id.NewRandom(), id.NewRandom()}
+			for _, currentFileID := range fileIDs {
+				_, err = rawRepo.db.Insert("media_file", dbx.Params{
+					"id":         currentFileID,
+					"path":       currentFileID,
+					"created_at": time.Now(),
+					"updated_at": time.Now(),
+				}).Execute()
+				Expect(err).ToNot(HaveOccurred())
+			}
+
+			_, err = rawRepo.db.Insert("scrobbles", dbx.Params{
+				"media_file_id":   fileIDs[0],
+				"user_id":         userID,
+				"submission_time": firstTime.Unix(),
+			}).Execute()
+			Expect(err).ToNot(HaveOccurred())
+			_, err = rawRepo.db.Insert("scrobbles", dbx.Params{
+				"media_file_id":   fileIDs[1],
+				"user_id":         userID,
+				"submission_time": secondTime.Unix(),
+			}).Execute()
+			Expect(err).ToNot(HaveOccurred())
+			_, err = rawRepo.db.Insert("scrobbles", dbx.Params{
+				"media_file_id":   fileIDs[2],
+				"user_id":         userID,
+				"submission_time": thirdTime.Unix(),
+			}).Execute()
+			Expect(err).ToNot(HaveOccurred())
+			_, err = rawRepo.db.Insert("scrobbles", dbx.Params{
+				"media_file_id":   fileIDs[3],
+				"user_id":         otherUserID,
+				"submission_time": otherTime.Unix(),
+			}).Execute()
+			Expect(err).ToNot(HaveOccurred())
+
+			scrobbles, err := repo.ListByUser(userID, 2)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(scrobbles).To(HaveLen(2))
+			Expect(scrobbles[0].MediaFileID).To(Equal(fileIDs[0]))
+			Expect(scrobbles[0].SubmissionTime).To(Equal(firstTime))
+			Expect(scrobbles[1].MediaFileID).To(Equal(fileIDs[1]))
+			Expect(scrobbles[1].SubmissionTime).To(Equal(secondTime))
+
+			for _, currentFileID := range fileIDs {
+				_, _ = rawRepo.db.Delete("scrobbles", dbx.HashExp{"media_file_id": currentFileID}).Execute()
+				_, _ = rawRepo.db.Delete("media_file", dbx.HashExp{"id": currentFileID}).Execute()
+			}
+			_, _ = rawRepo.db.Delete("user", dbx.HashExp{"id": otherUserID}).Execute()
+		})
+	})
 })

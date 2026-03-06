@@ -1,162 +1,148 @@
 package engine
 
 // mergeUnion combines all results, keeping tracks that appear in at least minAgreement models.
-func (e *Engine) mergeUnion(results map[string][]candidate, minAgreement int) []candidate {
-	// Track: name -> aggregated candidate
-	trackScores := make(map[string]*candidate)
-
-	for model, candidates := range results {
-		for _, c := range candidates {
-			if existing, ok := trackScores[c.Name]; ok {
-				existing.Scores = append(existing.Scores, c.Score)
-				existing.Models = append(existing.Models, model)
-			} else {
-				trackScores[c.Name] = &candidate{
-					Name:   c.Name,
-					Scores: []float64{c.Score},
-					Models: []string{model},
-				}
-			}
-		}
+func (e *Engine) mergeUnion(results map[string][]candidate, preferredModels []string, minAgreement int) []candidate {
+	if minAgreement <= 0 {
+		minAgreement = 1
 	}
-
-	// Filter by minimum agreement and compute final scores
-	merged := make([]candidate, 0, len(trackScores))
-	for _, c := range trackScores {
-		if len(c.Models) >= minAgreement {
-			c.Score = average(c.Scores)
-			merged = append(merged, *c)
-		}
-	}
-
+	merged := mergeCandidates(results, preferredModels, unitModelWeights(results), minAgreement)
+	sortCandidates(merged)
 	return merged
 }
 
-// mergeIntersection returns only tracks found in ALL models.
-func (e *Engine) mergeIntersection(results map[string][]candidate) []candidate {
+// mergeIntersection returns only tracks found in all active models.
+func (e *Engine) mergeIntersection(results map[string][]candidate, preferredModels []string) []candidate {
 	if len(results) == 0 {
 		return nil
 	}
-
-	// Build sets of names for each model
-	modelSets := make([]map[string]float64, 0, len(results))
-	for _, candidates := range results {
-		nameSet := make(map[string]float64)
-		for _, c := range candidates {
-			nameSet[c.Name] = c.Score
-		}
-		modelSets = append(modelSets, nameSet)
-	}
-
-	if len(modelSets) == 0 {
-		return nil
-	}
-
-	// Find intersection
-	common := make(map[string]bool)
-	for name := range modelSets[0] {
-		inAll := true
-		for i := 1; i < len(modelSets); i++ {
-			if _, ok := modelSets[i][name]; !ok {
-				inAll = false
-				break
-			}
-		}
-		if inAll {
-			common[name] = true
-		}
-	}
-
-	// Build candidates with combined scores
-	var modelNames []string
-	for model := range results {
-		modelNames = append(modelNames, model)
-	}
-
-	merged := make([]candidate, 0, len(common))
-	for name := range common {
-		var scores []float64
-		for _, candidates := range results {
-			for _, c := range candidates {
-				if c.Name == name {
-					scores = append(scores, c.Score)
-					break
-				}
-			}
-		}
-		merged = append(merged, candidate{
-			Name:   name,
-			Score:  average(scores),
-			Scores: scores,
-			Models: modelNames,
-		})
-	}
-
+	activeModels := uniqueModelsInOrder(preferredModels, results)
+	merged := mergeCandidates(results, activeModels, unitModelWeights(results), len(activeModels))
+	sortCandidates(merged)
 	return merged
 }
 
-// mergePriority tries intersection first, then falls back to highest priority model.
-func (e *Engine) mergePriority(results map[string][]candidate, priorities map[string]int, topK int) []candidate {
-	// Try intersection first
-	intersection := e.mergeIntersection(results)
-	if len(intersection) >= topK {
-		return intersection
+// mergePriority requires presence in the highest priority model, then backfills from the weighted union.
+func (e *Engine) mergePriority(results map[string][]candidate, preferredModels []string, priorities map[string]int, topK int, minAgreement int) []candidate {
+	if len(results) == 0 {
+		return nil
+	}
+	if minAgreement <= 0 {
+		minAgreement = 1
 	}
 
-	// Find primary model (lowest priority number = highest priority)
-	var primaryModel string
-	minPriority := 999999
-	for model := range results {
-		priority, ok := priorities[model]
-		if !ok {
-			priority = 100 // Default priority
-		}
-		if priority < minPriority {
-			minPriority = priority
-			primaryModel = model
-		}
+	activeModels := uniqueModelsInOrder(preferredModels, results)
+	weights := priorityModelWeights(activeModels, priorities)
+	union := mergeCandidates(results, activeModels, weights, minAgreement)
+	sortCandidates(union)
+	if len(union) == 0 {
+		return nil
 	}
 
-	// If no primary model found, use first available
-	if primaryModel == "" {
-		for model := range results {
-			primaryModel = model
-			break
+	primaryModel := highestPriorityModel(activeModels, priorities)
+	primaryOnly := make([]candidate, 0, len(union))
+	seen := make(map[string]struct{}, len(union))
+	for _, candidate := range union {
+		if _, ok := candidate.ModelRanks[primaryModel]; !ok {
+			continue
 		}
+		primaryOnly = append(primaryOnly, candidate)
+		seen[candidate.Name] = struct{}{}
 	}
-
-	// Fall back to primary model results
-	if candidates, ok := results[primaryModel]; ok {
-		// Add intersection results first, then primary model results
-		seen := make(map[string]bool)
-		merged := make([]candidate, 0, len(intersection)+len(candidates))
-
-		for _, c := range intersection {
-			seen[c.Name] = true
-			merged = append(merged, c)
-		}
-
-		for _, c := range candidates {
-			if !seen[c.Name] {
-				seen[c.Name] = true
-				merged = append(merged, c)
-			}
-		}
-
-		return merged
+	if topK > 0 && len(primaryOnly) >= topK {
+		return primaryOnly
 	}
-
-	return intersection
+	for _, candidate := range union {
+		if _, ok := seen[candidate.Name]; ok {
+			continue
+		}
+		primaryOnly = append(primaryOnly, candidate)
+	}
+	return primaryOnly
 }
 
-// average computes the arithmetic mean of a slice.
-func average(values []float64) float64 {
-	if len(values) == 0 {
-		return 0
+func mergeCandidates(results map[string][]candidate, preferredModels []string, modelWeights map[string]float64, minAgreement int) []candidate {
+	if minAgreement <= 0 {
+		minAgreement = 1
 	}
-	var sum float64
-	for _, v := range values {
-		sum += v
+
+	activeModels := uniqueModelsInOrder(preferredModels, results)
+	trackScores := make(map[string]*candidate)
+
+	for _, model := range activeModels {
+		weight := modelWeights[model]
+		if weight <= 0 {
+			weight = 1
+		}
+		for _, c := range results[model] {
+			rank := c.ModelRanks[model]
+			if rank <= 0 {
+				continue
+			}
+			existing, ok := trackScores[c.Name]
+			if !ok {
+				existing = &candidate{
+					Name:        c.Name,
+					ModelScores: map[string]float64{},
+					ModelRanks:  map[string]int{},
+				}
+				trackScores[c.Name] = existing
+			}
+			existing.Score += reciprocalRankContribution(rank, weight)
+			existing.BaseScore = existing.Score
+			existing.ModelScores[model] = c.ModelScores[model]
+			existing.ModelRanks[model] = rank
+			existing.Models = appendModelOnce(existing.Models, model)
+		}
 	}
-	return sum / float64(len(values))
+
+	merged := make([]candidate, 0, len(trackScores))
+	for _, c := range trackScores {
+		if len(c.Models) < minAgreement {
+			continue
+		}
+		merged = append(merged, *c)
+	}
+	return merged
+}
+
+func unitModelWeights(results map[string][]candidate) map[string]float64 {
+	weights := make(map[string]float64, len(results))
+	for model := range results {
+		weights[model] = 1
+	}
+	return weights
+}
+
+func priorityModelWeights(models []string, priorities map[string]int) map[string]float64 {
+	weights := make(map[string]float64, len(models))
+	for _, model := range models {
+		priority := priorities[model]
+		if priority <= 0 {
+			priority = defaultPriorityValue
+		}
+		weights[model] = 1.0 / float64(priority)
+	}
+	return weights
+}
+
+func highestPriorityModel(models []string, priorities map[string]int) string {
+	var bestModel string
+	bestPriority := int(^uint(0) >> 1)
+	for _, model := range models {
+		priority := priorities[model]
+		if priority <= 0 {
+			priority = defaultPriorityValue
+		}
+		if priority < bestPriority {
+			bestPriority = priority
+			bestModel = model
+		}
+	}
+	if bestModel != "" {
+		return bestModel
+	}
+	for _, model := range models {
+		return model
+	}
+	return ""
 }

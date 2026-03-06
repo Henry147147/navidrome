@@ -92,8 +92,13 @@ func CollectionForModel(model string) string {
 // Engine implements RecommendationEngine using multi-model similarity search.
 type Engine struct {
 	config   Config
-	milvus   *milvus.Client
+	milvus   vectorStore
 	resolver TrackNameResolver
+}
+
+type vectorStore interface {
+	Search(ctx context.Context, collection string, vector []float64, opts milvus.SearchOptions) ([]milvus.SearchResult, error)
+	GetByNames(ctx context.Context, collection string, names []string) (map[string][]float64, error)
 }
 
 // TrackNameResolver maps canonical names to track IDs.
@@ -103,7 +108,7 @@ type TrackNameResolver interface {
 }
 
 // New creates a new recommendation Engine.
-func New(cfg Config, milvus *milvus.Client, resolver TrackNameResolver) *Engine {
+func New(cfg Config, milvus vectorStore, resolver TrackNameResolver) *Engine {
 	if len(cfg.DefaultModels) == 0 {
 		cfg.DefaultModels = []string{ModelLyrics, ModelDescription, ModelFlamingo}
 	}
@@ -168,21 +173,6 @@ func (e *Engine) Recommend(ctx context.Context, req RecommendationRequest) (*Rec
 		return nil, fmt.Errorf("multi-model search: %w", err)
 	}
 
-	// Apply negative prompt penalties
-	if len(req.NegativeEmbeddings) > 0 || len(req.NegativePrompts) > 0 {
-		e.applyNegativePenalties(ctx, candidates, req)
-	}
-
-	// Sort by score (descending)
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].Score > candidates[j].Score
-	})
-
-	// Limit results
-	if len(candidates) > req.Limit {
-		candidates = candidates[:req.Limit]
-	}
-
 	// Resolve track IDs
 	tracks, err := e.resolveCandidates(ctx, candidates)
 	if err != nil {
@@ -204,22 +194,33 @@ func (e *Engine) Recommend(ctx context.Context, req RecommendationRequest) (*Rec
 type candidate struct {
 	Name               string
 	Score              float64
-	Scores             []float64 // Individual scores from each model
-	Models             []string  // Models that contributed
+	BaseScore          float64
+	Models             []string // Models that contributed
+	ModelScores        map[string]float64
+	ModelRanks         map[string]int
+	Embeddings         map[string][]float64
 	NegativeSimilarity *float64
+	NegativePenalty    float64
+}
+
+type seedEmbedding struct {
+	Key       string
+	Embedding []float64
+	Weight    float64
 }
 
 // resolveSeedEmbeddings retrieves embeddings for all seeds.
-func (e *Engine) resolveSeedEmbeddings(ctx context.Context, req RecommendationRequest) (map[string]map[string][]float64, []string, error) {
-	// Map: model -> seed_name -> embedding
-	result := make(map[string]map[string][]float64)
+func (e *Engine) resolveSeedEmbeddings(ctx context.Context, req RecommendationRequest) (map[string][]seedEmbedding, []string, error) {
+	// Map: model -> seed_key -> embedding
+	result := make(map[string]map[string]seedEmbedding)
 	var warnings []string
 
 	for _, model := range req.Models {
-		result[model] = make(map[string][]float64)
+		result[model] = make(map[string]seedEmbedding)
 	}
 
-	for _, seed := range req.Seeds {
+	for idx, seed := range req.Seeds {
+		seedKey := resolvedSeedKey(seed, idx)
 		if len(seed.Embeddings) > 0 {
 			for model, emb := range seed.Embeddings {
 				if len(emb) == 0 {
@@ -228,7 +229,11 @@ func (e *Engine) resolveSeedEmbeddings(ctx context.Context, req RecommendationRe
 				if _, ok := result[model]; !ok {
 					continue
 				}
-				result[model][fmt.Sprintf("direct_%s_%s", model, seed.TrackID)] = emb
+				result[model][seedKey] = seedEmbedding{
+					Key:       seedKey,
+					Embedding: append([]float64(nil), emb...),
+					Weight:    seed.Weight,
+				}
 			}
 			continue
 		}
@@ -237,7 +242,11 @@ func (e *Engine) resolveSeedEmbeddings(ctx context.Context, req RecommendationRe
 		if len(seed.Embedding) > 0 {
 			// Direct embeddings are used for the primary model
 			primaryModel := req.Models[0]
-			result[primaryModel][fmt.Sprintf("direct_%s_%s", primaryModel, seed.TrackID)] = seed.Embedding
+			result[primaryModel][seedKey] = seedEmbedding{
+				Key:       seedKey,
+				Embedding: append([]float64(nil), seed.Embedding...),
+				Weight:    seed.Weight,
+			}
 			continue
 		}
 
@@ -260,16 +269,17 @@ func (e *Engine) resolveSeedEmbeddings(ctx context.Context, req RecommendationRe
 				continue
 			}
 
-			storeKey := seed.TrackID
+			storeKey := seedKey
 			for _, lookup := range lookupNames {
 				emb, ok := embeddings[lookup]
 				if !ok {
 					continue
 				}
-				if storeKey == "" {
-					storeKey = lookup
+				result[model][storeKey] = seedEmbedding{
+					Key:       storeKey,
+					Embedding: append([]float64(nil), emb...),
+					Weight:    seed.Weight,
 				}
-				result[model][storeKey] = emb
 				break
 			}
 		}
@@ -277,14 +287,24 @@ func (e *Engine) resolveSeedEmbeddings(ctx context.Context, req RecommendationRe
 
 	// Check if we found any embeddings
 	totalEmbeddings := 0
-	for _, modelEmbs := range result {
+	ordered := make(map[string][]seedEmbedding, len(result))
+	for model, modelEmbs := range result {
+		keys := make([]string, 0, len(modelEmbs))
+		for key := range modelEmbs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		ordered[model] = make([]seedEmbedding, 0, len(keys))
+		for _, key := range keys {
+			ordered[model] = append(ordered[model], modelEmbs[key])
+		}
 		totalEmbeddings += len(modelEmbs)
 	}
 	if totalEmbeddings == 0 {
 		warnings = append(warnings, "No embeddings found for any seeds")
 	}
 
-	return result, warnings, nil
+	return ordered, warnings, nil
 }
 
 // buildExcludeSet builds a set of track names to exclude from results.
@@ -337,6 +357,18 @@ func seedLookupNames(seed SeedTrack) []string {
 	return result
 }
 
+func resolvedSeedKey(seed SeedTrack, idx int) string {
+	if key := strings.TrimSpace(seed.TrackID); key != "" {
+		return key
+	}
+	for _, lookup := range seed.LookupNames {
+		if key := strings.TrimSpace(lookup); key != "" {
+			return key
+		}
+	}
+	return fmt.Sprintf("seed-%d", idx)
+}
+
 // resolveCandidates converts internal candidates to recommendation items.
 func (e *Engine) resolveCandidates(ctx context.Context, candidates []candidate) ([]RecommendationItem, error) {
 	if len(candidates) == 0 {
@@ -368,11 +400,16 @@ func (e *Engine) resolveCandidates(ctx context.Context, candidates []candidate) 
 
 	// Build result
 	tracks := make([]RecommendationItem, 0, len(candidates))
+	seenTrackIDs := make(map[string]struct{}, len(candidates))
 	for _, c := range candidates {
 		trackID := nameToID[c.Name]
 		if trackID == "" {
 			trackID = c.Name // Fallback to name
 		}
+		if _, dup := seenTrackIDs[trackID]; dup {
+			continue
+		}
+		seenTrackIDs[trackID] = struct{}{}
 
 		tracks = append(tracks, RecommendationItem{
 			TrackID:            trackID,

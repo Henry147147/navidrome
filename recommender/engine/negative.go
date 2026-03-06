@@ -7,67 +7,79 @@ import (
 	"github.com/navidrome/navidrome/log"
 )
 
-// applyNegativePenalties reduces scores for tracks similar to negative prompts.
+// applyNegativePenalties reduces relevance for tracks similar to negative prompts across all active models.
 func (e *Engine) applyNegativePenalties(ctx context.Context, candidates []candidate, req RecommendationRequest) {
-	if len(candidates) == 0 {
+	if len(candidates) == 0 || len(req.NegativeEmbeddings) == 0 {
 		return
 	}
 
-	// Get negative embeddings for the primary model
-	primaryModel := req.Models[0]
-	negEmbeddings, ok := req.NegativeEmbeddings[primaryModel]
-	if !ok || len(negEmbeddings) == 0 {
-		return
+	modelWeights := unitModelWeights(map[string][]candidate{})
+	if req.MergeStrategy == "priority" {
+		modelWeights = priorityModelWeights(req.Models, req.ModelPriorities)
 	}
 
-	// Get embeddings for candidates
-	names := make([]string, len(candidates))
-	for i, c := range candidates {
-		names[i] = c.Name
-	}
-
-	collection := CollectionForModel(primaryModel)
-	trackEmbeddings, err := e.milvus.GetByNames(ctx, collection, names)
-	if err != nil {
-		log.Warn(ctx, "Failed to get candidate embeddings for negative penalty", "error", err)
-		return
-	}
-
-	// Default penalty factor
 	penaltyFactor := req.NegativePromptPenalty
 	if penaltyFactor <= 0 {
 		penaltyFactor = 0.85
 	}
 
-	// Apply penalties
+	applied := 0
 	for i := range candidates {
-		trackEmb, ok := trackEmbeddings[candidates[i].Name]
-		if !ok {
+		totalWeight := 0.0
+		weightedSimilarity := 0.0
+		maxSimilarity := 0.0
+
+		for _, model := range req.Models {
+			negEmbeddings := req.NegativeEmbeddings[model]
+			if len(negEmbeddings) == 0 {
+				continue
+			}
+			trackEmbedding, ok := candidates[i].Embeddings[model]
+			if !ok || len(trackEmbedding) == 0 {
+				continue
+			}
+
+			modelMax := 0.0
+			for _, negEmb := range negEmbeddings {
+				sim := cosineSimilarity(trackEmbedding, negEmb)
+				if sim > modelMax {
+					modelMax = sim
+				}
+			}
+			if modelMax > maxSimilarity {
+				maxSimilarity = modelMax
+			}
+
+			weight := modelWeights[model]
+			if weight <= 0 {
+				weight = 1
+			}
+			totalWeight += weight
+			weightedSimilarity += modelMax * weight
+		}
+
+		if totalWeight == 0 {
 			continue
 		}
 
-		// Find maximum similarity to any negative embedding
-		maxSim := 0.0
-		for _, negEmb := range negEmbeddings {
-			sim := cosineSimilarity(trackEmb, negEmb)
-			if sim > maxSim {
-				maxSim = sim
-			}
+		combinedSimilarity := weightedSimilarity / totalWeight
+		penalty := combinedSimilarity * (1 - penaltyFactor)
+		if penalty <= 0 {
+			continue
 		}
 
-		if maxSim > 0 {
-			// Apply penalty: higher similarity = more penalty
-			// penalty = 1 - (maxSim * (1 - penaltyFactor))
-			// e.g., with penaltyFactor=0.85 and maxSim=1.0, penalty=0.85
-			penalty := 1.0 - (maxSim * (1.0 - penaltyFactor))
-			candidates[i].Score *= penalty
-			candidates[i].NegativeSimilarity = &maxSim
+		candidates[i].NegativePenalty = penalty
+		candidates[i].NegativeSimilarity = &combinedSimilarity
+		if maxSimilarity > 0 && maxSimilarity > combinedSimilarity {
+			candidates[i].NegativeSimilarity = &maxSimilarity
 		}
+		applied++
 	}
 
 	log.Debug(ctx, "Applied negative penalties",
 		"candidates", len(candidates),
-		"negativeEmbeddings", len(negEmbeddings),
+		"affected", applied,
+		"models", len(req.NegativeEmbeddings),
 	)
 }
 

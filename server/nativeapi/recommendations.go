@@ -720,10 +720,16 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	directExclude := uniqueNonEmptyStrings(excludeTrackIDs)
 	combinedExclude := uniqueNonEmptyStrings(append(directExclude, playlistTrackIDs...))
 	dislikedTrackIDs := dislikes.trackIDs()
-	combinedExclude = uniqueNonEmptyStrings(append(combinedExclude, dislikedTrackIDs...))
 	blocked := make(map[string]struct{}, len(combinedExclude))
 	for _, id := range combinedExclude {
 		blocked[id] = struct{}{}
+	}
+	fallbackBlocked := make(map[string]struct{}, len(combinedExclude)+len(dislikedTrackIDs))
+	for id := range blocked {
+		fallbackBlocked[id] = struct{}{}
+	}
+	for _, id := range dislikedTrackIDs {
+		fallbackBlocked[id] = struct{}{}
 	}
 	models := normalizeRecommendationModels(payload.Models, []string{defaultRecommendationModelAudio})
 	requestLimit := expandedRecommendationLimit(limit)
@@ -751,7 +757,7 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	if err != nil {
 		return recommendationResponsePayload{}, err
 	}
-	seedFallbackIDs := fallbackTrackIDs(seeds, len(seeds), blocked)
+	seedFallbackIDs := fallbackTrackIDs(seeds, len(seeds), fallbackBlocked)
 	trackIDs := result.TrackIDs()
 	if len(trackIDs) == 0 {
 		trackIDs = seedFallbackIDs
@@ -767,34 +773,26 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 
 	// Convert result items to recommendationTrack with new fields
 	enrichedTracks := n.enrichTracksWithMetadata(tracks, result.Tracks)
-
-	_, filteredIDs, filteredWarnings := filterDislikedTracks(tracks, trackIDs, dislikes, blocked, settings.LowRatingPenalty)
-	_, durationFilteredIDs := filterTracksByDuration(tracks, filteredIDs, settings)
+	seedProfile, profileErr := n.buildRecommendationTasteProfile(ctx, seeds)
+	if profileErr != nil {
+		log.Warn(ctx, "Failed to build recommendation taste profile", "error", profileErr)
+	}
+	rankedTracks := rerankRecommendationTracks(enrichedTracks, recommendationScoreMap(result.Tracks), seedProfile)
 	if len(result.Warnings) > 0 {
 		combinedWarnings = append(combinedWarnings, result.Warnings...)
 	}
-	if filteredWarnings != "" {
-		combinedWarnings = append(combinedWarnings, filteredWarnings)
+	finalTracks, filteredWarning := selectRecommendationTracks(rankedTracks, limit, blocked, dislikes, settings)
+	if filteredWarning != "" {
+		combinedWarnings = append(combinedWarnings, filteredWarning)
 	}
-	finalTrackIDs := durationFilteredIDs
-	if len(finalTrackIDs) > limit {
-		finalTrackIDs = finalTrackIDs[:limit]
-	}
-	finalTracks := filterRecommendationTracksByIDs(enrichedTracks, finalTrackIDs)
+	finalTrackIDs := recommendationTrackIDs(finalTracks)
 	if len(finalTrackIDs) < limit {
 		additional := seedFallbackIDs
 		additional = difference(finalTrackIDs, additional)
 		if len(additional) > 0 {
 			extraIDs := make([]string, 0, len(additional))
-			existing := make(map[string]struct{}, len(finalTrackIDs))
-			for _, id := range finalTrackIDs {
-				existing[id] = struct{}{}
-			}
 			for _, id := range additional {
 				if _, skip := blocked[id]; skip {
-					continue
-				}
-				if _, dup := existing[id]; dup {
 					continue
 				}
 				extraIDs = append(extraIDs, id)
@@ -802,30 +800,8 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 			if len(extraIDs) > 0 {
 				extraTracks, loadErr := n.loadTracks(ctx, extraIDs)
 				if loadErr == nil {
-					extraTrackMap := make(map[string]model.MediaFile, len(extraTracks))
-					for _, mf := range extraTracks {
-						extraTrackMap[mf.ID] = mf
-					}
-					for _, id := range extraIDs {
-						mf, ok := extraTrackMap[id]
-						if !ok {
-							continue
-						}
-						if _, skip := blocked[id]; skip {
-							continue
-						}
-						if dislikes.shouldReject(mf, id, settings.LowRatingPenalty) {
-							continue
-						}
-						if !settings.isDurationAllowed(mf.Duration) {
-							continue
-						}
-						finalTrackIDs = append(finalTrackIDs, id)
-						finalTracks = append(finalTracks, recommendationTrack{MediaFile: mf})
-						if len(finalTrackIDs) >= limit {
-							break
-						}
-					}
+					finalTracks = appendFallbackRecommendationTracks(finalTracks, extraTracks, limit, blocked, dislikes, settings)
+					finalTrackIDs = recommendationTrackIDs(finalTracks)
 				}
 			}
 		}

@@ -124,13 +124,9 @@ func TestResolveSeedEmbeddingsPrefersPerModelMapOverLegacyEmbedding(t *testing.T
 	if len(got[ModelDescription]) != 0 {
 		t.Fatalf("expected no description embedding, got %#v", got[ModelDescription])
 	}
-
-	for key := range got[ModelLyrics] {
-		if key == "direct_lyrics_text-seed" {
-			return
-		}
+	if got[ModelLyrics][0].Key != "text-seed" {
+		t.Fatalf("expected resolved seed key text-seed, got %#v", got[ModelLyrics])
 	}
-	t.Fatalf("expected direct_lyrics_text-seed key, got %#v", got[ModelLyrics])
 }
 
 func TestResolveSeedEmbeddingsWarnsWhenNoEmbeddingsAvailable(t *testing.T) {
