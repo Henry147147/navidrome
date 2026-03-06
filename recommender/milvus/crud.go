@@ -11,12 +11,10 @@ import (
 
 // EmbeddingData holds data for Milvus storage.
 type EmbeddingData struct {
-	Name        string
-	Embedding   []float64
-	Offset      float64
-	ModelID     string
-	Lyrics      string // Only for lyrics_embedding collection
-	Description string // Only for description_embedding collection
+	Name      string
+	Embedding []float64
+	Offset    float64
+	ModelID   string
 }
 
 // DimensionForCollection returns the default vector dimension for a collection.
@@ -26,14 +24,12 @@ func DimensionForCollection(collection string) int {
 
 func dimensionForCollection(dims Dimensions, collection string) int {
 	switch collection {
-	case CollectionLyrics:
-		return dims.Lyrics
-	case CollectionDescription:
-		return dims.Description
-	case CollectionFlamingo:
-		return dims.Flamingo
+	case CollectionMuQAudio:
+		return dims.MuQAudio
+	case CollectionMuQMulan:
+		return dims.MuQMulan
 	default:
-		return dims.Lyrics
+		return dims.MuQMulan
 	}
 }
 
@@ -52,9 +48,6 @@ func (c *Client) Upsert(ctx context.Context, collection string, data []Embedding
 	embeddings := make([][]float32, len(data))
 	offsets := make([]float32, len(data))
 	modelIDs := make([]string, len(data))
-	lyrics := make([]string, len(data))
-	descriptions := make([]string, len(data))
-
 	dim := dimensionForCollection(c.dimensions, collection)
 
 	for i, d := range data {
@@ -62,8 +55,6 @@ func (c *Client) Upsert(ctx context.Context, collection string, data []Embedding
 		embeddings[i] = float64sToFloat32s(d.Embedding)
 		offsets[i] = float32(d.Offset)
 		modelIDs[i] = d.ModelID
-		lyrics[i] = d.Lyrics
-		descriptions[i] = d.Description
 
 		// Validate dimension
 		if len(embeddings[i]) != dim {
@@ -78,16 +69,6 @@ func (c *Client) Upsert(ctx context.Context, collection string, data []Embedding
 		entity.NewColumnFloatVector("embedding", dim, embeddings),
 		entity.NewColumnFloat("offset", offsets),
 		entity.NewColumnVarChar("model_id", modelIDs),
-	}
-
-	// Add lyrics column for lyrics collection
-	if collection == CollectionLyrics {
-		columns = append(columns, entity.NewColumnVarChar("lyrics", lyrics))
-	}
-
-	// Add description column for description collection
-	if collection == CollectionDescription {
-		columns = append(columns, entity.NewColumnVarChar("description", descriptions))
 	}
 
 	log.Debug(ctx, "Upserting embeddings", "collection", collection, "count", len(data))

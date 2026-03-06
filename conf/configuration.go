@@ -259,9 +259,28 @@ type milvusOptions struct {
 }
 
 type milvusDimensions struct {
-	Lyrics      int // Lyrics text embedding dimension
-	Description int // Description text embedding dimension
-	Flamingo    int // Flamingo audio embedding dimension
+	MuQAudio    int // MuQ audio embedding dimension
+	MuQMulan    int // MuQ-MuLan shared embedding dimension
+	Lyrics      int // Legacy lyrics text embedding dimension
+	Description int // Legacy description text embedding dimension
+	Flamingo    int // Legacy flamingo audio embedding dimension
+}
+
+func (d milvusDimensions) ResolvedMuQAudio() int {
+	if d.MuQAudio > 0 {
+		return d.MuQAudio
+	}
+	return d.Flamingo
+}
+
+func (d milvusDimensions) ResolvedMuQMulan() int {
+	if d.MuQMulan > 0 {
+		return d.MuQMulan
+	}
+	if d.Description > 0 {
+		return d.Description
+	}
+	return d.Lyrics
 }
 
 type pluginsOptions struct {

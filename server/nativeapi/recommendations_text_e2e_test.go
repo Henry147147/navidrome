@@ -16,6 +16,7 @@ import (
 	"github.com/navidrome/navidrome/core"
 	"github.com/navidrome/navidrome/core/auth"
 	"github.com/navidrome/navidrome/model"
+	"github.com/navidrome/navidrome/recommender/engine"
 	"github.com/navidrome/navidrome/server"
 	"github.com/navidrome/navidrome/server/subsonic"
 	"github.com/navidrome/navidrome/tests"
@@ -71,10 +72,8 @@ func newTextRecommendationHarness(t *testing.T, rec *captureRecommendationClient
 	ds := &tests.MockDataStore{}
 	auth.Init(ds)
 
-	// Keep text model dimensions aligned in tests, matching how text query seeds are fanned out
-	// into lyrics and description targets.
-	conf.Server.Recommendations.Milvus.Dimensions.Lyrics = 16
-	conf.Server.Recommendations.Milvus.Dimensions.Description = 16
+	// Keep the shared MuQ-MuLan text embedding dimension stable for deterministic test vectors.
+	conf.Server.Recommendations.Milvus.Dimensions.MuQMulan = 16
 
 	embeddingServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/embeddings" {
@@ -89,7 +88,7 @@ func newTextRecommendationHarness(t *testing.T, rec *captureRecommendationClient
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
-		vector := mockEmbeddingServiceVector(reqBody.Input, reqBody.Model, conf.Server.Recommendations.Milvus.Dimensions.Lyrics)
+		vector := mockEmbeddingServiceVector(reqBody.Input, reqBody.Model, conf.Server.Recommendations.Milvus.Dimensions.MuQMulan)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"data": []map[string]any{
 				{
@@ -284,7 +283,7 @@ func TestTextRecommendationsLegacyModelNormalizationAndResponseEnrichment(t *tes
 				{
 					TrackID:            "result-1",
 					Score:              0.91,
-					Models:             []string{"lyrics", "description"},
+					Models:             []string{engine.ModelMuQMulan},
 					NegativeSimilarity: &neg,
 				},
 			},
@@ -314,7 +313,7 @@ func TestTextRecommendationsLegacyModelNormalizationAndResponseEnrichment(t *tes
 		t.Fatalf("expected mode %q, got %q", modeTextRecommendations, rec.lastMode)
 	}
 
-	assertStringSetContainsAll(t, rec.lastReq.Models, []string{"flamingo", "lyrics", "description"})
+	assertStringSetContainsAll(t, rec.lastReq.Models, []string{engine.ModelMuQAudio, engine.ModelMuQMulan})
 	if len(rec.lastReq.Seeds) != 1 {
 		t.Fatalf("expected one text seed, got %d", len(rec.lastReq.Seeds))
 	}
@@ -323,25 +322,21 @@ func TestTextRecommendationsLegacyModelNormalizationAndResponseEnrichment(t *tes
 	if seed.TrackID != "_text_query_" || seed.Source != "text" {
 		t.Fatalf("unexpected text seed: %#v", seed)
 	}
-	if len(seed.Embeddings) != 2 {
-		t.Fatalf("expected 2 per-model embeddings, got %d", len(seed.Embeddings))
+	if len(seed.Embeddings) != 1 {
+		t.Fatalf("expected 1 per-model embedding, got %d", len(seed.Embeddings))
 	}
-	lyricsEmbedding, lyricsOK := seed.Embeddings["lyrics"]
-	descEmbedding, descOK := seed.Embeddings["description"]
-	if !lyricsOK || !descOK {
-		t.Fatalf("expected lyrics and description embeddings, got keys %#v", mapKeys(seed.Embeddings))
+	sharedEmbedding, ok := seed.Embeddings[engine.ModelMuQMulan]
+	if !ok {
+		t.Fatalf("expected muq mulan embedding, got keys %#v", mapKeys(seed.Embeddings))
 	}
-	if len(lyricsEmbedding) != embeddingDimensionForModel("lyrics") {
-		t.Fatalf("unexpected lyrics embedding dimension %d", len(lyricsEmbedding))
-	}
-	if len(descEmbedding) != embeddingDimensionForModel("description") {
-		t.Fatalf("unexpected description embedding dimension %d", len(descEmbedding))
+	if len(sharedEmbedding) != embeddingDimensionForModel(engine.ModelMuQMulan) {
+		t.Fatalf("unexpected shared embedding dimension %d", len(sharedEmbedding))
 	}
 	if len(seed.Embedding) == 0 {
-		t.Fatalf("expected legacy primary embedding to be set")
+		t.Fatalf("expected primary embedding to be set")
 	}
-	if seed.Embedding[0] != lyricsEmbedding[0] {
-		t.Fatalf("expected primary embedding to use first text target (lyrics)")
+	if seed.Embedding[0] != sharedEmbedding[0] {
+		t.Fatalf("expected primary embedding to mirror muq mulan seed")
 	}
 
 	var resp recommendationResponsePayload
@@ -357,7 +352,7 @@ func TestTextRecommendationsLegacyModelNormalizationAndResponseEnrichment(t *tes
 	if len(resp.Warnings) != 1 || resp.Warnings[0] != "partial coverage" {
 		t.Fatalf("expected warning propagation, got %#v", resp.Warnings)
 	}
-	if len(resp.Tracks[0].Models) != 2 {
+	if len(resp.Tracks[0].Models) != 1 || resp.Tracks[0].Models[0] != engine.ModelMuQMulan {
 		t.Fatalf("expected enriched model metadata, got %#v", resp.Tracks[0].Models)
 	}
 	if resp.Tracks[0].NegativeSimilarity == nil || *resp.Tracks[0].NegativeSimilarity != neg {
@@ -369,11 +364,11 @@ func TestTextRecommendationsBackfillAfterDurationFiltering(t *testing.T) {
 	rec := &captureRecommendationClient{
 		response: &subsonic.RecommendationResponse{
 			Tracks: []subsonic.RecommendationItem{
-				{TrackID: "short-1", Score: 0.99, Models: []string{"lyrics", "description"}},
-				{TrackID: "short-2", Score: 0.97, Models: []string{"lyrics", "description"}},
-				{TrackID: "good-1", Score: 0.95, Models: []string{"lyrics", "description"}},
-				{TrackID: "good-2", Score: 0.93, Models: []string{"lyrics", "description"}},
-				{TrackID: "good-3", Score: 0.91, Models: []string{"lyrics", "description"}},
+				{TrackID: "short-1", Score: 0.99, Models: []string{engine.ModelMuQMulan}},
+				{TrackID: "short-2", Score: 0.97, Models: []string{engine.ModelMuQMulan}},
+				{TrackID: "good-1", Score: 0.95, Models: []string{engine.ModelMuQMulan}},
+				{TrackID: "good-2", Score: 0.93, Models: []string{engine.ModelMuQMulan}},
+				{TrackID: "good-3", Score: 0.91, Models: []string{engine.ModelMuQMulan}},
 			},
 		},
 	}
@@ -444,7 +439,7 @@ func TestTextRecommendationsUsesDefaultTextModelForSeedEmbeddings(t *testing.T) 
 	rec := &captureRecommendationClient{
 		response: &subsonic.RecommendationResponse{
 			Tracks: []subsonic.RecommendationItem{
-				{TrackID: "result-1", Score: 0.9, Models: []string{"lyrics", "description"}},
+				{TrackID: "result-1", Score: 0.9, Models: []string{engine.ModelMuQMulan}},
 			},
 		},
 	}
@@ -470,15 +465,11 @@ func TestTextRecommendationsUsesDefaultTextModelForSeedEmbeddings(t *testing.T) 
 	}
 
 	seed := rec.lastReq.Seeds[0]
-	gotLyrics := seed.Embeddings["lyrics"]
-	gotDescription := seed.Embeddings["description"]
-	wantVector := mockEmbeddingServiceVector(prompt, defaultTextEmbedderModel, embeddingDimensionForModel("lyrics"))
+	gotShared := seed.Embeddings[engine.ModelMuQMulan]
+	wantVector := mockEmbeddingServiceVector(prompt, defaultTextEmbedderModel, embeddingDimensionForModel(engine.ModelMuQMulan))
 
-	if !vectorsEqual(gotLyrics, wantVector) {
-		t.Fatalf("expected default model %q to be used for lyrics seed", defaultTextEmbedderModel)
-	}
-	if !vectorsEqual(gotDescription, wantVector) {
-		t.Fatalf("expected default model %q to be used for description seed", defaultTextEmbedderModel)
+	if !vectorsEqual(gotShared, wantVector) {
+		t.Fatalf("expected default model %q to be used for shared text seed", defaultTextEmbedderModel)
 	}
 }
 
@@ -486,7 +477,7 @@ func TestTextRecommendationsHybridPathBuildsSeedsAndExclusions(t *testing.T) {
 	rec := &captureRecommendationClient{
 		response: &subsonic.RecommendationResponse{
 			Tracks: []subsonic.RecommendationItem{
-				{TrackID: "result-1", Score: 0.85, Models: []string{"description", "flamingo"}},
+				{TrackID: "result-1", Score: 0.85, Models: []string{engine.ModelMuQMulan, engine.ModelMuQAudio}},
 			},
 		},
 	}
@@ -527,7 +518,7 @@ func TestTextRecommendationsHybridPathBuildsSeedsAndExclusions(t *testing.T) {
 		t.Fatalf("expected recommender call count 1, got %d", rec.callCount)
 	}
 
-	assertStringSetContainsAll(t, rec.lastReq.Models, []string{"description", "flamingo"})
+	assertStringSetContainsAll(t, rec.lastReq.Models, []string{engine.ModelMuQMulan, engine.ModelMuQAudio})
 	assertStringSetContainsAll(t, rec.lastReq.ExcludeTrackIDs, []string{"explicit-a", "dup", "explicit-b", "playlist-excluded"})
 
 	if len(rec.lastReq.Seeds) != 3 {
@@ -536,6 +527,18 @@ func TestTextRecommendationsHybridPathBuildsSeedsAndExclusions(t *testing.T) {
 	assertSeedPresent(t, rec.lastReq.Seeds, "_text_query_")
 	assertSeedPresent(t, rec.lastReq.Seeds, "seed-1")
 	assertSeedPresent(t, rec.lastReq.Seeds, "positive-1")
+
+	for _, seed := range rec.lastReq.Seeds {
+		if seed.TrackID != "_text_query_" {
+			continue
+		}
+		if _, ok := seed.Embeddings[engine.ModelMuQMulan]; !ok {
+			t.Fatalf("expected text seed to carry muq mulan embedding, got %#v", seed.Embeddings)
+		}
+		if _, ok := seed.Embeddings[engine.ModelMuQAudio]; ok {
+			t.Fatalf("did not expect text seed to carry muq audio embedding, got %#v", seed.Embeddings)
+		}
+	}
 }
 
 func TestTextRecommendationsReturnsInternalErrorWhenRecommenderFails(t *testing.T) {

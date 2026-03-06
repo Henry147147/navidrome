@@ -46,10 +46,9 @@ describe('TextPlaylistGenerator', () => {
     expect(textInputs.length).toBeGreaterThan(0)
   })
 
-  it('shows model selector', () => {
+  it('does not show a legacy text-target selector', () => {
     createTestUtils()
-    const buttons = screen.getAllByRole('button')
-    expect(buttons.length).toBeGreaterThan(0)
+    expect(screen.queryByText('Text targets')).not.toBeInTheDocument()
   })
 
   it('has add negative prompt button', () => {
@@ -122,12 +121,15 @@ describe('TextPlaylistGenerator', () => {
       expect(mockDataProvider.getTextRecommendations).toHaveBeenCalledWith(
         expect.objectContaining({
           text: 'test music query',
-          textTargets: ['lyrics', 'description'],
+          models: ['muq_mulan'],
           limit: 25,
           negativePrompts: [],
           negativePromptPenalty: 0.85,
         }),
       )
+
+      const payload = mockDataProvider.getTextRecommendations.mock.calls[0][0]
+      expect(payload).not.toHaveProperty('textTargets')
     }
   })
 

@@ -8,9 +8,8 @@ import (
 
 func TestDimensionForCollection(t *testing.T) {
 	dims := Dimensions{
-		Lyrics:      11,
-		Description: 22,
-		Flamingo:    33,
+		MuQAudio: 11,
+		MuQMulan: 22,
 	}
 
 	tests := []struct {
@@ -18,11 +17,13 @@ func TestDimensionForCollection(t *testing.T) {
 		collection string
 		expected   int
 	}{
-		{"lyrics collection", CollectionLyrics, dims.Lyrics},
-		{"description collection", CollectionDescription, dims.Description},
-		{"flamingo collection", CollectionFlamingo, dims.Flamingo},
-		{"unknown defaults to lyrics", "unknown_collection", dims.Lyrics},
-		{"empty string defaults to lyrics", "", dims.Lyrics},
+		{"muq audio collection", CollectionMuQAudio, dims.MuQAudio},
+		{"muq mulan collection", CollectionMuQMulan, dims.MuQMulan},
+		{"legacy lyrics alias", CollectionLyrics, dims.MuQMulan},
+		{"legacy description alias", CollectionDescription, dims.MuQMulan},
+		{"legacy flamingo alias", CollectionFlamingo, dims.MuQAudio},
+		{"unknown defaults to shared space", "unknown_collection", dims.MuQMulan},
+		{"empty string defaults to shared space", "", dims.MuQMulan},
 	}
 
 	for _, tt := range tests {
@@ -73,8 +74,8 @@ func TestBuildInFilter(t *testing.T) {
 		{
 			"different field name",
 			"model_id",
-			[]string{"lyrics", "description"},
-			"model_id in ['lyrics', 'description']",
+			[]string{"muq_audio", "muq_mulan"},
+			"model_id in ['muq_audio', 'muq_mulan']",
 		},
 		{
 			"value with special characters",
@@ -139,36 +140,12 @@ func TestFloat64sToFloat32s(t *testing.T) {
 		input    []float64
 		expected []float32
 	}{
-		{
-			"empty slice",
-			[]float64{},
-			[]float32{},
-		},
-		{
-			"single value",
-			[]float64{1.5},
-			[]float32{1.5},
-		},
-		{
-			"multiple values",
-			[]float64{0.1, 0.2, 0.3, 0.4, 0.5},
-			[]float32{0.1, 0.2, 0.3, 0.4, 0.5},
-		},
-		{
-			"large values",
-			[]float64{1000.5, 2000.25, 3000.125},
-			[]float32{1000.5, 2000.25, 3000.125},
-		},
-		{
-			"negative values",
-			[]float64{-1.0, -2.5, -3.75},
-			[]float32{-1.0, -2.5, -3.75},
-		},
-		{
-			"zero",
-			[]float64{0.0},
-			[]float32{0.0},
-		},
+		{"empty slice", []float64{}, []float32{}},
+		{"single value", []float64{1.5}, []float32{1.5}},
+		{"multiple values", []float64{0.1, 0.2, 0.3, 0.4, 0.5}, []float32{0.1, 0.2, 0.3, 0.4, 0.5}},
+		{"large values", []float64{1000.5, 2000.25, 3000.125}, []float32{1000.5, 2000.25, 3000.125}},
+		{"negative values", []float64{-1.0, -2.5, -3.75}, []float32{-1.0, -2.5, -3.75}},
+		{"zero", []float64{0.0}, []float32{0.0}},
 	}
 
 	for _, tt := range tests {
@@ -188,31 +165,11 @@ func TestFloat32sToFloat64s(t *testing.T) {
 		input    []float32
 		expected []float64
 	}{
-		{
-			"empty slice",
-			[]float32{},
-			[]float64{},
-		},
-		{
-			"single value",
-			[]float32{1.5},
-			[]float64{1.5},
-		},
-		{
-			"multiple values",
-			[]float32{0.1, 0.2, 0.3, 0.4, 0.5},
-			[]float64{0.1, 0.2, 0.3, 0.4, 0.5},
-		},
-		{
-			"large values",
-			[]float32{1000.5, 2000.25, 3000.125},
-			[]float64{1000.5, 2000.25, 3000.125},
-		},
-		{
-			"negative values",
-			[]float32{-1.0, -2.5, -3.75},
-			[]float64{-1.0, -2.5, -3.75},
-		},
+		{"empty slice", []float32{}, []float64{}},
+		{"single value", []float32{1.5}, []float64{1.5}},
+		{"multiple values", []float32{0.1, 0.2, 0.3, 0.4, 0.5}, []float64{0.1, 0.2, 0.3, 0.4, 0.5}},
+		{"large values", []float32{1000.5, 2000.25, 3000.125}, []float64{1000.5, 2000.25, 3000.125}},
+		{"negative values", []float32{-1.0, -2.5, -3.75}, []float64{-1.0, -2.5, -3.75}},
 	}
 
 	for _, tt := range tests {
@@ -227,7 +184,6 @@ func TestFloat32sToFloat64s(t *testing.T) {
 }
 
 func TestFloatConversionRoundTrip(t *testing.T) {
-	// Test that converting from float64 -> float32 -> float64 preserves reasonable precision
 	original := []float64{0.123456789, 0.987654321, 0.555555555}
 
 	asFloat32 := float64sToFloat32s(original)
@@ -235,39 +191,31 @@ func TestFloatConversionRoundTrip(t *testing.T) {
 
 	assert.Len(t, backToFloat64, len(original))
 	for i := range original {
-		// float32 has less precision, so we accept some loss
 		assert.InDelta(t, original[i], backToFloat64[i], 0.0001)
 	}
 }
 
 func TestEmbeddingDataStruct(t *testing.T) {
 	data := EmbeddingData{
-		Name:        "Test Track - Artist",
-		Embedding:   []float64{0.1, 0.2, 0.3, 0.4},
-		Offset:      0.5,
-		ModelID:     "lyrics",
-		Lyrics:      "Some lyrics",
-		Description: "A beautiful test track",
+		Name:      "Test Track - Artist",
+		Embedding: []float64{0.1, 0.2, 0.3, 0.4},
+		Offset:    0.5,
+		ModelID:   "muq_mulan",
 	}
 
 	assert.Equal(t, "Test Track - Artist", data.Name)
 	assert.Equal(t, []float64{0.1, 0.2, 0.3, 0.4}, data.Embedding)
 	assert.Equal(t, 0.5, data.Offset)
-	assert.Equal(t, "lyrics", data.ModelID)
-	assert.Equal(t, "Some lyrics", data.Lyrics)
-	assert.Equal(t, "A beautiful test track", data.Description)
+	assert.Equal(t, "muq_mulan", data.ModelID)
 }
 
 func TestEmbeddingDataWithEmptyFields(t *testing.T) {
-	// Lyrics/Description are optional (collection-specific)
 	data := EmbeddingData{
 		Name:      "Track Name",
 		Embedding: []float64{0.1},
-		ModelID:   "flamingo",
+		ModelID:   "muq_audio",
 	}
 
-	assert.Empty(t, data.Lyrics)
-	assert.Empty(t, data.Description)
 	assert.Equal(t, 0.0, data.Offset)
 }
 
@@ -299,11 +247,10 @@ func TestSearchResultWithDistance(t *testing.T) {
 }
 
 func TestBuildFilterWithUnicodeCharacters(t *testing.T) {
-	// Test Unicode handling in filters
 	values := []string{
-		"日本語トラック",         // Japanese
-		"Трек на русском", // Russian
-		"Piste française", // French with accent
+		"日本語トラック",
+		"Трек на русском",
+		"Piste française",
 	}
 
 	filter := buildInFilter("name", values)
@@ -315,6 +262,5 @@ func TestBuildFilterWithUnicodeCharacters(t *testing.T) {
 func TestBuildFilterWithMultipleQuotes(t *testing.T) {
 	values := []string{"It's 'quoted'"}
 	filter := buildInFilter("name", values)
-	// Both single quotes should be escaped
 	assert.Contains(t, filter, "It\\'s \\'quoted\\'")
 }

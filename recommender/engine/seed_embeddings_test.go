@@ -12,12 +12,11 @@ func TestResolveSeedEmbeddingsUsesPerModelEmbeddings(t *testing.T) {
 			{
 				TrackID: "text-seed",
 				Embeddings: map[string][]float64{
-					ModelLyrics:      {0.1, 0.2, 0.3},
-					ModelDescription: {0.4, 0.5, 0.6},
+					ModelMuQMulan: {0.1, 0.2, 0.3},
 				},
 			},
 		},
-		Models: []string{ModelLyrics, ModelDescription, ModelFlamingo},
+		Models: []string{ModelMuQMulan, ModelMuQAudio},
 	}
 
 	got, warnings, err := e.resolveSeedEmbeddings(context.Background(), req)
@@ -27,14 +26,11 @@ func TestResolveSeedEmbeddingsUsesPerModelEmbeddings(t *testing.T) {
 	if len(warnings) != 0 {
 		t.Fatalf("expected no warnings, got %#v", warnings)
 	}
-	if len(got[ModelLyrics]) != 1 {
-		t.Fatalf("expected lyrics embedding to be available, got %#v", got[ModelLyrics])
+	if len(got[ModelMuQMulan]) != 1 {
+		t.Fatalf("expected shared embedding to be available, got %#v", got[ModelMuQMulan])
 	}
-	if len(got[ModelDescription]) != 1 {
-		t.Fatalf("expected description embedding to be available, got %#v", got[ModelDescription])
-	}
-	if len(got[ModelFlamingo]) != 0 {
-		t.Fatalf("expected no flamingo embedding for text seed, got %#v", got[ModelFlamingo])
+	if len(got[ModelMuQAudio]) != 0 {
+		t.Fatalf("expected no MuQ audio embedding for text seed, got %#v", got[ModelMuQAudio])
 	}
 }
 
@@ -47,7 +43,7 @@ func TestResolveSeedEmbeddingsUsesLegacyDirectEmbedding(t *testing.T) {
 				Embedding: []float64{0.1, 0.2},
 			},
 		},
-		Models: []string{ModelFlamingo, ModelLyrics},
+		Models: []string{ModelMuQAudio, ModelMuQMulan},
 	}
 
 	got, warnings, err := e.resolveSeedEmbeddings(context.Background(), req)
@@ -57,11 +53,11 @@ func TestResolveSeedEmbeddingsUsesLegacyDirectEmbedding(t *testing.T) {
 	if len(warnings) != 0 {
 		t.Fatalf("expected no warnings, got %#v", warnings)
 	}
-	if len(got[ModelFlamingo]) != 1 {
-		t.Fatalf("expected legacy direct embedding to use primary model, got %#v", got[ModelFlamingo])
+	if len(got[ModelMuQAudio]) != 1 {
+		t.Fatalf("expected legacy direct embedding to use primary model, got %#v", got[ModelMuQAudio])
 	}
-	if len(got[ModelLyrics]) != 0 {
-		t.Fatalf("expected no lyrics embedding, got %#v", got[ModelLyrics])
+	if len(got[ModelMuQMulan]) != 0 {
+		t.Fatalf("expected no MuQ-MuLan embedding, got %#v", got[ModelMuQMulan])
 	}
 }
 
@@ -72,13 +68,13 @@ func TestResolveSeedEmbeddingsSkipsUnknownAndEmptyPerModelEntries(t *testing.T) 
 			{
 				TrackID: "text-seed",
 				Embeddings: map[string][]float64{
-					ModelLyrics:   {0.1, 0.2},
+					ModelMuQMulan: {0.1, 0.2},
 					"unknown":     {0.3, 0.4},
-					ModelFlamingo: {},
+					ModelMuQAudio: {},
 				},
 			},
 		},
-		Models: []string{ModelLyrics, ModelDescription},
+		Models: []string{ModelMuQMulan, ModelMuQAudio},
 	}
 
 	got, warnings, err := e.resolveSeedEmbeddings(context.Background(), req)
@@ -88,11 +84,11 @@ func TestResolveSeedEmbeddingsSkipsUnknownAndEmptyPerModelEntries(t *testing.T) 
 	if len(warnings) != 0 {
 		t.Fatalf("expected no warnings, got %#v", warnings)
 	}
-	if len(got[ModelLyrics]) != 1 {
-		t.Fatalf("expected one lyrics embedding, got %#v", got[ModelLyrics])
+	if len(got[ModelMuQMulan]) != 1 {
+		t.Fatalf("expected one MuQ-MuLan embedding, got %#v", got[ModelMuQMulan])
 	}
-	if len(got[ModelDescription]) != 0 {
-		t.Fatalf("expected no description embedding, got %#v", got[ModelDescription])
+	if len(got[ModelMuQAudio]) != 0 {
+		t.Fatalf("expected no MuQ audio embedding, got %#v", got[ModelMuQAudio])
 	}
 }
 
@@ -104,11 +100,11 @@ func TestResolveSeedEmbeddingsPrefersPerModelMapOverLegacyEmbedding(t *testing.T
 				TrackID:   "text-seed",
 				Embedding: []float64{9.9, 9.9},
 				Embeddings: map[string][]float64{
-					ModelLyrics: {0.1, 0.2},
+					ModelMuQMulan: {0.1, 0.2},
 				},
 			},
 		},
-		Models: []string{ModelLyrics, ModelDescription},
+		Models: []string{ModelMuQMulan, ModelMuQAudio},
 	}
 
 	got, warnings, err := e.resolveSeedEmbeddings(context.Background(), req)
@@ -118,14 +114,14 @@ func TestResolveSeedEmbeddingsPrefersPerModelMapOverLegacyEmbedding(t *testing.T
 	if len(warnings) != 0 {
 		t.Fatalf("expected no warnings, got %#v", warnings)
 	}
-	if len(got[ModelLyrics]) != 1 {
-		t.Fatalf("expected one lyrics embedding, got %#v", got[ModelLyrics])
+	if len(got[ModelMuQMulan]) != 1 {
+		t.Fatalf("expected one MuQ-MuLan embedding, got %#v", got[ModelMuQMulan])
 	}
-	if len(got[ModelDescription]) != 0 {
-		t.Fatalf("expected no description embedding, got %#v", got[ModelDescription])
+	if len(got[ModelMuQAudio]) != 0 {
+		t.Fatalf("expected no MuQ audio embedding, got %#v", got[ModelMuQAudio])
 	}
-	if got[ModelLyrics][0].Key != "text-seed" {
-		t.Fatalf("expected resolved seed key text-seed, got %#v", got[ModelLyrics])
+	if got[ModelMuQMulan][0].Key != "text-seed" {
+		t.Fatalf("expected resolved seed key text-seed, got %#v", got[ModelMuQMulan])
 	}
 }
 
@@ -135,15 +131,15 @@ func TestResolveSeedEmbeddingsWarnsWhenNoEmbeddingsAvailable(t *testing.T) {
 		Seeds: []SeedTrack{
 			{TrackID: ""},
 		},
-		Models: []string{ModelLyrics},
+		Models: []string{ModelMuQMulan},
 	}
 
 	got, warnings, err := e.resolveSeedEmbeddings(context.Background(), req)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if len(got[ModelLyrics]) != 0 {
-		t.Fatalf("expected no embeddings, got %#v", got[ModelLyrics])
+	if len(got[ModelMuQMulan]) != 0 {
+		t.Fatalf("expected no embeddings, got %#v", got[ModelMuQMulan])
 	}
 	if len(warnings) != 1 || warnings[0] != "No embeddings found for any seeds" {
 		t.Fatalf("expected no-embeddings warning, got %#v", warnings)

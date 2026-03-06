@@ -13,31 +13,37 @@ import (
 
 // Collection names for Milvus.
 const (
-	CollectionLyrics      = "lyrics_embedding"         // Lyrics text embedding
-	CollectionDescription = "description_embedding"    // Audio description text embedding
-	CollectionFlamingo    = "flamingo_audio_embedding" // Flamingo audio embedding
+	CollectionMuQAudio = "muq_audio_embedding" // MuQ audio-only embedding
+	CollectionMuQMulan = "muq_mulan_embedding" // MuQ-MuLan shared audio/text embedding
+
+	// Deprecated aliases kept temporarily while callers migrate.
+	CollectionLyrics      = CollectionMuQMulan
+	CollectionDescription = CollectionMuQMulan
+	CollectionFlamingo    = CollectionMuQAudio
 )
 
 // Embedding dimensions.
 const (
-	DimLyrics      = 2560  // Lyrics text embedding dimension
-	DimDescription = 2560  // Description text embedding dimension
-	DimFlamingo    = 28672 // Flamingo audio embedding dimension
+	DimMuQAudio = 1024 // MuQ audio embedding dimension
+	DimMuQMulan = 512  // MuQ-MuLan shared embedding dimension
+
+	// Deprecated aliases kept temporarily while callers migrate.
+	DimLyrics      = DimMuQMulan
+	DimDescription = DimMuQMulan
+	DimFlamingo    = DimMuQAudio
 )
 
 // Dimensions holds embedding dimensions for Milvus collections.
 type Dimensions struct {
-	Lyrics      int
-	Description int
-	Flamingo    int
+	MuQAudio int
+	MuQMulan int
 }
 
 // DefaultDimensions returns the default embedding dimensions.
 func DefaultDimensions() Dimensions {
 	return Dimensions{
-		Lyrics:      DimLyrics,
-		Description: DimDescription,
-		Flamingo:    DimFlamingo,
+		MuQAudio: DimMuQAudio,
+		MuQMulan: DimMuQMulan,
 	}
 }
 
@@ -61,14 +67,11 @@ func DefaultConfig() Config {
 
 func normalizeDimensions(dims Dimensions) Dimensions {
 	defaults := DefaultDimensions()
-	if dims.Lyrics <= 0 {
-		dims.Lyrics = defaults.Lyrics
+	if dims.MuQAudio <= 0 {
+		dims.MuQAudio = defaults.MuQAudio
 	}
-	if dims.Description <= 0 {
-		dims.Description = defaults.Description
-	}
-	if dims.Flamingo <= 0 {
-		dims.Flamingo = defaults.Flamingo
+	if dims.MuQMulan <= 0 {
+		dims.MuQMulan = defaults.MuQMulan
 	}
 	return dims
 }
@@ -141,9 +144,8 @@ func (c *Client) EnsureCollections(ctx context.Context) error {
 		name string
 		dim  int
 	}{
-		{CollectionLyrics, c.dimensions.Lyrics},
-		{CollectionDescription, c.dimensions.Description},
-		{CollectionFlamingo, c.dimensions.Flamingo},
+		{CollectionMuQAudio, c.dimensions.MuQAudio},
+		{CollectionMuQMulan, c.dimensions.MuQMulan},
 	}
 
 	for _, col := range collections {

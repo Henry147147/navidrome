@@ -27,9 +27,8 @@ func NewMilvusClient() (*milvus.Client, func(), error) {
 		Timeout:    conf.Server.Recommendations.Milvus.Timeout,
 		MaxRetries: conf.Server.Recommendations.Milvus.MaxRetries,
 		Dimensions: milvus.Dimensions{
-			Lyrics:      conf.Server.Recommendations.Milvus.Dimensions.Lyrics,
-			Description: conf.Server.Recommendations.Milvus.Dimensions.Description,
-			Flamingo:    conf.Server.Recommendations.Milvus.Dimensions.Flamingo,
+			MuQAudio: conf.Server.Recommendations.Milvus.Dimensions.ResolvedMuQAudio(),
+			MuQMulan: conf.Server.Recommendations.Milvus.Dimensions.ResolvedMuQMulan(),
 		},
 	}
 
@@ -69,7 +68,7 @@ func NewMilvusClient() (*milvus.Client, func(), error) {
 func NewRecommendationEngine(milvusClient *milvus.Client, res *resolver.Resolver) *engine.Engine {
 	cfg := engine.Config{
 		DefaultTopK:      conf.Server.Recommendations.DefaultLimit * 3,
-		DefaultModels:    []string{engine.ModelLyrics, engine.ModelDescription, engine.ModelFlamingo},
+		DefaultModels:    []string{engine.ModelMuQAudio, engine.ModelMuQMulan},
 		DefaultMerge:     "union",
 		DefaultDiversity: conf.Server.Recommendations.Diversity,
 	}

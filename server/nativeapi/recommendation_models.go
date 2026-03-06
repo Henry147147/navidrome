@@ -6,20 +6,16 @@ import (
 	"github.com/navidrome/navidrome/recommender/engine"
 )
 
-const defaultRecommendationModelAudio = engine.ModelFlamingo
+const defaultRecommendationModelAudio = engine.ModelMuQAudio
 
 func canonicalModelsFromValue(value string) []string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "", "none":
 		return nil
-	case engine.ModelFlamingo, "audio", "music_flamingo", "music-flamingo":
-		return []string{engine.ModelFlamingo}
-	case engine.ModelLyrics, "lyric":
-		return []string{engine.ModelLyrics}
-	case engine.ModelDescription, "desc":
-		return []string{engine.ModelDescription}
-	case "qwen3", "qwen8b", "qwen-8b":
-		return []string{engine.ModelLyrics, engine.ModelDescription}
+	case engine.ModelMuQAudio, "audio", "music_flamingo", "music-flamingo", "flamingo":
+		return []string{engine.ModelMuQAudio}
+	case engine.ModelMuQMulan, "lyrics", "description", "lyric", "desc", "qwen3", "qwen8b", "qwen-8b":
+		return []string{engine.ModelMuQMulan}
 	default:
 		return nil
 	}
@@ -106,34 +102,31 @@ func normalizeTextTargets(targets []string, legacyModel string) []string {
 		raw = []string{legacyModel}
 	}
 	if len(raw) == 0 {
-		raw = []string{engine.ModelLyrics, engine.ModelDescription}
+		return []string{engine.ModelMuQMulan}
 	}
-
-	normalized := normalizeModelList(raw)
-	if len(normalized) == 0 {
-		return []string{engine.ModelLyrics, engine.ModelDescription}
-	}
-
-	filtered := make([]string, 0, len(normalized))
-	for _, model := range normalized {
-		if model == engine.ModelLyrics || model == engine.ModelDescription {
-			filtered = append(filtered, model)
-		}
-	}
-
-	if len(filtered) == 0 {
-		return []string{engine.ModelLyrics, engine.ModelDescription}
-	}
-	return filtered
+	return []string{engine.ModelMuQMulan}
 }
 
 func ensureTextRecommendationModels(models []string, textTargets []string) []string {
-	normalizedTargets := normalizeTextTargets(textTargets, "")
-	combined := append([]string{}, models...)
-	combined = append(combined, normalizedTargets...)
-	normalized := normalizeModelList(combined)
+	_ = textTargets
+	normalized := normalizeModelList(models)
 	if len(normalized) == 0 {
-		return normalizedTargets
+		return []string{engine.ModelMuQMulan}
 	}
+	for _, model := range normalized {
+		if model == engine.ModelMuQMulan {
+			return normalized
+		}
+	}
+	normalized = append(normalized, engine.ModelMuQMulan)
 	return normalized
+}
+
+func normalizeTextEmbedderModel(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", engine.ModelMuQMulan, "lyrics", "lyric", "description", "desc", "qwen3", "qwen8b", "qwen-8b":
+		return engine.ModelMuQMulan
+	default:
+		return engine.ModelMuQMulan
+	}
 }

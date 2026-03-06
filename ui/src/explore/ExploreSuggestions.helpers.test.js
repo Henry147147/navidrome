@@ -8,14 +8,19 @@ import {
 
 describe('ExploreSuggestions helper functions', () => {
   it('detects text-capable models', () => {
-    expect(isTextModel('lyrics')).toBe(true)
-    expect(isTextModel('description')).toBe(true)
-    expect(isTextModel('flamingo')).toBe(false)
+    expect(isTextModel('muq_mulan')).toBe(true)
+    expect(isTextModel('muq_audio')).toBe(false)
   })
 
   it('deduplicates non-empty strings while preserving order', () => {
-    const result = uniqueStrings(['lyrics', '', 'lyrics', 'description', null])
-    expect(result).toEqual(['lyrics', 'description'])
+    const result = uniqueStrings([
+      'muq_audio',
+      '',
+      'muq_audio',
+      'muq_mulan',
+      null,
+    ])
+    expect(result).toEqual(['muq_audio', 'muq_mulan'])
   })
 
   it('clamps minimum agreement to valid range', () => {
@@ -26,30 +31,25 @@ describe('ExploreSuggestions helper functions', () => {
   })
 
   it('builds hybrid text+song request model list', () => {
-    const models = buildTextRequestModels(
-      ['flamingo'],
-      ['lyrics', 'description'],
-      true,
-    )
-    expect(models).toEqual(['flamingo', 'lyrics', 'description'])
+    const models = buildTextRequestModels(['muq_audio'], true)
+    expect(models).toEqual(['muq_audio', 'muq_mulan'])
   })
 
-  it('builds text-only model list without flamingo when no song seeds', () => {
-    const models = buildTextRequestModels(
-      ['flamingo'],
-      ['lyrics', 'description'],
-      false,
-    )
-    expect(models).toEqual(['lyrics', 'description'])
+  it('builds text-only model list without audio-only models when no song seeds', () => {
+    const models = buildTextRequestModels(['muq_audio', 'muq_mulan'], false)
+    expect(models).toEqual(['muq_mulan'])
   })
 
-  it('keeps selected text models for text-only requests', () => {
-    const models = buildTextRequestModels(['lyrics'], ['description'], false)
-    expect(models).toEqual(['lyrics', 'description'])
+  it('falls back to muq_mulan for text-only requests when only audio is selected', () => {
+    const models = buildTextRequestModels(['muq_audio'], false)
+    expect(models).toEqual(['muq_mulan'])
   })
 
-  it('falls back to default text targets when inputs are empty', () => {
-    const models = buildTextRequestModels([], [], false)
-    expect(models).toEqual(['lyrics', 'description'])
+  it('falls back to MuQ defaults when inputs are empty', () => {
+    expect(buildTextRequestModels([], false)).toEqual(['muq_mulan'])
+    expect(buildTextRequestModels([], true)).toEqual([
+      'muq_audio',
+      'muq_mulan',
+    ])
   })
 })

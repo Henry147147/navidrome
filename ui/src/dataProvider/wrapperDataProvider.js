@@ -250,7 +250,7 @@ const wrapperDataProvider = {
     httpClient(`${REST_URL}/text-embedding`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, model: model || 'qwen3' }),
+      body: JSON.stringify({ text, model: model || 'muq_mulan' }),
     }).then(({ json }) => ({ data: json })),
   startBatchEmbedding: (models, clearExisting) =>
     httpClient(`${REST_URL}/recommendations/batch/start`, {

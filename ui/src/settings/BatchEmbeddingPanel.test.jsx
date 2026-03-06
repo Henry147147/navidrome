@@ -104,8 +104,9 @@ describe('BatchEmbeddingPanel', () => {
 
     await waitFor(() => {
       const checkboxes = screen.getAllByRole('checkbox')
-      // Should have at least 3 model checkboxes
       expect(checkboxes.length).toBeGreaterThanOrEqual(3)
+      expect(screen.getByText('muq_audio')).toBeInTheDocument()
+      expect(screen.getByText('muq_mulan')).toBeInTheDocument()
     })
   })
 
@@ -136,6 +137,11 @@ describe('BatchEmbeddingPanel', () => {
     await waitFor(() => {
       expect(mockDataProvider.startBatchEmbedding).toHaveBeenCalled()
     })
+
+    expect(mockDataProvider.startBatchEmbedding).toHaveBeenCalledWith(
+      ['muq_audio', 'muq_mulan'],
+      true,
+    )
   })
 
   it('polls for progress after job starts', async () => {

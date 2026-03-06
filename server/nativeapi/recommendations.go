@@ -22,6 +22,7 @@ import (
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
+	"github.com/navidrome/navidrome/recommender/engine"
 	"github.com/navidrome/navidrome/server/subsonic"
 )
 
@@ -73,7 +74,7 @@ const (
 	modeAllRecommendations       = "all"
 	modeDiscoveryRecommendations = "discovery"
 	modeTextRecommendations      = "text"
-	defaultTextEmbedderModel     = "qwen8b"
+	defaultTextEmbedderModel     = "muq_mulan"
 
 	positiveSeedBoost = 1.12
 
@@ -1640,30 +1641,9 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 
 	textTargets := normalizeTextTargets(payload.TextTargets, payload.Model)
 
-	textModel := strings.TrimSpace(payload.Model)
-	if textModel == "" {
-		textModel = defaultTextEmbedderModel
-	}
+	textModel := normalizeTextEmbedderModel(payload.Model)
 
-	desiredDim := 0
-	for _, model := range textTargets {
-		dim := embeddingDimensionForModel(model)
-		if dim <= 0 {
-			continue
-		}
-		if desiredDim == 0 {
-			desiredDim = dim
-			continue
-		}
-		if desiredDim != dim {
-			http.Error(
-				w,
-				fmt.Sprintf("failed to get text embedding: text target dimensions mismatch (%d vs %d)", desiredDim, dim),
-				http.StatusInternalServerError,
-			)
-			return
-		}
-	}
+	desiredDim := embeddingDimensionForModel(engine.ModelMuQMulan)
 
 	queryEmbedding, err := n.getTextEmbedding(ctx, payload.Text, textModel, desiredDim)
 	if err != nil {

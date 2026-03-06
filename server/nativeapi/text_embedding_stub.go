@@ -10,22 +10,18 @@ import (
 )
 
 const (
-	defaultTextEmbeddingDim = 2560
+	defaultTextEmbeddingDim = 512
 )
 
 func embeddingDimensionForModel(model string) int {
 	switch model {
-	case engine.ModelLyrics:
-		if conf.Server.Recommendations.Milvus.Dimensions.Lyrics > 0 {
-			return conf.Server.Recommendations.Milvus.Dimensions.Lyrics
+	case engine.ModelMuQAudio:
+		if dim := conf.Server.Recommendations.Milvus.Dimensions.ResolvedMuQAudio(); dim > 0 {
+			return dim
 		}
-	case engine.ModelDescription:
-		if conf.Server.Recommendations.Milvus.Dimensions.Description > 0 {
-			return conf.Server.Recommendations.Milvus.Dimensions.Description
-		}
-	case engine.ModelFlamingo:
-		if conf.Server.Recommendations.Milvus.Dimensions.Flamingo > 0 {
-			return conf.Server.Recommendations.Milvus.Dimensions.Flamingo
+	case engine.ModelMuQMulan:
+		if dim := conf.Server.Recommendations.Milvus.Dimensions.ResolvedMuQMulan(); dim > 0 {
+			return dim
 		}
 	}
 	return defaultTextEmbeddingDim

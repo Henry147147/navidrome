@@ -1,5 +1,7 @@
-export const isTextModel = (model) =>
-  model === 'lyrics' || model === 'description'
+const DEFAULT_HYBRID_MODELS = ['muq_audio', 'muq_mulan']
+const DEFAULT_TEXT_MODELS = ['muq_mulan']
+
+export const isTextModel = (model) => model === 'muq_mulan'
 
 export const uniqueStrings = (values) => {
   const seen = new Set()
@@ -24,25 +26,17 @@ export const clampMinAgreement = (value, modelCount) => {
   return parsed
 }
 
-export const buildTextRequestModels = (
-  selectedModels,
-  textTargets,
-  hasSongSeeds,
-) => {
+export const buildTextRequestModels = (selectedModels, hasSongSeeds) => {
   const baseModels =
     Array.isArray(selectedModels) && selectedModels.length > 0
       ? selectedModels
-      : ['flamingo']
-  const normalizedTextTargets =
-    Array.isArray(textTargets) && textTargets.length > 0
-      ? textTargets
-      : ['lyrics', 'description']
+      : DEFAULT_HYBRID_MODELS
 
   if (hasSongSeeds) {
-    return uniqueStrings([...baseModels, ...normalizedTextTargets])
+    return uniqueStrings([...baseModels, ...DEFAULT_TEXT_MODELS])
   }
 
   const textOnlyModels = baseModels.filter(isTextModel)
-  const merged = uniqueStrings([...textOnlyModels, ...normalizedTextTargets])
-  return merged.length > 0 ? merged : ['lyrics', 'description']
+  const merged = uniqueStrings(textOnlyModels)
+  return merged.length > 0 ? merged : DEFAULT_TEXT_MODELS
 }

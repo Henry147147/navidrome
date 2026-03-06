@@ -204,30 +204,14 @@ const DEFAULT_SETTINGS = {
 
 const RECOMMENDATION_MODEL_OPTIONS = [
   {
-    value: 'flamingo',
-    label: 'Audio (Flamingo)',
-    description: 'Direct audio similarity from song embeddings',
+    value: 'muq_audio',
+    label: 'muq_audio',
+    description: 'Direct audio similarity from MuQ song embeddings',
   },
   {
-    value: 'lyrics',
-    label: 'Lyrics',
-    description: 'Similarity using lyric text embeddings',
-  },
-  {
-    value: 'description',
-    label: 'Description',
-    description: 'Similarity using generated song descriptions',
-  },
-]
-
-const TEXT_TARGET_OPTIONS = [
-  {
-    value: 'lyrics',
-    label: 'Lyrics',
-  },
-  {
-    value: 'description',
-    label: 'Description',
+    value: 'muq_mulan',
+    label: 'muq_mulan',
+    description: 'Shared text and audio retrieval through MuQ-MuLan embeddings',
   },
 ]
 
@@ -418,7 +402,10 @@ const ExploreSuggestions = () => {
   const [settingsMessage, setSettingsMessage] = useState(null)
 
   // Multi-model recommendation options
-  const [selectedModels, setSelectedModels] = useState(['flamingo'])
+  const [selectedModels, setSelectedModels] = useState([
+    'muq_audio',
+    'muq_mulan',
+  ])
   const [mergeStrategy, setMergeStrategy] = useState('union')
   const [minModelAgreement, setMinModelAgreement] = useState(1)
 
@@ -670,7 +657,10 @@ const ExploreSuggestions = () => {
       limit: settings.mixLength,
       diversity: settings.baseDiversity,
       // Multi-model options
-      models: selectedModels.length > 0 ? selectedModels : ['flamingo'],
+      models:
+        selectedModels.length > 0
+          ? selectedModels
+          : ['muq_audio', 'muq_mulan'],
       mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
       minModelAgreement:
         selectedModels.length > 1 ? minModelAgreement : undefined,
@@ -882,11 +872,6 @@ const ExploreSuggestions = () => {
   const [customExcludeIds, setCustomExcludeIds] = useState([])
   const [customUpdatingTrackId, setCustomUpdatingTrackId] = useState(null)
   const [customTextQuery, setCustomTextQuery] = useState('')
-  const [customTextTargets, setCustomTextTargets] = useState([
-    'lyrics',
-    'description',
-  ])
-
   const SONG_SEARCH_PER_PAGE = 10
   const createInitialSearchState = () => ({
     items: [],
@@ -1123,7 +1108,10 @@ const ExploreSuggestions = () => {
       limit: 1,
       diversity: settings.baseDiversity,
       excludeTrackIds: Array.from(excludeSet),
-      models: selectedModels.length > 0 ? selectedModels : ['flamingo'],
+      models:
+        selectedModels.length > 0
+          ? selectedModels
+          : ['muq_audio', 'muq_mulan'],
       mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
       minModelAgreement:
         selectedModels.length > 1 ? minModelAgreement : undefined,
@@ -1268,7 +1256,6 @@ const ExploreSuggestions = () => {
     setCustomUpdatingTrackId(trackId)
     const textModels = buildTextRequestModels(
       selectedModels,
-      customTextTargets,
       seeds.length > 0,
     )
     const textMinAgreement = clampMinAgreement(
@@ -1278,7 +1265,6 @@ const ExploreSuggestions = () => {
     const request = hasTextPrompt
       ? dataProvider.getTextRecommendations({
           text: customTextQuery.trim(),
-          textTargets: customTextTargets,
           songIds: seeds,
           limit: 1,
           diversity: settings.baseDiversity,
@@ -1295,7 +1281,10 @@ const ExploreSuggestions = () => {
           diversity: settings.baseDiversity,
           excludeTrackIds: Array.from(excludeSet),
           excludePlaylistIds,
-          models: selectedModels.length > 0 ? selectedModels : ['flamingo'],
+          models:
+            selectedModels.length > 0
+              ? selectedModels
+              : ['muq_audio', 'muq_mulan'],
           mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
           minModelAgreement:
             selectedModels.length > 1 ? minModelAgreement : undefined,
@@ -1361,7 +1350,6 @@ const ExploreSuggestions = () => {
     const hasTextPrompt = customTextQuery.trim() !== ''
     const textModels = buildTextRequestModels(
       selectedModels,
-      customTextTargets,
       selectedSongIDs.length > 0,
     )
     const textMinAgreement = clampMinAgreement(
@@ -1371,7 +1359,6 @@ const ExploreSuggestions = () => {
     const request = hasTextPrompt
       ? dataProvider.getTextRecommendations({
           text: customTextQuery.trim(),
-          textTargets: customTextTargets,
           songIds: selectedSongIDs,
           limit: settings.mixLength,
           diversity: settings.baseDiversity,
@@ -1386,7 +1373,10 @@ const ExploreSuggestions = () => {
           limit: settings.mixLength,
           diversity: settings.baseDiversity,
           excludePlaylistIds,
-          models: selectedModels.length > 0 ? selectedModels : ['flamingo'],
+          models:
+            selectedModels.length > 0
+              ? selectedModels
+              : ['muq_audio', 'muq_mulan'],
           mergeStrategy: selectedModels.length > 1 ? mergeStrategy : undefined,
           minModelAgreement:
             selectedModels.length > 1 ? minModelAgreement : undefined,
@@ -1522,7 +1512,11 @@ const ExploreSuggestions = () => {
                   onChange={(event) => {
                     const value = event.target.value
                     const next = Array.isArray(value) ? value : []
-                    setSelectedModels(next.length > 0 ? next : ['flamingo'])
+                    setSelectedModels(
+                      next.length > 0
+                        ? next
+                        : ['muq_audio', 'muq_mulan'],
+                    )
                     if (minModelAgreement > next.length && next.length > 0) {
                       setMinModelAgreement(next.length)
                     }
@@ -1570,7 +1564,7 @@ const ExploreSuggestions = () => {
                 </Select>
                 <FormHelperText>
                   {translate('pages.explore.modelsHelper', {
-                    _: 'Audio-only is fastest while text models improve semantic matching.',
+                    _: 'Use muq_audio for direct sonic similarity and add muq_mulan when you want shared text and audio retrieval.',
                   })}
                 </FormHelperText>
               </FormControl>
@@ -1742,62 +1736,6 @@ const ExploreSuggestions = () => {
               multiline
               minRows={2}
             />
-            <FormControl variant="outlined" className={classes.modelControl}>
-              <InputLabel id="custom-text-targets-label">
-                {translate('pages.explore.textTargetsLabel', {
-                  _: 'Text targets',
-                })}
-              </InputLabel>
-              <Select
-                labelId="custom-text-targets-label"
-                multiple
-                value={customTextTargets}
-                onChange={(event) => {
-                  const value = event.target.value
-                  const next = Array.isArray(value) ? value : []
-                  setCustomTextTargets(
-                    next.length > 0 ? next : ['lyrics', 'description'],
-                  )
-                }}
-                label={translate('pages.explore.textTargetsLabel', {
-                  _: 'Text targets',
-                })}
-                renderValue={(selected) => {
-                  const selectedList = Array.isArray(selected) ? selected : []
-                  return (
-                    <Box className={classes.selectChips}>
-                      {selectedList.map((value) => {
-                        const option = TEXT_TARGET_OPTIONS.find(
-                          (item) => item.value === value,
-                        )
-                        return (
-                          <Chip
-                            key={value}
-                            label={option?.label || value}
-                            size="small"
-                            className={classes.selectChip}
-                          />
-                        )
-                      })}
-                    </Box>
-                  )
-                }}
-              >
-                {TEXT_TARGET_OPTIONS.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    <Checkbox
-                      checked={customTextTargets.indexOf(option.value) > -1}
-                    />
-                    <ListItemText primary={option.label} />
-                  </MenuItem>
-                ))}
-              </Select>
-              <FormHelperText>
-                {translate('pages.explore.textTargetsHelper', {
-                  _: 'Used only when text prompt is provided.',
-                })}
-              </FormHelperText>
-            </FormControl>
             <FormControl
               variant="outlined"
               className={classes.playlistExclusionControl}

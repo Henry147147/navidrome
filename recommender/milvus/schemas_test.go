@@ -10,28 +10,20 @@ import (
 func TestBuildSchemaFields(t *testing.T) {
 	c := &Client{}
 
-	lyricsSchema := c.buildSchema(CollectionLyrics, 123)
-	if !schemaHasField(lyricsSchema, "lyrics") {
-		t.Fatal("lyrics schema should include lyrics field")
+	audioSchema := c.buildSchema(CollectionMuQAudio, 123)
+	if schemaHasField(audioSchema, "lyrics") {
+		t.Fatal("muq audio schema should not include lyrics field")
 	}
-	if schemaHasField(lyricsSchema, "description") {
-		t.Fatal("lyrics schema should not include description field")
-	}
-
-	descriptionSchema := c.buildSchema(CollectionDescription, 123)
-	if !schemaHasField(descriptionSchema, "description") {
-		t.Fatal("description schema should include description field")
-	}
-	if schemaHasField(descriptionSchema, "lyrics") {
-		t.Fatal("description schema should not include lyrics field")
+	if schemaHasField(audioSchema, "description") {
+		t.Fatal("muq audio schema should not include description field")
 	}
 
-	flamingoSchema := c.buildSchema(CollectionFlamingo, 123)
-	if schemaHasField(flamingoSchema, "lyrics") {
-		t.Fatal("flamingo schema should not include lyrics field")
+	sharedSchema := c.buildSchema(CollectionMuQMulan, 123)
+	if schemaHasField(sharedSchema, "lyrics") {
+		t.Fatal("muq mulan schema should not include lyrics field")
 	}
-	if schemaHasField(flamingoSchema, "description") {
-		t.Fatal("flamingo schema should not include description field")
+	if schemaHasField(sharedSchema, "description") {
+		t.Fatal("muq mulan schema should not include description field")
 	}
 }
 
@@ -55,7 +47,7 @@ func TestCollectionEmbeddingDim(t *testing.T) {
 					{
 						Name: "embedding",
 						TypeParams: map[string]string{
-							entity.TypeParamDim: "2560",
+							entity.TypeParamDim: "512",
 						},
 					},
 				},
@@ -63,8 +55,8 @@ func TestCollectionEmbeddingDim(t *testing.T) {
 		}
 
 		dim, ok := collectionEmbeddingDim(collection)
-		if !ok || dim != 2560 {
-			t.Fatalf("expected dim=2560, ok=true, got dim=%d ok=%v", dim, ok)
+		if !ok || dim != 512 {
+			t.Fatalf("expected dim=512, ok=true, got dim=%d ok=%v", dim, ok)
 		}
 	})
 
@@ -120,14 +112,11 @@ func TestCollectionHasField(t *testing.T) {
 }
 
 func TestRequiredCollectionTextField(t *testing.T) {
-	if got := requiredCollectionTextField(CollectionLyrics); got != "lyrics" {
-		t.Fatalf("expected lyrics field, got %q", got)
+	if got := requiredCollectionTextField(CollectionMuQAudio); got != "" {
+		t.Fatalf("expected no required field for muq audio, got %q", got)
 	}
-	if got := requiredCollectionTextField(CollectionDescription); got != "description" {
-		t.Fatalf("expected description field, got %q", got)
-	}
-	if got := requiredCollectionTextField(CollectionFlamingo); got != "" {
-		t.Fatalf("expected no required field for flamingo, got %q", got)
+	if got := requiredCollectionTextField(CollectionMuQMulan); got != "" {
+		t.Fatalf("expected no required field for muq mulan, got %q", got)
 	}
 }
 
@@ -143,39 +132,39 @@ func TestSchemaMismatchError(t *testing.T) {
 		{
 			name:         "no mismatch",
 			dimKnown:     true,
-			expectedDim:  2560,
-			existingDim:  2560,
+			expectedDim:  512,
+			existingDim:  512,
 			missingField: false,
 			wantErr:      "",
 		},
 		{
 			name:         "dimension mismatch only",
 			dimKnown:     true,
-			expectedDim:  2560,
+			expectedDim:  512,
 			existingDim:  1024,
 			missingField: false,
-			wantErr:      "expected dim=2560 actual=1024",
+			wantErr:      "expected dim=512 actual=1024",
 		},
 		{
-			name:         "missing field only",
+			name:         "missing field only ignored for generic schema",
 			dimKnown:     true,
-			expectedDim:  2560,
-			existingDim:  2560,
+			expectedDim:  512,
+			existingDim:  512,
 			missingField: true,
 			wantErr:      "required field missing",
 		},
 		{
 			name:         "dimension mismatch and missing field",
 			dimKnown:     true,
-			expectedDim:  2560,
+			expectedDim:  512,
 			existingDim:  1024,
 			missingField: true,
-			wantErr:      "expected dim=2560 actual=1024 and required field is missing",
+			wantErr:      "expected dim=512 actual=1024 and required field is missing",
 		},
 		{
 			name:         "unknown dimension with missing field",
 			dimKnown:     false,
-			expectedDim:  2560,
+			expectedDim:  512,
 			existingDim:  0,
 			missingField: true,
 			wantErr:      "required field missing",
@@ -183,7 +172,7 @@ func TestSchemaMismatchError(t *testing.T) {
 		{
 			name:         "unknown dimension without missing field treated as match",
 			dimKnown:     false,
-			expectedDim:  2560,
+			expectedDim:  512,
 			existingDim:  0,
 			missingField: false,
 			wantErr:      "",
@@ -192,7 +181,7 @@ func TestSchemaMismatchError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := schemaMismatchError(CollectionLyrics, tt.expectedDim, tt.existingDim, tt.dimKnown, tt.missingField)
+			err := schemaMismatchError(CollectionMuQMulan, tt.expectedDim, tt.existingDim, tt.dimKnown, tt.missingField)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("expected nil error, got %v", err)

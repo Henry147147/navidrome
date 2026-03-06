@@ -14,9 +14,8 @@ type MilvusConfig struct {
 // MilvusDimensions holds embedding dimensions for Milvus collections.
 // Note: This is re-exported from milvus subpackage for external use.
 type MilvusDimensions struct {
-	Lyrics      int
-	Description int
-	Flamingo    int
+	MuQAudio int
+	MuQMulan int
 }
 
 // EngineConfig holds recommendation engine configuration.

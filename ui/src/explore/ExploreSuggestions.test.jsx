@@ -125,6 +125,17 @@ describe('ExploreSuggestions', () => {
     })
   })
 
+  it('defaults the overview to MuQ models and hides legacy text targets', async () => {
+    render(<ExploreSuggestions />)
+
+    await waitFor(() => {
+      expect(screen.getByText('muq_audio')).toBeInTheDocument()
+      expect(screen.getByText('muq_mulan')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText('Text targets')).not.toBeInTheDocument()
+  })
+
   it('saves updated duration settings from settings panel', async () => {
     render(<ExploreSuggestions />)
 

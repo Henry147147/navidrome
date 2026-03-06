@@ -4,7 +4,7 @@ from typing import Any, List, Sequence
 from urllib import error, request
 
 
-class LlamaCppEmbeddingClient:
+class MuQEmbeddingClient:
     def __init__(self, base_url: str, timeout_seconds: float = 30.0) -> None:
         normalized_base_url = base_url.strip().rstrip("/")
         if not normalized_base_url:
@@ -16,13 +16,20 @@ class LlamaCppEmbeddingClient:
         self.endpoint = f"{normalized_base_url}/v1/embeddings"
         self.timeout_seconds = float(timeout_seconds)
 
-    def embed_documents(self, texts: Sequence[str], *, dimensions: int = 0) -> List[List[float]]:
+    def embed_documents(
+        self,
+        texts: Sequence[str],
+        *,
+        model: str = "muq_mulan",
+        dimensions: int = 0,
+    ) -> List[List[float]]:
         if not texts:
             return []
 
         payload: dict[str, Any] = {
             "input": list(texts),
             "encoding_format": "float",
+            "model": model,
         }
         if dimensions > 0:
             payload["dimensions"] = dimensions
@@ -153,3 +160,6 @@ class LlamaCppEmbeddingClient:
             if isinstance(message, str):
                 return message.strip()
         return ""
+
+
+LlamaCppEmbeddingClient = MuQEmbeddingClient

@@ -26,8 +26,8 @@ func TestGetTextEmbeddingOpenAIResponse(t *testing.T) {
 		if got := reqBody["input"]; got != "hello world" {
 			t.Fatalf("expected input hello world, got %#v", got)
 		}
-		if got := reqBody["model"]; got != "qwen8b" {
-			t.Fatalf("expected model qwen8b, got %#v", got)
+		if got := reqBody["model"]; got != "muq_mulan" {
+			t.Fatalf("expected model muq_mulan, got %#v", got)
 		}
 		if got := reqBody["dimensions"]; got != float64(3) {
 			t.Fatalf("expected requested dimensions=3, got %#v", got)
@@ -40,7 +40,7 @@ func TestGetTextEmbeddingOpenAIResponse(t *testing.T) {
 					"object":    "embedding",
 				},
 			},
-			"model": "qwen8b",
+			"model": "muq_mulan",
 		})
 	}))
 	defer srv.Close()
@@ -50,7 +50,7 @@ func TestGetTextEmbeddingOpenAIResponse(t *testing.T) {
 	t.Cleanup(func() { conf.Server.Recommendations.TextBaseURL = prev })
 
 	var router Router
-	vec, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b", 3)
+	vec, err := router.getTextEmbedding(context.Background(), "hello world", "muq_mulan", 3)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -76,7 +76,7 @@ func TestGetTextEmbeddingLegacyFallbackResponse(t *testing.T) {
 	t.Cleanup(func() { conf.Server.Recommendations.TextBaseURL = prev })
 
 	var router Router
-	vec, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b", 0)
+	vec, err := router.getTextEmbedding(context.Background(), "hello world", "muq_mulan", 0)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -102,7 +102,7 @@ func TestGetTextEmbeddingErrorResponse(t *testing.T) {
 	t.Cleanup(func() { conf.Server.Recommendations.TextBaseURL = prev })
 
 	var router Router
-	_, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b", 0)
+	_, err := router.getTextEmbedding(context.Background(), "hello world", "muq_mulan", 0)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -130,7 +130,7 @@ func TestGetTextEmbeddingTruncatesToDesiredDimension(t *testing.T) {
 	t.Cleanup(func() { conf.Server.Recommendations.TextBaseURL = prev })
 
 	var router Router
-	vec, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b", 2)
+	vec, err := router.getTextEmbedding(context.Background(), "hello world", "muq_mulan", 2)
 	if err != nil {
 		t.Fatalf("expected embedding call to succeed, got %v", err)
 	}
@@ -161,7 +161,7 @@ func TestGetTextEmbeddingErrorsWhenReturnedDimensionTooSmall(t *testing.T) {
 	t.Cleanup(func() { conf.Server.Recommendations.TextBaseURL = prev })
 
 	var router Router
-	_, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b", 2)
+	_, err := router.getTextEmbedding(context.Background(), "hello world", "muq_mulan", 2)
 	if err == nil {
 		t.Fatalf("expected dimension error")
 	}
@@ -199,7 +199,7 @@ func TestGetTextEmbeddingWithoutConfiguredURL(t *testing.T) {
 	})
 
 	var router Router
-	_, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b", 0)
+	_, err := router.getTextEmbedding(context.Background(), "hello world", "muq_mulan", 0)
 	if err == nil {
 		t.Fatalf("expected error when embedding URL is not configured")
 	}
@@ -220,7 +220,7 @@ func TestGetTextEmbeddingPropagatesNonJSONErrorBody(t *testing.T) {
 	t.Cleanup(func() { conf.Server.Recommendations.TextBaseURL = prev })
 
 	var router Router
-	_, err := router.getTextEmbedding(context.Background(), "hello world", "qwen8b", 0)
+	_, err := router.getTextEmbedding(context.Background(), "hello world", "muq_mulan", 0)
 	if err == nil {
 		t.Fatalf("expected error")
 	}

@@ -1,6 +1,4 @@
 // Package recommender provides music recommendation and embedding services.
-// It replaces the Python-based embedding services with a pure Go implementation
-// using musicembed (llama.cpp bindings) for model inference and Milvus for vector storage.
 package recommender
 
 import (
@@ -8,10 +6,7 @@ import (
 	"time"
 )
 
-// Embedder generates embeddings for audio files using a three-stage pipeline:
-// 1. Audio -> Audio embedding
-// 2. Audio -> Text description
-// 3. Text description -> Text embedding
+// Embedder generates embeddings for audio files using direct audio and shared audio/text spaces.
 type Embedder interface {
 	// EmbedAudio processes an audio file through all enabled stages.
 	EmbedAudio(ctx context.Context, req EmbedRequest) (*EmbedResult, error)
@@ -59,13 +54,10 @@ type VectorStore interface {
 	Close() error
 }
 
-// LLMClient handles communication with the llama.cpp inference backend.
+// EmbeddingClient handles communication with the embedding backend.
 type LLMClient interface {
 	// EmbedAudioBatch generates audio embeddings for multiple files.
 	EmbedAudioBatch(ctx context.Context, reqs []AudioEmbedRequest) ([]AudioEmbedResponse, error)
-
-	// DescribeAudioBatch generates text descriptions for multiple audio files.
-	DescribeAudioBatch(ctx context.Context, reqs []AudioDescribeRequest) ([]AudioDescribeResponse, error)
 
 	// EmbedTextBatch generates text embeddings for multiple strings.
 	EmbedTextBatch(ctx context.Context, reqs []TextEmbedRequest) ([]TextEmbedResponse, error)
@@ -82,16 +74,13 @@ type EmbedRequest struct {
 	Artist    string
 	Title     string
 	Album     string
-	Lyrics    string
 }
 
 // EmbedResult contains the results of embedding a track.
 type EmbedResult struct {
-	TrackName            string
-	LyricsEmbedding      []float64
-	DescriptionEmbedding []float64
-	FlamingoEmbedding    []float64
-	Description          string
+	TrackName         string
+	MuQAudioEmbedding []float64
+	MuQMulanEmbedding []float64
 }
 
 // StatusRequest contains information for checking embedding status.
@@ -105,20 +94,18 @@ type StatusRequest struct {
 
 // StatusResult contains embedding status information.
 type StatusResult struct {
-	Embedded          bool
-	HasDescription    bool
-	HasAudioEmbedding bool
-	CanonicalName     string
+	Embedded           bool
+	HasSharedEmbedding bool
+	HasAudioEmbedding  bool
+	CanonicalName      string
 }
 
 // EmbeddingData represents a single embedding record for storage.
 type EmbeddingData struct {
-	Name        string
-	Embedding   []float64
-	Offset      float64
-	ModelID     string
-	Lyrics      string // Only for lyrics_embedding collection
-	Description string // Only for description_embedding collection
+	Name      string
+	Embedding []float64
+	Offset    float64
+	ModelID   string
 }
 
 // SearchOptions configures similarity search behavior.
@@ -147,20 +134,6 @@ type AudioEmbedResponse struct {
 	ModelID   string    `json:"model_id"`
 	Duration  float64   `json:"duration_seconds"`
 	Error     string    `json:"error,omitempty"`
-}
-
-// AudioDescribeRequest for llama.cpp audio description endpoint.
-type AudioDescribeRequest struct {
-	AudioPath string `json:"audio_path"`
-	Prompt    string `json:"prompt,omitempty"`
-}
-
-// AudioDescribeResponse from llama.cpp audio description endpoint.
-type AudioDescribeResponse struct {
-	Description    string    `json:"description"`
-	AudioEmbedding []float64 `json:"audio_embedding"` // Flamingo audio features
-	ModelID        string    `json:"model_id"`
-	Error          string    `json:"error,omitempty"`
 }
 
 // TextEmbedRequest for llama.cpp text embedding endpoint.

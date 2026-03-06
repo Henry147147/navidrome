@@ -33,7 +33,7 @@ func (c *legacyClient) Recommend(ctx context.Context, _ string, payload subsonic
 
 	models := payload.Models
 	if len(models) == 0 {
-		models = []string{engine.ModelLyrics, engine.ModelDescription, engine.ModelFlamingo}
+		models = []string{engine.ModelMuQAudio, engine.ModelMuQMulan}
 	}
 	mergeStrategy := strings.TrimSpace(payload.MergeStrategy)
 	if mergeStrategy == "" {

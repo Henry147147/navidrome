@@ -3,18 +3,11 @@ import {
   Box,
   Button,
   Card,
-  CardContent,
-  Checkbox,
   CircularProgress,
-  FormControl,
-  FormHelperText,
   IconButton,
-  InputLabel,
   List,
   ListItem,
   ListItemText,
-  MenuItem,
-  Select,
   Slider,
   TextField,
   Typography,
@@ -91,19 +84,6 @@ const useStyles = makeStyles((theme) => ({
   },
 }))
 
-const TEXT_TARGET_OPTIONS = [
-  {
-    value: 'lyrics',
-    label: 'Lyrics',
-    description: 'Lyric similarity search',
-  },
-  {
-    value: 'description',
-    label: 'Description',
-    description: 'Generated description similarity search',
-  },
-]
-
 const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
   const classes = useStyles()
   const translate = useTranslate()
@@ -111,7 +91,6 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
   const notify = useNotify()
 
   const [textQuery, setTextQuery] = useState('')
-  const [textTargets, setTextTargets] = useState(['lyrics', 'description'])
   const [negativePrompts, setNegativePrompts] = useState([])
   const [negativePenalty, setNegativePenalty] = useState(0.85)
   const [limit, setLimit] = useState(25)
@@ -146,7 +125,7 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
     try {
       const options = {
         text: textQuery,
-        textTargets,
+        models: ['muq_mulan'],
         limit,
         negativePrompts: negativePrompts
           .map((p) => p.trim())
@@ -207,7 +186,7 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
 
           <Typography variant="body2" color="textSecondary">
             {translate('pages.explore.textGenerator.description', {
-              _: "Describe the music you want and we'll find matching tracks in your library.",
+              _: 'Describe the music you want and muq_mulan will find matching tracks in your library.',
             })}
           </Typography>
 
@@ -234,55 +213,6 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
           </Box>
 
           <Box className={classes.formRow}>
-            <FormControl className={classes.modelSelect} variant="outlined">
-              <InputLabel id="text-targets-label">
-                {translate('pages.explore.textGenerator.targets', {
-                  _: 'Text targets',
-                })}
-              </InputLabel>
-              <Select
-                labelId="text-targets-label"
-                multiple
-                value={textTargets}
-                onChange={(event) => {
-                  const value = event.target.value
-                  const next = Array.isArray(value) ? value : []
-                  setTextTargets(next.length > 0 ? next : ['lyrics'])
-                }}
-                label={translate('pages.explore.textGenerator.targets', {
-                  _: 'Text targets',
-                })}
-                disabled={loading}
-                renderValue={(selected) =>
-                  (Array.isArray(selected) ? selected : [])
-                    .map((item) => {
-                      const option = TEXT_TARGET_OPTIONS.find(
-                        (target) => target.value === item,
-                      )
-                      return option?.label || item
-                    })
-                    .join(', ')
-                }
-              >
-                {TEXT_TARGET_OPTIONS.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    <Checkbox
-                      checked={textTargets.indexOf(option.value) > -1}
-                    />
-                    <ListItemText
-                      primary={option.label}
-                      secondary={option.description}
-                    />
-                  </MenuItem>
-                ))}
-              </Select>
-              <FormHelperText>
-                {translate('pages.explore.textGenerator.targetsHelper', {
-                  _: 'Choose one or both text spaces for recommendation.',
-                })}
-              </FormHelperText>
-            </FormControl>
-
             <TextField
               type="number"
               label={translate('pages.explore.textGenerator.limit', {

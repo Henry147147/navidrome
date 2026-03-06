@@ -52,7 +52,7 @@ func (f *fakeVectorStore) GetByNames(_ context.Context, collection string, names
 func TestSearchSingleModelUsesSeedWeightsInRRF(t *testing.T) {
 	store := &fakeVectorStore{
 		searchResults: map[string]map[string][]milvus.SearchResult{
-			milvus.CollectionFlamingo: {
+			milvus.CollectionMuQAudio: {
 				vectorKey([]float64{1, 0}): []milvus.SearchResult{
 					{Name: "heavy-seed-track", Distance: 0.9},
 				},
@@ -64,7 +64,7 @@ func TestSearchSingleModelUsesSeedWeightsInRRF(t *testing.T) {
 	}
 	engine := New(DefaultConfig(), store, nil)
 
-	candidates, err := engine.searchSingleModel(context.Background(), ModelFlamingo, []seedEmbedding{
+	candidates, err := engine.searchSingleModel(context.Background(), ModelMuQAudio, []seedEmbedding{
 		{Key: "seed-a", Embedding: []float64{1, 0}, Weight: 3},
 		{Key: "seed-b", Embedding: []float64{0, 1}, Weight: 1},
 	}, nil, 10)
@@ -85,31 +85,31 @@ func TestRerankCandidatesUsesDiversityAndArtistPenalty(t *testing.T) {
 			Name:       "artist-a - track-1",
 			Score:      1.0,
 			BaseScore:  1.0,
-			Embeddings: map[string][]float64{ModelLyrics: []float64{1, 0}},
+			Embeddings: map[string][]float64{ModelMuQMulan: {1, 0}},
 		},
 		{
 			Name:       "artist-a - track-2",
 			Score:      0.98,
 			BaseScore:  0.98,
-			Embeddings: map[string][]float64{ModelLyrics: []float64{0.99, 0.01}},
+			Embeddings: map[string][]float64{ModelMuQMulan: {0.99, 0.01}},
 		},
 		{
 			Name:       "artist-b - track-3",
 			Score:      0.92,
 			BaseScore:  0.92,
-			Embeddings: map[string][]float64{ModelLyrics: []float64{0, 1}},
+			Embeddings: map[string][]float64{ModelMuQMulan: {0, 1}},
 		},
 	}
 
 	diverse := engine.rerankCandidates(candidates, RecommendationRequest{
 		Limit:     3,
 		Diversity: 0.7,
-		Models:    []string{ModelLyrics},
+		Models:    []string{ModelMuQMulan},
 	})
 	nonDiverse := engine.rerankCandidates(candidates, RecommendationRequest{
 		Limit:     3,
 		Diversity: 0,
-		Models:    []string{ModelLyrics},
+		Models:    []string{ModelMuQMulan},
 	})
 
 	if assert.Len(t, diverse, 3) {
@@ -127,20 +127,20 @@ func TestApplyNegativePenaltiesUsesAllActiveModels(t *testing.T) {
 		{
 			Name:       "track-1",
 			BaseScore:  1,
-			Embeddings: map[string][]float64{ModelLyrics: []float64{1, 0}, ModelDescription: []float64{1, 0}},
+			Embeddings: map[string][]float64{ModelMuQAudio: {1, 0}, ModelMuQMulan: {1, 0}},
 		},
 		{
 			Name:       "track-2",
 			BaseScore:  1,
-			Embeddings: map[string][]float64{ModelLyrics: []float64{1, 0}, ModelDescription: []float64{0, 1}},
+			Embeddings: map[string][]float64{ModelMuQAudio: {1, 0}, ModelMuQMulan: {0, 1}},
 		},
 	}
 
 	engine.applyNegativePenalties(context.Background(), candidates, RecommendationRequest{
-		Models: []string{ModelLyrics, ModelDescription},
+		Models: []string{ModelMuQAudio, ModelMuQMulan},
 		NegativeEmbeddings: map[string][][]float64{
-			ModelLyrics:      [][]float64{{1, 0}},
-			ModelDescription: [][]float64{{1, 0}},
+			ModelMuQAudio: {{1, 0}},
+			ModelMuQMulan: {{1, 0}},
 		},
 		NegativePromptPenalty: 0.85,
 	})

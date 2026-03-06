@@ -37,7 +37,6 @@ func TestEmbedRequest(t *testing.T) {
 		Artist:    "Artist",
 		Title:     "Track",
 		Album:     "Album",
-		Lyrics:    "Sample lyrics",
 	}
 
 	assert.Equal(t, "/music/artist/album/track.flac", req.FilePath)
@@ -46,36 +45,28 @@ func TestEmbedRequest(t *testing.T) {
 	assert.Equal(t, "Artist", req.Artist)
 	assert.Equal(t, "Track", req.Title)
 	assert.Equal(t, "Album", req.Album)
-	assert.Equal(t, "Sample lyrics", req.Lyrics)
 }
 
 func TestEmbedResult(t *testing.T) {
 	result := EmbedResult{
-		TrackName:            "Artist - Track",
-		LyricsEmbedding:      []float64{0.1, 0.2, 0.3},
-		DescriptionEmbedding: []float64{0.4, 0.5, 0.6},
-		FlamingoEmbedding:    []float64{0.7, 0.8, 0.9},
-		Description:          "An upbeat rock song",
+		TrackName:         "Artist - Track",
+		MuQAudioEmbedding: []float64{0.1, 0.2, 0.3},
+		MuQMulanEmbedding: []float64{0.4, 0.5, 0.6},
 	}
 
 	assert.Equal(t, "Artist - Track", result.TrackName)
-	assert.Len(t, result.LyricsEmbedding, 3)
-	assert.Len(t, result.DescriptionEmbedding, 3)
-	assert.Len(t, result.FlamingoEmbedding, 3)
-	assert.Equal(t, "An upbeat rock song", result.Description)
+	assert.Len(t, result.MuQAudioEmbedding, 3)
+	assert.Len(t, result.MuQMulanEmbedding, 3)
 }
 
 func TestEmbedResultPartialEmbeddings(t *testing.T) {
-	// Not all embeddings may be available
 	result := EmbedResult{
-		TrackName:       "Track",
-		LyricsEmbedding: []float64{0.1, 0.2},
-		// DescriptionEmbedding and FlamingoEmbedding not set
+		TrackName:         "Track",
+		MuQMulanEmbedding: []float64{0.1, 0.2},
 	}
 
-	assert.NotNil(t, result.LyricsEmbedding)
-	assert.Nil(t, result.DescriptionEmbedding)
-	assert.Nil(t, result.FlamingoEmbedding)
+	assert.NotNil(t, result.MuQMulanEmbedding)
+	assert.Nil(t, result.MuQAudioEmbedding)
 }
 
 func TestStatusRequest(t *testing.T) {
@@ -96,14 +87,14 @@ func TestStatusRequest(t *testing.T) {
 
 func TestStatusResult(t *testing.T) {
 	result := StatusResult{
-		Embedded:          true,
-		HasDescription:    true,
-		HasAudioEmbedding: true,
-		CanonicalName:     "Artist - Title",
+		Embedded:           true,
+		HasSharedEmbedding: true,
+		HasAudioEmbedding:  true,
+		CanonicalName:      "Artist - Title",
 	}
 
 	assert.True(t, result.Embedded)
-	assert.True(t, result.HasDescription)
+	assert.True(t, result.HasSharedEmbedding)
 	assert.True(t, result.HasAudioEmbedding)
 	assert.Equal(t, "Artist - Title", result.CanonicalName)
 }
@@ -112,27 +103,23 @@ func TestStatusResultNotEmbedded(t *testing.T) {
 	result := StatusResult{}
 
 	assert.False(t, result.Embedded)
-	assert.False(t, result.HasDescription)
+	assert.False(t, result.HasSharedEmbedding)
 	assert.False(t, result.HasAudioEmbedding)
 	assert.Empty(t, result.CanonicalName)
 }
 
 func TestEmbeddingData(t *testing.T) {
 	data := EmbeddingData{
-		Name:        "Artist - Track",
-		Embedding:   []float64{0.1, 0.2, 0.3, 0.4},
-		Offset:      0.5,
-		ModelID:     "lyrics",
-		Lyrics:      "A generated lyric",
-		Description: "A beautiful melody",
+		Name:      "Artist - Track",
+		Embedding: []float64{0.1, 0.2, 0.3, 0.4},
+		Offset:    0.5,
+		ModelID:   "muq_mulan",
 	}
 
 	assert.Equal(t, "Artist - Track", data.Name)
 	assert.Len(t, data.Embedding, 4)
 	assert.Equal(t, 0.5, data.Offset)
-	assert.Equal(t, "lyrics", data.ModelID)
-	assert.Equal(t, "A generated lyric", data.Lyrics)
-	assert.Equal(t, "A beautiful melody", data.Description)
+	assert.Equal(t, "muq_mulan", data.ModelID)
 }
 
 func TestSearchOptions(t *testing.T) {
@@ -160,74 +147,50 @@ func TestSearchResult(t *testing.T) {
 func TestAudioEmbedRequest(t *testing.T) {
 	req := AudioEmbedRequest{
 		AudioPath:  "/path/to/audio.mp3",
-		SampleRate: 48000,
+		SampleRate: 24000,
 		BatchID:    "batch-123",
 	}
 
 	assert.Equal(t, "/path/to/audio.mp3", req.AudioPath)
-	assert.Equal(t, 48000, req.SampleRate)
+	assert.Equal(t, 24000, req.SampleRate)
 	assert.Equal(t, "batch-123", req.BatchID)
 }
 
 func TestAudioEmbedResponse(t *testing.T) {
 	resp := AudioEmbedResponse{
 		Embedding: []float64{0.1, 0.2, 0.3},
-		ModelID:   "flamingo",
+		ModelID:   "muq_audio",
 		Duration:  180.5,
 		Error:     "",
 	}
 
 	assert.Len(t, resp.Embedding, 3)
-	assert.Equal(t, "flamingo", resp.ModelID)
+	assert.Equal(t, "muq_audio", resp.ModelID)
 	assert.Equal(t, 180.5, resp.Duration)
-	assert.Empty(t, resp.Error)
-}
-
-func TestAudioDescribeRequest(t *testing.T) {
-	req := AudioDescribeRequest{
-		AudioPath: "/path/to/audio.mp3",
-		Prompt:    "Describe this music",
-	}
-
-	assert.Equal(t, "/path/to/audio.mp3", req.AudioPath)
-	assert.Equal(t, "Describe this music", req.Prompt)
-}
-
-func TestAudioDescribeResponse(t *testing.T) {
-	resp := AudioDescribeResponse{
-		Description:    "An upbeat electronic track with heavy bass",
-		AudioEmbedding: []float64{0.1, 0.2},
-		ModelID:        "qwen",
-		Error:          "",
-	}
-
-	assert.Equal(t, "An upbeat electronic track with heavy bass", resp.Description)
-	assert.Len(t, resp.AudioEmbedding, 2)
-	assert.Equal(t, "qwen", resp.ModelID)
 	assert.Empty(t, resp.Error)
 }
 
 func TestTextEmbedRequest(t *testing.T) {
 	req := TextEmbedRequest{
-		Text:    "Some lyrics to embed",
-		ModelID: "lyrics",
+		Text:    "shared semantic query",
+		ModelID: "muq_mulan",
 	}
 
-	assert.Equal(t, "Some lyrics to embed", req.Text)
-	assert.Equal(t, "lyrics", req.ModelID)
+	assert.Equal(t, "shared semantic query", req.Text)
+	assert.Equal(t, "muq_mulan", req.ModelID)
 }
 
 func TestTextEmbedResponse(t *testing.T) {
 	resp := TextEmbedResponse{
-		Embedding: make([]float64, 2560),
-		ModelID:   "lyrics",
-		Dimension: 2560,
+		Embedding: make([]float64, 512),
+		ModelID:   "muq_mulan",
+		Dimension: 512,
 		Error:     "",
 	}
 
-	assert.Len(t, resp.Embedding, 2560)
-	assert.Equal(t, "lyrics", resp.ModelID)
-	assert.Equal(t, 2560, resp.Dimension)
+	assert.Len(t, resp.Embedding, 512)
+	assert.Equal(t, "muq_mulan", resp.ModelID)
+	assert.Equal(t, 512, resp.Dimension)
 	assert.Empty(t, resp.Error)
 }
 
@@ -248,13 +211,13 @@ func TestRecommendationRequest(t *testing.T) {
 		DislikedTrackIDs:      []string{"dislike1"},
 		DislikedArtistIDs:     []string{"artist1"},
 		DislikeStrength:       0.5,
-		Models:                []string{"lyrics", "description"},
+		Models:                []string{"muq_mulan", "muq_audio"},
 		MergeStrategy:         "union",
-		ModelPriorities:       map[string]int{"lyrics": 1, "description": 2},
+		ModelPriorities:       map[string]int{"muq_mulan": 1, "muq_audio": 2},
 		MinModelAgreement:     1,
 		NegativePrompts:       []string{"sad", "slow"},
 		NegativePromptPenalty: 0.2,
-		NegativeEmbeddings:    map[string][][]float64{"lyrics": {{0.1, 0.2}}},
+		NegativeEmbeddings:    map[string][][]float64{"muq_mulan": {{0.1, 0.2}}},
 	}
 
 	assert.Equal(t, "user-123", req.UserID)
@@ -286,8 +249,8 @@ func TestRecommendationSeed(t *testing.T) {
 		PlayedAt:  &now,
 		Embedding: []float64{0.1, 0.2, 0.3},
 		Embeddings: map[string][]float64{
-			"lyrics":      {0.4, 0.5},
-			"description": {0.6, 0.7},
+			"muq_mulan": {0.4, 0.5},
+			"muq_audio": {0.6, 0.7},
 		},
 	}
 
@@ -304,14 +267,14 @@ func TestRecommendationItem(t *testing.T) {
 	item := RecommendationItem{
 		TrackID:            "track-123",
 		Score:              0.95,
-		Reason:             "Similar artist",
-		Models:             []string{"lyrics", "description"},
+		Reason:             "Shared semantic match",
+		Models:             []string{"muq_mulan", "muq_audio"},
 		NegativeSimilarity: &negSim,
 	}
 
 	assert.Equal(t, "track-123", item.TrackID)
 	assert.Equal(t, 0.95, item.Score)
-	assert.Equal(t, "Similar artist", item.Reason)
+	assert.Equal(t, "Shared semantic match", item.Reason)
 	assert.Len(t, item.Models, 2)
 	assert.NotNil(t, item.NegativeSimilarity)
 	assert.Equal(t, 0.15, *item.NegativeSimilarity)
@@ -333,7 +296,7 @@ func TestRecommendationResponse(t *testing.T) {
 			{TrackID: "track2", Score: 0.85},
 			{TrackID: "track3", Score: 0.8},
 		},
-		Warnings: []string{"No lyrics available for some seeds"},
+		Warnings: []string{"Using compatibility alias for legacy model name."},
 	}
 
 	assert.Len(t, resp.Tracks, 3)
@@ -344,7 +307,7 @@ func TestRecommendationResponseTrackIDs(t *testing.T) {
 	resp := RecommendationResponse{
 		Tracks: []RecommendationItem{
 			{TrackID: "track1", Score: 0.9},
-			{TrackID: "", Score: 0.85}, // Empty should be filtered
+			{TrackID: "", Score: 0.85},
 			{TrackID: "track3", Score: 0.8},
 		},
 	}
@@ -381,30 +344,28 @@ func TestMilvusConfigStruct(t *testing.T) {
 		Timeout:    30 * time.Second,
 		MaxRetries: 3,
 		Dimensions: MilvusDimensions{
-			Lyrics:      2560,
-			Description: 2560,
-			Flamingo:    28672,
+			MuQAudio: 1024,
+			MuQMulan: 512,
 		},
 	}
 
 	assert.Equal(t, "http://localhost:19530", cfg.URI)
 	assert.Equal(t, 30*time.Second, cfg.Timeout)
 	assert.Equal(t, 3, cfg.MaxRetries)
-	assert.Equal(t, 2560, cfg.Dimensions.Lyrics)
-	assert.Equal(t, 2560, cfg.Dimensions.Description)
-	assert.Equal(t, 28672, cfg.Dimensions.Flamingo)
+	assert.Equal(t, 1024, cfg.Dimensions.MuQAudio)
+	assert.Equal(t, 512, cfg.Dimensions.MuQMulan)
 }
 
 func TestEngineConfigStruct(t *testing.T) {
 	cfg := EngineConfig{
 		DefaultTopK:      75,
-		DefaultModels:    []string{"lyrics", "description", "flamingo"},
+		DefaultModels:    []string{"muq_audio", "muq_mulan"},
 		DefaultMerge:     "union",
 		DefaultDiversity: 0.3,
 	}
 
 	assert.Equal(t, 75, cfg.DefaultTopK)
-	assert.Len(t, cfg.DefaultModels, 3)
+	assert.Len(t, cfg.DefaultModels, 2)
 	assert.Equal(t, "union", cfg.DefaultMerge)
 	assert.Equal(t, 0.3, cfg.DefaultDiversity)
 }

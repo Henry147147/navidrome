@@ -104,15 +104,14 @@ const useStyles = makeStyles((theme) => ({
 
 const MODEL_OPTIONS = [
   {
-    value: 'qwen3',
-    label: 'Qwen Text (4096-dim)',
-    description:
-      'Music Flamingo captions + Qwen text embeddings for lyrics/descriptions',
+    value: 'muq_audio',
+    label: 'muq_audio',
+    description: 'MuQ audio embeddings for direct audio similarity',
   },
   {
-    value: 'flamingo',
-    label: 'Flamingo Audio (1024-dim)',
-    description: 'Music Flamingo audio embeddings for direct audio similarity',
+    value: 'muq_mulan',
+    label: 'muq_mulan',
+    description: 'MuQ-MuLan shared text and audio embeddings',
   },
 ]
 
@@ -133,7 +132,10 @@ const BatchEmbeddingPanel = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
   const [progress, setProgress] = useState(null)
-  const [selectedModels, setSelectedModels] = useState(['qwen3', 'flamingo'])
+  const [selectedModels, setSelectedModels] = useState([
+    'muq_audio',
+    'muq_mulan',
+  ])
   const [clearExisting, setClearExisting] = useState(true)
   const [error, setError] = useState(null)
   const [gpuSettings, setGpuSettings] = useState(DEFAULT_GPU_SETTINGS)
@@ -383,7 +385,7 @@ const BatchEmbeddingPanel = () => {
 
           <Typography variant="body2" color="textSecondary">
             {translate('pages.settings.batchEmbedding.description', {
-              _: 'Re-generate embeddings for all tracks in your library. This may take several hours for large libraries.',
+              _: 'Re-generate muq_audio and muq_mulan embeddings for every track in your library. This may take several hours for large libraries.',
             })}
           </Typography>
 

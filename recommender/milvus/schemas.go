@@ -72,14 +72,7 @@ func (c *Client) ensureCollection(ctx context.Context, name string, dim int) err
 }
 
 func requiredCollectionTextField(collectionName string) string {
-	switch collectionName {
-	case CollectionLyrics:
-		return "lyrics"
-	case CollectionDescription:
-		return "description"
-	default:
-		return ""
-	}
+	return ""
 }
 
 func schemaMismatchError(collectionName string, expectedDim int, existingDim int, dimKnown bool, missingField bool) error {
@@ -165,28 +158,6 @@ func (c *Client) buildSchema(name string, dim int) *entity.Schema {
 				},
 			},
 		},
-	}
-
-	// Add lyrics field for the lyrics collection
-	if name == CollectionLyrics {
-		schema.Fields = append(schema.Fields, &entity.Field{
-			Name:     "lyrics",
-			DataType: entity.FieldTypeVarChar,
-			TypeParams: map[string]string{
-				"max_length": "32768",
-			},
-		})
-	}
-
-	// Add description field for the description collection
-	if name == CollectionDescription {
-		schema.Fields = append(schema.Fields, &entity.Field{
-			Name:     "description",
-			DataType: entity.FieldTypeVarChar,
-			TypeParams: map[string]string{
-				"max_length": "4096",
-			},
-		})
 	}
 
 	return schema
