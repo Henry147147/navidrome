@@ -27,7 +27,7 @@ VERSION = "2.0.0"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Navidrome MuQ embedder")
+    parser = argparse.ArgumentParser(description="Navidrome audio embedder")
     parser.add_argument("--db-path", default=default_database_path(), help="Path to the Navidrome sqlite database")
     parser.add_argument("--music-dir", default=default_music_dir(), help="Base music directory for relative paths")
     parser.add_argument("--milvus-uri", default=default_milvus_uri(), help="Milvus connection URI")
@@ -35,8 +35,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--models",
         nargs="+",
-        default=["muq_audio", "muq_mulan"],
-        help="Embedding models to generate (muq_audio, muq_mulan)",
+        default=["music_flamingo_audio", "muq_audio", "muq_mulan"],
+        help="Embedding models to generate (music_flamingo_audio, muq_audio, muq_mulan)",
     )
     parser.add_argument("--batch-size", default=4, type=int, help="Audio batch size for MuQ inference")
     parser.add_argument("--limit", default=0, type=int, help="Limit the number of tracks processed")
@@ -64,12 +64,14 @@ def main() -> None:
     provider_config = MuQProviderConfig.from_env()
     provider = MuQProvider(
         MuQProviderConfig(
+            flamingo_model_ref=provider_config.flamingo_model_ref,
             audio_model_ref=provider_config.audio_model_ref,
             mulan_model_ref=provider_config.mulan_model_ref,
             cache_dir=provider_config.cache_dir,
             device=provider_config.device,
             audio_batch_size=max(1, args.batch_size),
             text_batch_size=provider_config.text_batch_size,
+            max_audio_seconds=provider_config.max_audio_seconds,
         )
     )
     store = None if args.no_milvus else MilvusEmbeddingStore(uri=args.milvus_uri)
@@ -119,8 +121,9 @@ def main() -> None:
                         logging.error("Failed to embed %s with %s: %s", track.full_path, model, item_exc)
         if store is not None:
             store.flush(model)
+        provider.unload_model(model)
 
-    logging.info("MuQ embedding run completed. processed=%d failed=%d", processed, failed)
+    logging.info("Embedding run completed. processed=%d failed=%d", processed, failed)
 
 
 def chunked(values: Sequence[object], size: int) -> list[Sequence[object]]:

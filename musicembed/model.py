@@ -14,14 +14,15 @@ import torch
 import logging
 from transformers.audio_utils import AudioInput, make_list_of_audio
 from transformers.processing_utils import Unpack
-from transformers import Cache, MusicFlamingoForConditionalGeneration, MusicFlamingoProcessor, MusicFlamingoForConditionalGeneration
 from transformers.generation import LogitsProcessor, LogitsProcessorList
-from transformers.models.musicflamingo.processing_musicflamingo import MusicFlamingoProcessorKwargs
+from transformers.cache_utils import Cache
+from transformers.models.musicflamingo.modeling_musicflamingo import MusicFlamingoForConditionalGeneration
+from transformers.models.musicflamingo.processing_musicflamingo import MusicFlamingoProcessor, MusicFlamingoProcessorKwargs
 from transformers.utils.quantization_config import FineGrainedFP8Config
 from contextlib import contextmanager, redirect_stdout, redirect_stderr
 from sentence_transformers import SentenceTransformer
 
-from enrichment import enrich_and_concatenate
+from musicembed.enrichment import enrich_and_concatenate
 
 DESCRIBE_PROMPT = "Describe this track in full detail - tell me the genre, tempo, and key, then dive into the instruments, production style, lyrical themes, and the overall mood it creates."
 LYRICS_CHECK_PROMPT = "Does this piece have lyrics? Answer with Yes or No."

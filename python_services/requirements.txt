@@ -1,9 +1,12 @@
+accelerate>=1.13,<2
 tqdm>=4.66,<5
 requests>=2.31,<3
 selenium>=4.27,<5
+librosa>=0.11,<0.12
 sentence-transformers>=5.2,<6
 einops>=0.8,<0.9
 muq==0.1.0
 pymilvus>=2.6,<3
 torch>=2.9,<2.10
 torchaudio>=2.9,<2.10
+transformers>=4.57,<5

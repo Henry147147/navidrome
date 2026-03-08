@@ -7,19 +7,21 @@ from typing import Iterable, Sequence
 
 MODEL_MUQ_AUDIO = "muq_audio"
 MODEL_MUQ_MULAN = "muq_mulan"
+MODEL_MUSIC_FLAMINGO_AUDIO = "music_flamingo_audio"
 
 COLLECTION_MUQ_AUDIO = "muq_audio_embedding"
 COLLECTION_MUQ_MULAN = "muq_mulan_embedding"
+COLLECTION_MUSIC_FLAMINGO_AUDIO = "flamingo_audio_embedding"
 
 LEGACY_COLLECTIONS = (
     "lyrics_embedding",
     "description_embedding",
-    "flamingo_audio_embedding",
 )
 
 AUDIO_SAMPLE_RATE = 24_000
 DEFAULT_AUDIO_DIMENSION = 1_024
 DEFAULT_MULAN_DIMENSION = 512
+DEFAULT_MUSIC_FLAMINGO_AUDIO_DIMENSION = 3_584
 
 _AUDIO_ALIASES = {
     "",
@@ -38,6 +40,12 @@ _MULAN_ALIASES = {
     "qwen3",
     "qwen8b",
     "qwen-8b",
+}
+_MUSIC_FLAMINGO_AUDIO_ALIASES = {
+    MODEL_MUSIC_FLAMINGO_AUDIO,
+    "music_flamingo_audio",
+    "music-flamingo-audio",
+    "flamingo_audio",
 }
 
 
@@ -78,8 +86,21 @@ def default_muq_mulan_ref() -> str:
     return get_env_value("MUQ_MULAN_MODEL_REF", "OpenMuQ/MuQ-MuLan-large", "MF_TEXT_MODEL")
 
 
+def default_music_flamingo_ref() -> str:
+    return get_env_value(
+        "MUSIC_FLAMINGO_MODEL_REF",
+        "nvidia/music-flamingo-hf",
+        "MUSIC_FLAMINGO_MODEL_PATH",
+    )
+
+
 def default_muq_cache_dir() -> str:
     return get_env_value("MUQ_CACHE_DIR", "")
+
+
+def default_muq_max_audio_seconds() -> float:
+    raw = get_env_value("MUQ_MAX_AUDIO_SECONDS", "180")
+    return max(0.0, float(raw))
 
 
 def default_device() -> str:
@@ -97,7 +118,7 @@ def default_device() -> str:
         if first_gpu:
             return f"cuda:{first_gpu}"
 
-    return "cuda" if _cuda_available() else "cpu"
+    return _best_cuda_device() if _cuda_available() else "cpu"
 
 
 def _cuda_available() -> bool:
@@ -106,8 +127,23 @@ def _cuda_available() -> bool:
     return bool(torch.cuda.is_available())
 
 
+def _best_cuda_device() -> str:
+    import torch
+
+    best_index = 0
+    best_free = -1
+    for index in range(torch.cuda.device_count()):
+        free_bytes, _total_bytes = torch.cuda.mem_get_info(index)
+        if free_bytes > best_free:
+            best_free = free_bytes
+            best_index = index
+    return f"cuda:{best_index}"
+
+
 def normalize_model_name(name: str | None) -> str:
     normalized = (name or "").strip().lower()
+    if normalized in _MUSIC_FLAMINGO_AUDIO_ALIASES:
+        return MODEL_MUSIC_FLAMINGO_AUDIO
     if normalized in _AUDIO_ALIASES:
         return MODEL_MUQ_AUDIO
     if normalized in _MULAN_ALIASES:
@@ -131,6 +167,8 @@ def normalize_model_names(models: Iterable[str] | None) -> list[str]:
 
 def model_collection_name(model: str) -> str:
     canonical = normalize_model_name(model)
+    if canonical == MODEL_MUSIC_FLAMINGO_AUDIO:
+        return COLLECTION_MUSIC_FLAMINGO_AUDIO
     if canonical == MODEL_MUQ_AUDIO:
         return COLLECTION_MUQ_AUDIO
     return COLLECTION_MUQ_MULAN
@@ -138,6 +176,8 @@ def model_collection_name(model: str) -> str:
 
 def model_dimension(model: str) -> int:
     canonical = normalize_model_name(model)
+    if canonical == MODEL_MUSIC_FLAMINGO_AUDIO:
+        return DEFAULT_MUSIC_FLAMINGO_AUDIO_DIMENSION
     if canonical == MODEL_MUQ_AUDIO:
         return DEFAULT_AUDIO_DIMENSION
     return DEFAULT_MULAN_DIMENSION

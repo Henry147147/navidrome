@@ -4,9 +4,11 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from python_services.muq_shared import (
+    COLLECTION_MUSIC_FLAMINGO_AUDIO,
     COLLECTION_MUQ_AUDIO,
     COLLECTION_MUQ_MULAN,
     LEGACY_COLLECTIONS,
+    MODEL_MUSIC_FLAMINGO_AUDIO,
     MODEL_MUQ_AUDIO,
     MODEL_MUQ_MULAN,
     default_milvus_uri,
@@ -133,6 +135,7 @@ class MilvusEmbeddingStore:
         self.uri = uri or default_milvus_uri()
         self.backend = backend or PymilvusBackend(self.uri)
         self.dimensions = {
+            MODEL_MUSIC_FLAMINGO_AUDIO: model_dimension(MODEL_MUSIC_FLAMINGO_AUDIO),
             MODEL_MUQ_AUDIO: model_dimension(MODEL_MUQ_AUDIO),
             MODEL_MUQ_MULAN: model_dimension(MODEL_MUQ_MULAN),
         }

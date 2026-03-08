@@ -21,9 +21,11 @@ from python_services.muq_provider import MuQProvider, MuQProviderConfig
 from python_services.muq_service import MuQService
 from python_services.muq_shared import (
     AUDIO_SAMPLE_RATE,
+    COLLECTION_MUSIC_FLAMINGO_AUDIO,
     COLLECTION_MUQ_AUDIO,
     COLLECTION_MUQ_MULAN,
     LEGACY_COLLECTIONS,
+    MODEL_MUSIC_FLAMINGO_AUDIO,
     MODEL_MUQ_AUDIO,
     MODEL_MUQ_MULAN,
     TrackInfo,
@@ -58,6 +60,8 @@ class _FakeProvider:
 
     def embed_audio_files(self, paths: list[str], model: str) -> list[list[float]]:
         self.audio_calls.append((list(paths), model))
+        if model == MODEL_MUSIC_FLAMINGO_AUDIO:
+            return [[0.0, 0.6, 0.8, 0.0] for _ in paths]
         if model == MODEL_MUQ_AUDIO:
             return [[0.6, 0.8, 0.0] for _ in paths]
         return [[1.0, 0.0] for _ in paths]
@@ -98,21 +102,27 @@ class _FakeBatchManager:
 
 
 class MuQSharedTests(unittest.TestCase):
-    def test_aliases_collapse_into_two_canonical_models(self) -> None:
+    def test_explicit_music_flamingo_model_is_preserved(self) -> None:
         self.assertEqual(
-            normalize_model_names(["flamingo", "audio", "lyrics", "description", "qwen8b"]),
-            [MODEL_MUQ_AUDIO, MODEL_MUQ_MULAN],
+            normalize_model_names(["music_flamingo_audio", "audio", "lyrics", "description", "qwen8b"]),
+            [MODEL_MUSIC_FLAMINGO_AUDIO, MODEL_MUQ_AUDIO, MODEL_MUQ_MULAN],
+        )
+
+    def test_legacy_flamingo_alias_still_maps_to_muq_audio(self) -> None:
+        self.assertEqual(
+            normalize_model_names(["flamingo", "music-flamingo", "music_flamingo"]),
+            [MODEL_MUQ_AUDIO],
         )
 
 
 class MuQProviderTests(unittest.TestCase):
     def test_load_audio_file_resamples_to_24khz_and_mixes_to_mono(self) -> None:
-        stereo = torch.tensor([[1.0, 3.0, 5.0], [3.0, 5.0, 7.0]], dtype=torch.float32)
-        expected_mono = stereo.mean(dim=0)
-        expected_resampled = torch.tensor([0.0, 0.5, 1.0, 1.5], dtype=torch.float32)
+        stereo = [[1.0, 3.0, 5.0], [3.0, 5.0, 7.0]]
+        expected_mono = [2.0, 4.0, 6.0]
+        expected_resampled = [0.0, 0.5, 1.0, 1.5]
 
-        with patch("python_services.muq_provider.torchaudio.load", return_value=(stereo, 48_000)), patch(
-            "python_services.muq_provider.torchaudio.functional.resample",
+        with patch("python_services.muq_provider.librosa.load", return_value=(stereo, 48_000)), patch(
+            "python_services.muq_provider.librosa.resample",
             return_value=expected_resampled,
         ) as mock_resample:
             provider = MuQProvider(
@@ -125,11 +135,10 @@ class MuQProviderTests(unittest.TestCase):
             )
             waveform = provider.load_audio_file("track.flac")
 
-        self.assertTrue(torch.equal(waveform, expected_resampled))
-        args = mock_resample.call_args.args
-        self.assertTrue(torch.equal(args[0], expected_mono))
-        self.assertEqual(args[1], 48_000)
-        self.assertEqual(args[2], AUDIO_SAMPLE_RATE)
+        self.assertTrue(torch.equal(waveform, torch.tensor(expected_resampled, dtype=torch.float32)))
+        self.assertEqual(mock_resample.call_args.kwargs["orig_sr"], 48_000)
+        self.assertEqual(mock_resample.call_args.kwargs["target_sr"], AUDIO_SAMPLE_RATE)
+        self.assertEqual(mock_resample.call_args.args[0].tolist(), expected_mono)
 
     def test_embed_audio_waveforms_pads_batch_and_normalizes_masked_pooling(self) -> None:
         provider = MuQProvider(
@@ -181,25 +190,62 @@ class MuQProviderTests(unittest.TestCase):
         self.assertAlmostEqual(vectors[1][0], 0.0, places=6)
         self.assertAlmostEqual(vectors[1][1], 1.0, places=6)
 
+    def test_embed_audio_files_flattens_and_normalizes_music_flamingo_embeddings(self) -> None:
+        provider = MuQProvider(
+            MuQProviderConfig(
+                flamingo_model_ref="flamingo-ref",
+                audio_model_ref="audio-ref",
+                mulan_model_ref="mulan-ref",
+                cache_dir="",
+                device="cpu",
+            )
+        )
+
+        class _FakeMusicFlamingoModel:
+            def __init__(self) -> None:
+                self.paths: list[str] = []
+
+            def extract_embedding(self, path: str) -> torch.Tensor:
+                self.paths.append(path)
+                return torch.tensor([[[3.0, 4.0], [0.0, 0.0]]], dtype=torch.float32)
+
+        fake_model = _FakeMusicFlamingoModel()
+
+        with patch.object(provider, "_load_music_flamingo_model", return_value=fake_model):
+            vectors = provider.embed_audio_files(["track.flac"], MODEL_MUSIC_FLAMINGO_AUDIO)
+
+        self.assertEqual(fake_model.paths, ["track.flac"])
+        self.assertEqual(len(vectors), 1)
+        self.assertAlmostEqual(vectors[0][0], 0.6, places=6)
+        self.assertAlmostEqual(vectors[0][1], 0.8, places=6)
+        self.assertAlmostEqual(vectors[0][2], 0.0, places=6)
+        self.assertAlmostEqual(vectors[0][3], 0.0, places=6)
+
 
 class MilvusEmbeddingStoreTests(unittest.TestCase):
     def test_reset_for_run_drops_legacy_collections_when_clearing(self) -> None:
         backend = _FakeBackend()
         store = MilvusEmbeddingStore(
             backend=backend,
-            dimensions={MODEL_MUQ_AUDIO: 3, MODEL_MUQ_MULAN: 2},
+            dimensions={MODEL_MUSIC_FLAMINGO_AUDIO: 4, MODEL_MUQ_AUDIO: 3, MODEL_MUQ_MULAN: 2},
         )
 
-        store.reset_for_run(["flamingo", "description"], clear_existing=True)
+        store.reset_for_run(["music_flamingo_audio", "description"], clear_existing=True)
 
-        self.assertEqual(set(backend.dropped), {COLLECTION_MUQ_AUDIO, COLLECTION_MUQ_MULAN, *LEGACY_COLLECTIONS})
-        self.assertEqual(set(backend.ensured), {(COLLECTION_MUQ_AUDIO, 3), (COLLECTION_MUQ_MULAN, 2)})
+        self.assertEqual(
+            set(backend.dropped),
+            {COLLECTION_MUSIC_FLAMINGO_AUDIO, COLLECTION_MUQ_MULAN, *LEGACY_COLLECTIONS},
+        )
+        self.assertEqual(
+            set(backend.ensured),
+            {(COLLECTION_MUSIC_FLAMINGO_AUDIO, 4), (COLLECTION_MUQ_MULAN, 2)},
+        )
 
     def test_upsert_embeddings_validates_dimension(self) -> None:
         backend = _FakeBackend()
         store = MilvusEmbeddingStore(
             backend=backend,
-            dimensions={MODEL_MUQ_AUDIO: 3, MODEL_MUQ_MULAN: 2},
+            dimensions={MODEL_MUSIC_FLAMINGO_AUDIO: 4, MODEL_MUQ_AUDIO: 3, MODEL_MUQ_MULAN: 2},
         )
 
         with self.assertRaisesRegex(ValueError, "dimension mismatch"):
@@ -219,11 +265,11 @@ class BatchJobManagerTests(unittest.TestCase):
         backend = _FakeBackend()
         store = MilvusEmbeddingStore(
             backend=backend,
-            dimensions={MODEL_MUQ_AUDIO: 3, MODEL_MUQ_MULAN: 2},
+            dimensions={MODEL_MUSIC_FLAMINGO_AUDIO: 4, MODEL_MUQ_AUDIO: 3, MODEL_MUQ_MULAN: 2},
         )
         manager = BatchJobManager(track_loader=lambda: tracks, provider=provider, store=store)
 
-        started = manager.start(models=["audio", "qwen8b"], clear_existing=True)
+        started = manager.start(models=["music_flamingo_audio", "audio", "qwen8b"], clear_existing=True)
         self.assertEqual(started["status"], "started")
 
         manager._thread.join(timeout=5.0)  # type: ignore[union-attr]
@@ -232,10 +278,13 @@ class BatchJobManagerTests(unittest.TestCase):
         self.assertEqual(progress["status"], "completed")
         self.assertEqual(progress["processed_tracks"], 2)
         self.assertEqual(progress["failed_tracks"], 0)
-        self.assertEqual(progress["total_operations"], 4)
-        self.assertEqual(progress["processed_operations"], 4)
-        self.assertEqual(len(provider.audio_calls), 4)
-        self.assertEqual({name for name, _ in backend.upserts}, {COLLECTION_MUQ_AUDIO, COLLECTION_MUQ_MULAN})
+        self.assertEqual(progress["total_operations"], 6)
+        self.assertEqual(progress["processed_operations"], 6)
+        self.assertEqual(len(provider.audio_calls), 6)
+        self.assertEqual(
+            {name for name, _ in backend.upserts},
+            {COLLECTION_MUSIC_FLAMINGO_AUDIO, COLLECTION_MUQ_AUDIO, COLLECTION_MUQ_MULAN},
+        )
 
     def test_cancel_marks_job_cancelled(self) -> None:
         tracks = [
@@ -247,7 +296,7 @@ class BatchJobManagerTests(unittest.TestCase):
         backend = _FakeBackend()
         store = MilvusEmbeddingStore(
             backend=backend,
-            dimensions={MODEL_MUQ_AUDIO: 3, MODEL_MUQ_MULAN: 2},
+            dimensions={MODEL_MUSIC_FLAMINGO_AUDIO: 4, MODEL_MUQ_AUDIO: 3, MODEL_MUQ_MULAN: 2},
         )
         manager = BatchJobManager(track_loader=lambda: tracks, provider=provider, store=store)
 
