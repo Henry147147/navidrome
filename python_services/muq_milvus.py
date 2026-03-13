@@ -91,6 +91,20 @@ class PymilvusBackend:
             ]
         )
 
+    def query_names(self, name: str, names: Sequence[str]) -> set[str]:
+        if not names:
+            return set()
+        collection = self._collection(name)
+        if collection is None:
+            return set()
+        collection.load()
+        existing: set[str] = set()
+        for chunk in _chunked_names(names, 200):
+            expr = f"name in [{', '.join(_quote_milvus_string(item) for item in chunk)}]"
+            rows = collection.query(expr=expr, output_fields=["name"])
+            existing.update(str(row["name"]) for row in rows if "name" in row)
+        return existing
+
     def flush(self, name: str) -> None:
         collection = self._collection(name)
         if collection is not None:
@@ -168,6 +182,10 @@ class MilvusEmbeddingStore:
         self.backend.ensure_collection(model_collection_name(canonical), expected_dim)
         self.backend.upsert_rows(model_collection_name(canonical), rows)
 
+    def existing_names(self, model: str, names: Sequence[str]) -> set[str]:
+        canonical = normalize_model_name(model)
+        return self.backend.query_names(model_collection_name(canonical), names)
+
     def flush(self, model: str) -> None:
         self.backend.flush(model_collection_name(model))
 
@@ -181,3 +199,14 @@ def _collection_embedding_dim(collection: Any) -> int | None:
             return None
         return int(raw_dim)
     return None
+
+
+def _chunked_names(names: Sequence[str], size: int) -> list[Sequence[str]]:
+    if size <= 0:
+        return [names]
+    return [names[index : index + size] for index in range(0, len(names), size)]
+
+
+def _quote_milvus_string(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'

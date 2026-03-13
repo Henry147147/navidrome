@@ -7,12 +7,13 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+from tqdm import tqdm
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from python_services.muq_milvus import EmbeddingRow, MilvusEmbeddingStore
-from python_services.muq_pipeline import save_track_embedding
 from python_services.muq_provider import MuQProvider, MuQProviderConfig
 from python_services.muq_shared import (
     default_database_path,
@@ -31,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--db-path", default=default_database_path(), help="Path to the Navidrome sqlite database")
     parser.add_argument("--music-dir", default=default_music_dir(), help="Base music directory for relative paths")
     parser.add_argument("--milvus-uri", default=default_milvus_uri(), help="Milvus connection URI")
-    parser.add_argument("--output-dir", default="./embeddings", help="Directory to save .pt embedding payloads")
+    parser.add_argument("--output-dir", default=None, help="Deprecated no-op; local .pt payloads are no longer written")
     parser.add_argument(
         "--models",
         nargs="+",
@@ -41,7 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", default=4, type=int, help="Audio batch size for MuQ inference")
     parser.add_argument("--limit", default=0, type=int, help="Limit the number of tracks processed")
     parser.add_argument("--clear-existing", action="store_true", help="Drop and recreate the target collections first")
-    parser.add_argument("--no-milvus", action="store_true", help="Skip Milvus writes and only save local payloads")
+    parser.add_argument("--no-milvus", action="store_true", help="Skip Milvus writes and run inference without persistence")
     parser.add_argument("--log-level", default="INFO", help="Log level")
     parser.add_argument("--version", action="store_true", help="Print version and exit")
     return parser.parse_args()
@@ -54,6 +55,8 @@ def main() -> None:
         return
 
     logging.basicConfig(level=getattr(logging, str(args.log_level).upper(), logging.INFO))
+    if args.output_dir:
+        logging.warning("--output-dir is deprecated and ignored; local .pt payloads are no longer written")
 
     models = normalize_model_names(args.models)
     tracks = get_all_music(args.db_path, music_dir=args.music_dir, limit=args.limit)
@@ -75,55 +78,91 @@ def main() -> None:
         )
     )
     store = None if args.no_milvus else MilvusEmbeddingStore(uri=args.milvus_uri)
+    if store is None:
+        logging.warning("Milvus writes disabled; existing embeddings cannot be skipped in --no-milvus mode")
     if store is not None:
         store.reset_for_run(models, clear_existing=args.clear_existing)
 
+    track_entries = [(track, track_storage_key(track)) for track in tracks]
     processed = 0
+    skipped = 0
     failed = 0
     for model in models:
-        for batch in chunked(tracks, max(1, args.batch_size)):
-            try:
-                embeddings = provider.embed_audio_files([track.full_path for track in batch], model)
-                for track, embedding in zip(batch, embeddings):
-                    save_track_embedding(args.output_dir, track, model, embedding)
-                    if store is not None:
-                        store.upsert_embeddings(
-                            model,
-                            [
-                                EmbeddingRow(
-                                    name=track_storage_key(track),
-                                    embedding=embedding,
-                                    model_id=model,
-                                )
-                            ],
-                        )
-                    processed += 1
-            except Exception as exc:
-                logging.warning("Batch failed for %s on %d tracks: %s", model, len(batch), exc)
-                for track in batch:
-                    try:
-                        embedding = provider.embed_audio_files([track.full_path], model)[0]
-                        save_track_embedding(args.output_dir, track, model, embedding)
-                        if store is not None:
-                            store.upsert_embeddings(
-                                model,
-                                [
-                                    EmbeddingRow(
-                                        name=track_storage_key(track),
-                                        embedding=embedding,
-                                        model_id=model,
-                                    )
-                                ],
-                            )
-                        processed += 1
-                    except Exception as item_exc:
-                        failed += 1
-                        logging.error("Failed to embed %s with %s: %s", track.full_path, model, item_exc)
-        if store is not None:
-            store.flush(model)
-        provider.unload_model(model)
+        stage_processed = 0
+        stage_skipped = 0
+        stage_failed = 0
+        stage_existing = store.existing_names(model, [key for _track, key in track_entries]) if store is not None else set()
+        stage_pending = [(track, key) for track, key in track_entries if key not in stage_existing]
+        progress = tqdm(total=len(track_entries), desc=f"{model}", unit="track", dynamic_ncols=True)
+        try:
+            if stage_existing:
+                stage_skipped = len(track_entries) - len(stage_pending)
+                skipped += stage_skipped
+                progress.update(stage_skipped)
+                _update_progress(progress, embedded=stage_processed, skipped=stage_skipped, failed=stage_failed)
 
-    logging.info("Embedding run completed. processed=%d failed=%d", processed, failed)
+            for batch in chunked(stage_pending, max(1, args.batch_size)):
+                try:
+                    embeddings = provider.embed_audio_files([track.full_path for track, _key in batch], model)
+                    _upsert_batch(store, model, batch, embeddings)
+                    stage_processed += len(batch)
+                    processed += len(batch)
+                    progress.update(len(batch))
+                    _update_progress(progress, embedded=stage_processed, skipped=stage_skipped, failed=stage_failed)
+                except Exception as exc:
+                    logging.warning("Batch failed for %s on %d tracks: %s", model, len(batch), exc)
+                    for track, key in batch:
+                        try:
+                            embedding = provider.embed_audio_files([track.full_path], model)[0]
+                            _upsert_batch(store, model, [(track, key)], [embedding])
+                            stage_processed += 1
+                            processed += 1
+                        except Exception as item_exc:
+                            stage_failed += 1
+                            failed += 1
+                            logging.error("Failed to embed %s with %s: %s", track.full_path, model, item_exc)
+                        progress.update(1)
+                        _update_progress(progress, embedded=stage_processed, skipped=stage_skipped, failed=stage_failed)
+        finally:
+            progress.close()
+            if store is not None:
+                store.flush(model)
+            provider.unload_model(model)
+
+        logging.info(
+            "%s stage completed. embedded=%d skipped=%d failed=%d",
+            model,
+            stage_processed,
+            stage_skipped,
+            stage_failed,
+        )
+
+    logging.info("Embedding run completed. processed=%d skipped=%d failed=%d", processed, skipped, failed)
+
+
+def _upsert_batch(
+    store: MilvusEmbeddingStore | None,
+    model: str,
+    batch: Sequence[tuple[object, str]],
+    embeddings: Sequence[Sequence[float]],
+) -> None:
+    if len(batch) != len(embeddings):
+        raise RuntimeError(f"embedding batch size mismatch for {model}: expected {len(batch)} got {len(embeddings)}")
+    if store is None:
+        return
+    rows = [
+        EmbeddingRow(
+            name=key,
+            embedding=embedding,
+            model_id=model,
+        )
+        for (_track, key), embedding in zip(batch, embeddings)
+    ]
+    store.upsert_embeddings(model, rows)
+
+
+def _update_progress(progress: tqdm, *, embedded: int, skipped: int, failed: int) -> None:
+    progress.set_postfix(embedded=embedded, skipped=skipped, failed=failed)
 
 
 def chunked(values: Sequence[object], size: int) -> list[Sequence[object]]:

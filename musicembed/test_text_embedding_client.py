@@ -17,7 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from python_services.muq_milvus import EmbeddingRow, MilvusEmbeddingStore
 from python_services.muq_pipeline import BatchJobManager
-from python_services.muq_provider import MuQProvider, MuQProviderConfig
+from python_services.muq_provider import MuQProvider, MuQProviderConfig, _pool_music_flamingo_audio_tokens
 from python_services.muq_service import MuQService
 from python_services.muq_shared import (
     AUDIO_SAMPLE_RATE,
@@ -39,6 +39,8 @@ class _FakeBackend:
         self.ensured: list[tuple[str, int]] = []
         self.upserts: list[tuple[str, list[EmbeddingRow]]] = []
         self.flushed: list[str] = []
+        self.existing_by_collection: dict[str, set[str]] = {}
+        self.queries: list[tuple[str, list[str]]] = []
 
     def drop_collection(self, name: str) -> None:
         self.dropped.append(name)
@@ -48,6 +50,10 @@ class _FakeBackend:
 
     def upsert_rows(self, name: str, rows: list[EmbeddingRow]) -> None:
         self.upserts.append((name, rows))
+
+    def query_names(self, name: str, names: list[str]) -> set[str]:
+        self.queries.append((name, list(names)))
+        return set(self.existing_by_collection.get(name, set())).intersection(names)
 
     def flush(self, name: str) -> None:
         self.flushed.append(name)
@@ -121,7 +127,9 @@ class MuQProviderTests(unittest.TestCase):
         expected_mono = [2.0, 4.0, 6.0]
         expected_resampled = [0.0, 0.5, 1.0, 1.5]
 
-        with patch("python_services.muq_provider.librosa.load", return_value=(stereo, 48_000)), patch(
+        with patch("python_services.muq_provider.Path.is_file", return_value=True), patch(
+            "python_services.muq_provider.librosa.load", return_value=(stereo, 48_000)
+        ), patch(
             "python_services.muq_provider.librosa.resample",
             return_value=expected_resampled,
         ) as mock_resample:
@@ -207,7 +215,7 @@ class MuQProviderTests(unittest.TestCase):
 
             def extract_embedding(self, path: str) -> torch.Tensor:
                 self.paths.append(path)
-                return torch.tensor([[[3.0, 4.0], [0.0, 0.0]]], dtype=torch.float32)
+                return torch.tensor([3.0, 4.0, 0.0, 0.0], dtype=torch.float32)
 
         fake_model = _FakeMusicFlamingoModel()
 
@@ -220,6 +228,50 @@ class MuQProviderTests(unittest.TestCase):
         self.assertAlmostEqual(vectors[0][1], 0.8, places=6)
         self.assertAlmostEqual(vectors[0][2], 0.0, places=6)
         self.assertAlmostEqual(vectors[0][3], 0.0, places=6)
+
+    def test_pool_music_flamingo_tokens_uses_only_valid_frames(self) -> None:
+        projected = torch.tensor(
+            [
+                [
+                    [1.0, 1.0],
+                    [3.0, 3.0],
+                    [9.0, 9.0],
+                ]
+            ],
+            dtype=torch.float32,
+        )
+        input_features_mask = torch.tensor([[1, 1, 1, 1]], dtype=torch.long)
+
+        pooled = _pool_music_flamingo_audio_tokens(projected, input_features_mask)
+
+        self.assertEqual(tuple(pooled.shape), (1, 2))
+        self.assertTrue(torch.equal(pooled[0], torch.tensor([2.0, 2.0], dtype=torch.float32)))
+
+    def test_embed_audio_files_averages_multiple_music_flamingo_windows(self) -> None:
+        provider = MuQProvider(
+            MuQProviderConfig(
+                flamingo_model_ref="flamingo-ref",
+                audio_model_ref="audio-ref",
+                mulan_model_ref="mulan-ref",
+                cache_dir="",
+                device="cpu",
+            )
+        )
+
+        class _FakeWindowedMusicFlamingoModel:
+            def extract_embedding(self, path: str) -> torch.Tensor:
+                self.last_path = path
+                return torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+
+        fake_model = _FakeWindowedMusicFlamingoModel()
+
+        with patch.object(provider, "_load_music_flamingo_model", return_value=fake_model):
+            vectors = provider.embed_audio_files(["track.flac"], MODEL_MUSIC_FLAMINGO_AUDIO)
+
+        self.assertEqual(fake_model.last_path, "track.flac")
+        self.assertEqual(len(vectors), 1)
+        self.assertAlmostEqual(vectors[0][0], 0.707106, places=5)
+        self.assertAlmostEqual(vectors[0][1], 0.707106, places=5)
 
 
 class MilvusEmbeddingStoreTests(unittest.TestCase):
@@ -253,6 +305,19 @@ class MilvusEmbeddingStoreTests(unittest.TestCase):
                 MODEL_MUQ_MULAN,
                 [EmbeddingRow(name="track-1", embedding=[1.0, 2.0, 3.0], model_id=MODEL_MUQ_MULAN)],
             )
+
+    def test_existing_names_returns_subset_for_requested_model(self) -> None:
+        backend = _FakeBackend()
+        backend.existing_by_collection[COLLECTION_MUQ_AUDIO] = {"track-1", "track-3"}
+        store = MilvusEmbeddingStore(
+            backend=backend,
+            dimensions={MODEL_MUSIC_FLAMINGO_AUDIO: 4, MODEL_MUQ_AUDIO: 3, MODEL_MUQ_MULAN: 2},
+        )
+
+        existing = store.existing_names(MODEL_MUQ_AUDIO, ["track-1", "track-2", "track-3"])
+
+        self.assertEqual(existing, {"track-1", "track-3"})
+        self.assertEqual(backend.queries, [(COLLECTION_MUQ_AUDIO, ["track-1", "track-2", "track-3"])])
 
 
 class BatchJobManagerTests(unittest.TestCase):

@@ -7,6 +7,7 @@ sentence-transformers>=5.2,<6
 einops>=0.8,<0.9
 muq==0.1.0
 pymilvus>=2.6,<3
+safetensors>=0.6,<0.7
 torch>=2.9,<2.10
 torchaudio>=2.9,<2.10
 transformers>=4.57,<5
