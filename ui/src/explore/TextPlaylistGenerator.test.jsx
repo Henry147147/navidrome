@@ -225,7 +225,13 @@ describe('TextPlaylistGenerator', () => {
                 ready: false,
                 message: 'Text recommendations are currently offline.',
               },
-              availableModes: ['recent', 'favorites', 'all', 'discovery', 'custom'],
+              availableModes: [
+                'recent',
+                'favorites',
+                'all',
+                'discovery',
+                'custom',
+              ],
               degradedModes: ['text'],
             }}
             healthLoading={false}

@@ -188,9 +188,7 @@ describe('ExploreSuggestions', () => {
       ).toBeDisabled()
     })
 
-    expect(
-      screen.getByText('Recommendation system status'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Recommendation system status')).toBeInTheDocument()
   })
 
   it('saves updated duration settings from settings panel', async () => {

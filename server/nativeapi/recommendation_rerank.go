@@ -192,49 +192,6 @@ func selectRecommendationTracks(candidates []recommendationTrack, limit int, blo
 	return selected, recommendationFilterWarning(blockedRemoved, dislikedRemoved)
 }
 
-func appendFallbackRecommendationTracks(final []recommendationTrack, extras []model.MediaFile, limit int, blocked map[string]struct{}, dislikes dislikeSignals, settings recommendationSettings) []recommendationTrack {
-	if len(final) >= limit {
-		return final
-	}
-
-	seenIDs := make(map[string]struct{}, len(final))
-	seenPaths := make(map[string]struct{}, len(final))
-	for _, track := range final {
-		seenIDs[track.ID] = struct{}{}
-		if key := pathKey(track.MediaFile); key != "" {
-			seenPaths[key] = struct{}{}
-		}
-	}
-
-	for _, mf := range extras {
-		if len(final) >= limit {
-			break
-		}
-		if _, dup := seenIDs[mf.ID]; dup {
-			continue
-		}
-		if _, skip := blocked[mf.ID]; skip {
-			continue
-		}
-		if dislikes.shouldReject(mf, mf.ID, settings.LowRatingPenalty) {
-			continue
-		}
-		if !settings.isDurationAllowed(mf.Duration) {
-			continue
-		}
-		if key := pathKey(mf); key != "" {
-			if _, dup := seenPaths[key]; dup {
-				continue
-			}
-			seenPaths[key] = struct{}{}
-		}
-		seenIDs[mf.ID] = struct{}{}
-		final = append(final, recommendationTrack{MediaFile: mf})
-	}
-
-	return final
-}
-
 func recommendationTrackIDs(tracks []recommendationTrack) []string {
 	ids := make([]string, 0, len(tracks))
 	for _, track := range tracks {

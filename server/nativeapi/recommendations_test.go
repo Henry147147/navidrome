@@ -2,6 +2,7 @@ package nativeapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -396,8 +397,8 @@ func TestExecuteRecommendationReturnsNoSemanticCandidatesWhenExpandedCandidatesE
 	if err == nil {
 		t.Fatalf("expected no_semantic_candidates error")
 	}
-	apiErr, ok := err.(*recommendationAPIError)
-	if !ok {
+	var apiErr *recommendationAPIError
+	if !errors.As(err, &apiErr) {
 		t.Fatalf("expected recommendationAPIError, got %T", err)
 	}
 	if apiErr.status != http.StatusUnprocessableEntity {

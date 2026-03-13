@@ -90,7 +90,11 @@ const useStyles = makeStyles((theme) => ({
   },
 }))
 
-const TextPlaylistGenerator = ({ onPlaylistGenerated, health, healthLoading }) => {
+const TextPlaylistGenerator = ({
+  onPlaylistGenerated,
+  health,
+  healthLoading,
+}) => {
   const classes = useStyles()
   const translate = useTranslate()
   const dataProvider = useDataProvider()
@@ -367,11 +371,7 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated, health, healthLoading }) =
               variant="contained"
               color="primary"
               onClick={handleGenerate}
-              disabled={
-                loading ||
-                !textQuery.trim() ||
-                !textModeAvailable
-              }
+              disabled={loading || !textQuery.trim() || !textModeAvailable}
               startIcon={
                 loading ? <CircularProgress size={20} /> : <PlaylistAddIcon />
               }

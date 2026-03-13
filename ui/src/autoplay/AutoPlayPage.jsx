@@ -453,7 +453,9 @@ const AutoPlayPage = () => {
         const trackMap = {}
         const newIds = []
         const seedIds =
-          mode === 'custom' && selectedSeed?.id ? new Set([selectedSeed.id]) : null
+          mode === 'custom' && selectedSeed?.id
+            ? new Set([selectedSeed.id])
+            : null
         tracks.forEach((track) => {
           if (!track || !track.id) {
             return
@@ -740,10 +742,7 @@ const AutoPlayPage = () => {
                   fullWidth
                   disabled={
                     sessionOptions.mode === 'text' &&
-                    !isRecommendationModeAvailable(
-                      recommendationHealth,
-                      'text',
-                    )
+                    !isRecommendationModeAvailable(recommendationHealth, 'text')
                   }
                 />
               )}

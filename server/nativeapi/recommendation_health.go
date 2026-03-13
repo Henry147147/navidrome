@@ -2,6 +2,7 @@ package nativeapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -74,8 +75,8 @@ func AsRecommendationAPIError(err error, target **recommendationAPIError) bool {
 	if err == nil || target == nil {
 		return false
 	}
-	apiErr, ok := err.(*recommendationAPIError)
-	if !ok {
+	var apiErr *recommendationAPIError
+	if !errors.As(err, &apiErr) {
 		return false
 	}
 	*target = apiErr

@@ -887,9 +887,16 @@ const ExploreSuggestions = () => {
           )}
           {!state.error &&
             !recommendationHealthLoading &&
-            !isRecommendationModeAvailable(recommendationHealth, config.key) && (
+            !isRecommendationModeAvailable(
+              recommendationHealth,
+              config.key,
+            ) && (
               <Typography variant="body2" className={classes.warning}>
-                {healthMessageForMode(recommendationHealth, config.key, translate)}
+                {healthMessageForMode(
+                  recommendationHealth,
+                  config.key,
+                  translate,
+                )}
               </Typography>
             )}
         </Box>
@@ -1300,9 +1307,12 @@ const ExploreSuggestions = () => {
     const hasTextPrompt = customTextQuery.trim() !== ''
     const requestMode = hasTextPrompt ? 'text' : 'custom'
     if (!isRecommendationModeAvailable(recommendationHealth, requestMode)) {
-      notify(healthMessageForMode(recommendationHealth, requestMode, translate), {
-        type: 'warning',
-      })
+      notify(
+        healthMessageForMode(recommendationHealth, requestMode, translate),
+        {
+          type: 'warning',
+        },
+      )
       return
     }
     if (seeds.length === 0 && !hasTextPrompt) {

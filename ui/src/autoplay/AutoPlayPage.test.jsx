@@ -132,6 +132,8 @@ describe('AutoPlayPage', () => {
     mocked.dataProvider.getRecentRecommendations
       .mockResolvedValueOnce({
         data: {
+          resultSource: 'semantic',
+          degraded: false,
           tracks: [
             {
               id: 'track-a',
@@ -145,6 +147,8 @@ describe('AutoPlayPage', () => {
       })
       .mockResolvedValueOnce({
         data: {
+          resultSource: 'semantic',
+          degraded: false,
           tracks: [
             {
               id: 'track-b',
@@ -193,6 +197,8 @@ describe('AutoPlayPage', () => {
   it('still notifies when no unseen tracks are available', async () => {
     mocked.dataProvider.getRecentRecommendations.mockResolvedValue({
       data: {
+        resultSource: 'semantic',
+        degraded: false,
         tracks: [],
         warnings: [],
       },
@@ -252,7 +258,9 @@ describe('AutoPlayPage', () => {
     )
 
     await waitFor(() => {
-      expect(mocked.dataProvider.getTextRecommendations).toHaveBeenCalledTimes(1)
+      expect(mocked.dataProvider.getTextRecommendations).toHaveBeenCalledTimes(
+        1,
+      )
     })
 
     expect(mocked.dataProvider.getList).not.toHaveBeenCalledWith(
