@@ -270,7 +270,10 @@ func (d milvusDimensions) ResolvedMuQAudio() int {
 	if d.MuQAudio > 0 {
 		return d.MuQAudio
 	}
-	return d.Flamingo
+	if d.Flamingo > 0 {
+		return d.Flamingo
+	}
+	return 1024
 }
 
 func (d milvusDimensions) ResolvedMuQMulan() int {
@@ -280,7 +283,10 @@ func (d milvusDimensions) ResolvedMuQMulan() int {
 	if d.Description > 0 {
 		return d.Description
 	}
-	return d.Lyrics
+	if d.Lyrics > 0 {
+		return d.Lyrics
+	}
+	return 512
 }
 
 type pluginsOptions struct {
@@ -706,6 +712,8 @@ func setViperDefaults() {
 	viper.SetDefault("recommendations.milvus.uri", "http://localhost:19530")
 	viper.SetDefault("recommendations.milvus.timeout", 30*time.Second)
 	viper.SetDefault("recommendations.milvus.maxretries", 3)
+	viper.SetDefault("recommendations.milvus.dimensions.muqaudio", 1024)
+	viper.SetDefault("recommendations.milvus.dimensions.muqmulan", 512)
 	viper.SetDefault("recommendations.milvus.dimensions.lyrics", 2560)
 	viper.SetDefault("recommendations.milvus.dimensions.description", 2560)
 	viper.SetDefault("recommendations.milvus.dimensions.flamingo", 28672)

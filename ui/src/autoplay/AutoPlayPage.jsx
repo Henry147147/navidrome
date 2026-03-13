@@ -30,6 +30,13 @@ import ClearIcon from '@material-ui/icons/Clear'
 import AutoPlaySettingsPanel from './AutoPlaySettingsPanel'
 import { addTracks, playTracks, clearQueue } from '../actions'
 import { computeFeedback } from './feedbackUtils'
+import {
+  formatRecommendationError,
+  healthMessageForMode,
+  isRecommendationModeAvailable,
+  sanitizeRecommendationWarning,
+  useRecommendationHealth,
+} from '../recommendationHealth'
 
 const DEFAULT_SETTINGS = {
   mode: 'recent',
@@ -108,6 +115,9 @@ const useStyles = makeStyles((theme) => ({
   exclusionHint: {
     color: theme.palette.text.secondary,
   },
+  warning: {
+    color: theme.palette.warning.main,
+  },
   actionRow: {
     display: 'flex',
     flexWrap: 'wrap',
@@ -129,6 +139,10 @@ const useStyles = makeStyles((theme) => ({
   primaryActionButton: {
     minWidth: 200,
   },
+  statusBanner: {
+    padding: theme.spacing(1.5, 2),
+    borderLeft: `4px solid ${theme.palette.warning.main}`,
+  },
 }))
 
 const AutoPlayPage = () => {
@@ -138,6 +152,8 @@ const AutoPlayPage = () => {
   const dataProvider = useDataProvider()
   const dispatch = useDispatch()
   const player = useSelector((state) => state.player)
+  const { health: recommendationHealth, loading: recommendationHealthLoading } =
+    useRecommendationHealth(dataProvider)
 
   const [tab, setTab] = useState(0)
   const [settingsLoading, setSettingsLoading] = useState(true)
@@ -314,25 +330,6 @@ const AutoPlayPage = () => {
     return () => clearTimeout(timer)
   }, [seedQuery, dataProvider])
 
-  const resolveTextSeeds = useCallback(
-    async (prompt) => {
-      const query = prompt?.trim()
-      if (!query) {
-        return []
-      }
-      const { data } = await dataProvider.getList('song', {
-        pagination: { page: 1, perPage: 25 },
-        sort: { field: 'playDate', order: 'DESC' },
-        filter: { q: query },
-      })
-      return (data || [])
-        .map((song) => song.id)
-        .filter(Boolean)
-        .slice(0, 10)
-    },
-    [dataProvider],
-  )
-
   useEffect(() => {
     if (sessionOptions.mode !== 'custom') {
       setSelectedSeed(null)
@@ -363,6 +360,14 @@ const AutoPlayPage = () => {
       setFetching(true)
 
       const mode = options.mode || sessionOptions.mode || DEFAULT_SETTINGS.mode
+      if (!isRecommendationModeAvailable(recommendationHealth, mode)) {
+        notify(healthMessageForMode(recommendationHealth, mode, translate), {
+          type: 'warning',
+        })
+        fetchingRef.current = false
+        setFetching(false)
+        return
+      }
       const excludePlaylistIds =
         options.excludePlaylistIds || sessionOptions.excludePlaylistIds || []
       const excludeTrackIds = buildExcludeIds()
@@ -402,16 +407,9 @@ const AutoPlayPage = () => {
               })
               return null
             }
-            const songIds = await resolveTextSeeds(prompt)
-            if (songIds.length === 0) {
-              notify('pages.autoplay.notifications.noSeeds', {
-                type: 'warning',
-              })
-              return null
-            }
-            return dataProvider.getCustomRecommendations({
+            return dataProvider.getTextRecommendations({
               ...payloadBase,
-              songIds,
+              text: prompt,
             })
           }
           case 'custom': {
@@ -438,6 +436,15 @@ const AutoPlayPage = () => {
           return
         }
         const { data } = request
+        if (data?.resultSource !== 'semantic' || data?.degraded === true) {
+          notify(
+            translate('pages.autoplay.notifications.semanticUnavailable', {
+              _: 'Semantic recommendations are unavailable right now.',
+            }),
+            { type: 'warning' },
+          )
+          return
+        }
         const tracks = data?.tracks || []
         if (!tracks.length) {
           notify('pages.autoplay.notifications.noNew', { type: 'warning' })
@@ -445,8 +452,13 @@ const AutoPlayPage = () => {
         }
         const trackMap = {}
         const newIds = []
+        const seedIds =
+          mode === 'custom' && selectedSeed?.id ? new Set([selectedSeed.id]) : null
         tracks.forEach((track) => {
           if (!track || !track.id) {
+            return
+          }
+          if (seedIds && seedIds.has(track.id)) {
             return
           }
           if (
@@ -469,13 +481,22 @@ const AutoPlayPage = () => {
           dispatch(addTracks(trackMap, newIds))
         }
         if (Array.isArray(data?.warnings) && data.warnings.length > 0) {
-          data.warnings.forEach((warning) => notify(warning, { type: 'info' }))
+          data.warnings.forEach((warning) =>
+            notify(sanitizeRecommendationWarning(warning, translate), {
+              type: 'info',
+            }),
+          )
         }
         setSessionActive(true)
       } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Auto Play fetch failed', error)
-        notify('ra.page.error', { type: 'warning' })
+        notify(
+          formatRecommendationError(
+            error,
+            translate,
+            translate('ra.page.error', { _: 'Unable to load the next songs.' }),
+          ),
+          { type: 'warning' },
+        )
       } finally {
         fetchingRef.current = false
         setFetching(false)
@@ -485,13 +506,14 @@ const AutoPlayPage = () => {
       sessionOptions,
       dataProvider,
       notify,
-      resolveTextSeeds,
       selectedSeed,
       negativeTrackIds,
       ensureUniquePositive,
       buildExcludeIds,
       player.queue.length,
       dispatch,
+      recommendationHealth,
+      translate,
     ],
   )
 
@@ -547,7 +569,17 @@ const AutoPlayPage = () => {
     }
   }, [sessionActive, remainingQueue, fetchRecommendations, sessionOptions])
 
-  const modeOptions = useMemo(() => AUTO_MODE_OPTIONS(translate), [translate])
+  const modeOptions = useMemo(
+    () =>
+      AUTO_MODE_OPTIONS(translate).map((option) => ({
+        ...option,
+        disabled: !isRecommendationModeAvailable(
+          recommendationHealth,
+          option.value,
+        ),
+      })),
+    [translate, recommendationHealth],
+  )
   const modeLookup = useMemo(() => {
     const lookup = {}
     modeOptions.forEach((option) => {
@@ -557,6 +589,11 @@ const AutoPlayPage = () => {
   }, [modeOptions])
   const currentModeLabel =
     modeLookup[sessionOptions.mode] || sessionOptions.mode
+  const currentModeMessage = healthMessageForMode(
+    recommendationHealth,
+    sessionOptions.mode,
+    translate,
+  )
 
   const toggleFeedback = useCallback((trackId, direction) => {
     const { positive, negative } = computeFeedback(
@@ -593,6 +630,23 @@ const AutoPlayPage = () => {
 
       {tab === 0 && (
         <>
+          {!recommendationHealthLoading &&
+            recommendationHealth.status !== 'ready' && (
+              <Card className={classes.statusBanner} variant="outlined">
+                <Typography variant="subtitle2">
+                  {recommendationHealth.engine?.ready
+                    ? translate('pages.autoplay.health.textUnavailable', {
+                        _: 'Text recommendations unavailable',
+                      })
+                    : translate('pages.autoplay.health.engineUnavailable', {
+                        _: 'Semantic recommendations unavailable',
+                      })}
+                </Typography>
+                <Typography variant="body2" className={classes.exclusionHint}>
+                  {currentModeMessage}
+                </Typography>
+              </Card>
+            )}
           <Card className={classes.controlsCard} variant="outlined">
             <Typography variant="h5">
               {translate('pages.autoplay.controls.title', {
@@ -615,6 +669,14 @@ const AutoPlayPage = () => {
                     _: 'Change your listening mode & more in the Settings tab.',
                   })}
                 </Typography>
+                {!isRecommendationModeAvailable(
+                  recommendationHealth,
+                  sessionOptions.mode,
+                ) && (
+                  <Typography variant="body2" className={classes.warning}>
+                    {currentModeMessage}
+                  </Typography>
+                )}
               </Box>
 
               {(sessionOptions.mode === 'text' ||
@@ -676,6 +738,13 @@ const AutoPlayPage = () => {
                       : undefined
                   }
                   fullWidth
+                  disabled={
+                    sessionOptions.mode === 'text' &&
+                    !isRecommendationModeAvailable(
+                      recommendationHealth,
+                      'text',
+                    )
+                  }
                 />
               )}
             </Box>
@@ -721,7 +790,13 @@ const AutoPlayPage = () => {
                 color="primary"
                 startIcon={<PlayArrowIcon />}
                 onClick={handleStartSession}
-                disabled={fetching}
+                disabled={
+                  fetching ||
+                  !isRecommendationModeAvailable(
+                    recommendationHealth,
+                    sessionOptions.mode,
+                  )
+                }
                 size="large"
                 className={classes.primaryActionButton}
               >
@@ -737,7 +812,13 @@ const AutoPlayPage = () => {
                 variant="outlined"
                 startIcon={<RefreshIcon />}
                 onClick={handleFetchMore}
-                disabled={fetching}
+                disabled={
+                  fetching ||
+                  !isRecommendationModeAvailable(
+                    recommendationHealth,
+                    sessionOptions.mode,
+                  )
+                }
               >
                 {translate('pages.autoplay.controls.more', { _: 'Add more' })}
               </Button>

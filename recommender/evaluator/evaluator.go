@@ -61,6 +61,10 @@ type EngineReport struct {
 type TaskReport struct {
 	Scenarios           int     `json:"scenarios"`
 	Failures            int     `json:"failures"`
+	EmptyResults        int     `json:"emptyResults"`
+	FallbackResults     int     `json:"fallbackResults"`
+	UnresolvedResults   int     `json:"unresolvedResults"`
+	WarningOnlyResults  int     `json:"warningOnlyResults"`
 	RecallAtK           float64 `json:"recallAtK"`
 	NDCGAtK             float64 `json:"ndcgAtK"`
 	ArtistRepeatRate    float64 `json:"artistRepeatRate"`
@@ -69,6 +73,11 @@ type TaskReport struct {
 	MoodCalibrationJSD  float64 `json:"moodCalibrationJsd"`
 	NoveltyRate         float64 `json:"noveltyRate"`
 	CatalogCoverage     float64 `json:"catalogCoverage"`
+	EmptyResultRate     float64 `json:"emptyResultRate"`
+	FallbackRate        float64 `json:"fallbackRate"`
+	UnresolvedTrackRate float64 `json:"unresolvedTrackRate"`
+	SemanticCoverage    float64 `json:"semanticCoverage"`
+	WarningsPerScenario float64 `json:"warningsPerScenario"`
 	MeanLatencyMs       float64 `json:"meanLatencyMs"`
 	P95LatencyMs        float64 `json:"p95LatencyMs"`
 }
@@ -299,10 +308,38 @@ func (r *Runner) evaluateScenarios(ctx context.Context, client subsonic.Recommen
 			continue
 		}
 
-		recommendations, err := r.loadTracksOrdered(ctx, trimUniqueIDs(response.TrackIDs(), topK))
+		warningCount := len(response.Warnings)
+		acc.warningCount += warningCount
+		if warningCount > 0 {
+			acc.fallbackResults++
+		}
+
+		responseTrackIDs := trimUniqueIDs(response.TrackIDs(), topK)
+		if len(responseTrackIDs) == 0 {
+			acc.emptyResults++
+			acc.failures++
+			if warningCount > 0 {
+				acc.warningOnlyResults++
+			}
+			continue
+		}
+
+		recommendations, err := r.loadTracksOrdered(ctx, responseTrackIDs)
 		if err != nil {
 			return TaskReport{}, err
 		}
+		if len(recommendations) == 0 {
+			acc.unresolvedResults++
+			acc.failures++
+			if warningCount > 0 {
+				acc.warningOnlyResults++
+			}
+			continue
+		}
+		if len(recommendations) < len(responseTrackIDs) {
+			acc.unresolvedResults++
+		}
+		acc.semanticSuccesses++
 
 		relevantIDs := trackIDSet(scenario.Relevant)
 		recommendedIDs := mediaFileIDs(recommendations)
@@ -317,6 +354,10 @@ func (r *Runner) evaluateScenarios(ctx context.Context, client subsonic.Recommen
 		for _, id := range recommendedIDs {
 			acc.coverageIDs[id] = struct{}{}
 		}
+	}
+
+	if acc.scenarios > 0 && acc.semanticSuccesses == 0 {
+		return TaskReport{}, fmt.Errorf("all %d scenarios produced empty, unresolved, or degraded recommendation results", acc.scenarios)
 	}
 
 	return acc.finalize(libraryTracks), nil
@@ -432,6 +473,12 @@ func (r *Runner) loadTracksOrdered(ctx context.Context, ids []string) (model.Med
 type taskAccumulator struct {
 	scenarios           int
 	failures            int
+	emptyResults        int
+	fallbackResults     int
+	unresolvedResults   int
+	warningOnlyResults  int
+	semanticSuccesses   int
+	warningCount        int
 	recallSum           float64
 	ndcgSum             float64
 	artistRepeatSum     float64
@@ -445,8 +492,12 @@ type taskAccumulator struct {
 
 func (a taskAccumulator) finalize(libraryTracks int) TaskReport {
 	report := TaskReport{
-		Scenarios: a.scenarios,
-		Failures:  a.failures,
+		Scenarios:          a.scenarios,
+		Failures:           a.failures,
+		EmptyResults:       a.emptyResults,
+		FallbackResults:    a.fallbackResults,
+		UnresolvedResults:  a.unresolvedResults,
+		WarningOnlyResults: a.warningOnlyResults,
 	}
 	if a.scenarios == 0 {
 		return report
@@ -463,6 +514,11 @@ func (a taskAccumulator) finalize(libraryTracks int) TaskReport {
 	if libraryTracks > 0 {
 		report.CatalogCoverage = float64(len(a.coverageIDs)) / float64(libraryTracks)
 	}
+	report.EmptyResultRate = float64(a.emptyResults) / divisor
+	report.FallbackRate = float64(a.fallbackResults) / divisor
+	report.UnresolvedTrackRate = float64(a.unresolvedResults) / divisor
+	report.SemanticCoverage = float64(a.semanticSuccesses) / divisor
+	report.WarningsPerScenario = float64(a.warningCount) / divisor
 	report.MeanLatencyMs = meanLatencyMs(a.latencies)
 	report.P95LatencyMs = percentileLatencyMs(a.latencies, 0.95)
 	return report
@@ -481,6 +537,10 @@ func combineTaskReports(left TaskReport, right TaskReport) TaskReport {
 	return TaskReport{
 		Scenarios:           total,
 		Failures:            left.Failures + right.Failures,
+		EmptyResults:        left.EmptyResults + right.EmptyResults,
+		FallbackResults:     left.FallbackResults + right.FallbackResults,
+		UnresolvedResults:   left.UnresolvedResults + right.UnresolvedResults,
+		WarningOnlyResults:  left.WarningOnlyResults + right.WarningOnlyResults,
 		RecallAtK:           weight(left.RecallAtK, right.RecallAtK),
 		NDCGAtK:             weight(left.NDCGAtK, right.NDCGAtK),
 		ArtistRepeatRate:    weight(left.ArtistRepeatRate, right.ArtistRepeatRate),
@@ -489,6 +549,11 @@ func combineTaskReports(left TaskReport, right TaskReport) TaskReport {
 		MoodCalibrationJSD:  weight(left.MoodCalibrationJSD, right.MoodCalibrationJSD),
 		NoveltyRate:         weight(left.NoveltyRate, right.NoveltyRate),
 		CatalogCoverage:     maxFloat(left.CatalogCoverage, right.CatalogCoverage),
+		EmptyResultRate:     weight(left.EmptyResultRate, right.EmptyResultRate),
+		FallbackRate:        weight(left.FallbackRate, right.FallbackRate),
+		UnresolvedTrackRate: weight(left.UnresolvedTrackRate, right.UnresolvedTrackRate),
+		SemanticCoverage:    weight(left.SemanticCoverage, right.SemanticCoverage),
+		WarningsPerScenario: weight(left.WarningsPerScenario, right.WarningsPerScenario),
 		MeanLatencyMs:       weight(left.MeanLatencyMs, right.MeanLatencyMs),
 		P95LatencyMs:        maxFloat(left.P95LatencyMs, right.P95LatencyMs),
 	}

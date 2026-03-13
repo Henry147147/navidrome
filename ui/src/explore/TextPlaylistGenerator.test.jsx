@@ -209,6 +209,36 @@ describe('TextPlaylistGenerator', () => {
     }
   })
 
+  it('shows an unavailable message when text recommendations are offline', async () => {
+    render(
+      <DataProviderContext.Provider value={mockDataProvider}>
+        <TestContext
+          initialState={{
+            admin: { resources: {}, ui: { optimistic: false } },
+          }}
+        >
+          <TextPlaylistGenerator
+            health={{
+              status: 'degraded',
+              engine: { ready: true },
+              text: {
+                ready: false,
+                message: 'Text recommendations are currently offline.',
+              },
+              availableModes: ['recent', 'favorites', 'all', 'discovery', 'custom'],
+              degradedModes: ['text'],
+            }}
+            healthLoading={false}
+          />
+        </TestContext>
+      </DataProviderContext.Provider>,
+    )
+
+    expect(
+      screen.getByText('Text recommendations are currently offline.'),
+    ).toBeInTheDocument()
+  })
+
   it('clears form when clear button clicked', async () => {
     createTestUtils()
 

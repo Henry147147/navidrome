@@ -51,6 +51,13 @@ import {
   buildTextRequestModels,
   clampMinAgreement,
 } from './recommendationModelUtils'
+import {
+  formatRecommendationError,
+  healthMessageForMode,
+  isRecommendationModeAvailable,
+  sanitizeRecommendationWarning,
+  useRecommendationHealth,
+} from '../recommendationHealth'
 
 const useStyles = makeStyles((theme) => ({
   page: {
@@ -129,6 +136,10 @@ const useStyles = makeStyles((theme) => ({
   warning: {
     color: theme.palette.warning.main,
     marginTop: theme.spacing(1),
+  },
+  healthCard: {
+    padding: theme.spacing(2),
+    borderLeft: `4px solid ${theme.palette.warning.main}`,
   },
   buttonRow: {
     display: 'flex',
@@ -246,6 +257,8 @@ const RecommendationPreview = ({
 
   const tracks = (result && result.tracks) || []
   const trackIds = (result && result.trackIds) || []
+  const isSemantic =
+    result?.resultSource === 'semantic' && result?.degraded !== true
 
   if (!result) {
     return null
@@ -354,7 +367,7 @@ const RecommendationPreview = ({
             <Typography key={idx} variant="body2">
               {translate('pages.explore.recommendationWarning', {
                 _: 'Note: %{warning}',
-                warning,
+                warning: sanitizeRecommendationWarning(warning, translate),
               })}
             </Typography>
           ))}
@@ -367,7 +380,7 @@ const RecommendationPreview = ({
           color="primary"
           startIcon={<PlaylistAddIcon />}
           onClick={onSave}
-          disabled={saving || trackIds.length === 0}
+          disabled={saving || trackIds.length === 0 || !isSemantic}
         >
           {saving ? (
             <CircularProgress size={18} color="inherit" />
@@ -392,6 +405,8 @@ const ExploreSuggestions = () => {
   const dataProvider = useDataProvider()
   const notify = useNotify()
   const refresh = useRefresh()
+  const { health: recommendationHealth, loading: recommendationHealthLoading } =
+    useRecommendationHealth(dataProvider)
   const [activeTab, setActiveTab] = useState(0)
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
   const [settingsDraft, setSettingsDraft] = useState(DEFAULT_SETTINGS)
@@ -653,6 +668,19 @@ const ExploreSuggestions = () => {
     if (!api) {
       return
     }
+    if (!isRecommendationModeAvailable(recommendationHealth, mode)) {
+      setGenerators((prev) => ({
+        ...prev,
+        [mode]: {
+          ...prev[mode],
+          loading: false,
+          error: healthMessageForMode(recommendationHealth, mode, translate),
+          result: null,
+          updatingTrackId: null,
+        },
+      }))
+      return
+    }
     const payload = {
       limit: settings.mixLength,
       diversity: settings.baseDiversity,
@@ -675,6 +703,18 @@ const ExploreSuggestions = () => {
     }))
     api(payload)
       .then(({ data }) => {
+        if (
+          data?.resultSource !== 'semantic' ||
+          data?.degraded === true ||
+          !Array.isArray(data?.trackIds) ||
+          data.trackIds.length === 0
+        ) {
+          throw new Error(
+            translate('pages.explore.semanticOnlyResult', {
+              _: 'Semantic recommendations are unavailable right now.',
+            }),
+          )
+        }
         const autoName =
           data?.name ||
           translate(defaultNameKey, {
@@ -697,11 +737,13 @@ const ExploreSuggestions = () => {
         }))
       })
       .catch((error) => {
-        const fallbackMessage = translate(errorKey, {
-          _: generatorErrorFallback[mode],
-        })
-        const message =
-          error?.body?.message || error?.message || fallbackMessage
+        const message = formatRecommendationError(
+          error,
+          translate,
+          translate(errorKey, {
+            _: generatorErrorFallback[mode],
+          }),
+        )
         setGenerators((prev) => ({
           ...prev,
           [mode]: {
@@ -825,7 +867,10 @@ const ExploreSuggestions = () => {
             variant="contained"
             color="primary"
             onClick={config.onGenerate}
-            disabled={state.loading}
+            disabled={
+              state.loading ||
+              !isRecommendationModeAvailable(recommendationHealth, config.key)
+            }
           >
             {state.loading ? (
               <CircularProgress size={18} color="inherit" />
@@ -840,6 +885,13 @@ const ExploreSuggestions = () => {
               {state.error}
             </Typography>
           )}
+          {!state.error &&
+            !recommendationHealthLoading &&
+            !isRecommendationModeAvailable(recommendationHealth, config.key) && (
+              <Typography variant="body2" className={classes.warning}>
+                {healthMessageForMode(recommendationHealth, config.key, translate)}
+              </Typography>
+            )}
         </Box>
         <RecommendationPreview
           result={state.result}
@@ -1119,7 +1171,12 @@ const ExploreSuggestions = () => {
       .then(({ data }) => {
         const newTrack = data?.tracks?.[0]
         const newTrackId = data?.trackIds?.[0]
-        if (!newTrack || !newTrackId) {
+        if (
+          data?.resultSource !== 'semantic' ||
+          data?.degraded === true ||
+          !newTrack ||
+          !newTrackId
+        ) {
           throw new Error(
             translate('pages.explore.rerollUnavailable', {
               _: 'No alternative songs available right now.',
@@ -1172,11 +1229,13 @@ const ExploreSuggestions = () => {
         })
       })
       .catch((error) => {
-        const message =
-          error?.message ||
+        const message = formatRecommendationError(
+          error,
+          translate,
           translate('pages.explore.rerollFailed', {
             _: 'Unable to reroll this song. Please try again.',
-          })
+          }),
+        )
         notify(message, { type: 'warning' })
         setGenerators((prev) => ({
           ...prev,
@@ -1239,6 +1298,13 @@ const ExploreSuggestions = () => {
     }
     const seeds = selectedSongs.map((song) => getSongId(song)).filter(Boolean)
     const hasTextPrompt = customTextQuery.trim() !== ''
+    const requestMode = hasTextPrompt ? 'text' : 'custom'
+    if (!isRecommendationModeAvailable(recommendationHealth, requestMode)) {
+      notify(healthMessageForMode(recommendationHealth, requestMode, translate), {
+        type: 'warning',
+      })
+      return
+    }
     if (seeds.length === 0 && !hasTextPrompt) {
       return
     }
@@ -1287,7 +1353,12 @@ const ExploreSuggestions = () => {
       .then(({ data }) => {
         const newTrack = data?.tracks?.[0]
         const newTrackId = data?.trackIds?.[0]
-        if (!newTrack || !newTrackId) {
+        if (
+          data?.resultSource !== 'semantic' ||
+          data?.degraded === true ||
+          !newTrack ||
+          !newTrackId
+        ) {
           throw new Error(
             translate('pages.explore.rerollUnavailable', {
               _: 'No alternative songs available right now.',
@@ -1322,11 +1393,13 @@ const ExploreSuggestions = () => {
         })
       })
       .catch((error) => {
-        const message =
-          error?.message ||
+        const message = formatRecommendationError(
+          error,
+          translate,
           translate('pages.explore.rerollFailed', {
             _: 'Unable to reroll this song. Please try again.',
-          })
+          }),
+        )
         notify(message, { type: 'warning' })
       })
       .finally(() => {
@@ -1341,6 +1414,14 @@ const ExploreSuggestions = () => {
       .map((song) => getSongId(song))
       .filter(Boolean)
     const hasTextPrompt = customTextQuery.trim() !== ''
+    const requestMode = hasTextPrompt ? 'text' : 'custom'
+    if (!isRecommendationModeAvailable(recommendationHealth, requestMode)) {
+      setCustomError(
+        healthMessageForMode(recommendationHealth, requestMode, translate),
+      )
+      setCustomLoading(false)
+      return
+    }
     const textModels = buildTextRequestModels(
       selectedModels,
       selectedSongIDs.length > 0,
@@ -1377,6 +1458,18 @@ const ExploreSuggestions = () => {
 
     request
       .then(({ data }) => {
+        if (
+          data?.resultSource !== 'semantic' ||
+          data?.degraded === true ||
+          !Array.isArray(data?.trackIds) ||
+          data.trackIds.length === 0
+        ) {
+          throw new Error(
+            translate('pages.explore.semanticOnlyResult', {
+              _: 'Semantic recommendations are unavailable right now.',
+            }),
+          )
+        }
         setCustomResult(data)
         setCustomName(
           data?.name ||
@@ -1386,12 +1479,13 @@ const ExploreSuggestions = () => {
         setCustomUpdatingTrackId(null)
       })
       .catch((error) => {
-        const serverMessage =
-          error?.body?.message ||
-          error?.message ||
+        const serverMessage = formatRecommendationError(
+          error,
+          translate,
           translate('pages.explore.customNoSeeds', {
             _: 'Try selecting different songs and generate again.',
-          })
+          }),
+        )
         setCustomError(serverMessage)
         setCustomResult(null)
       })
@@ -1464,6 +1558,28 @@ const ExploreSuggestions = () => {
 
       {activeTab === 0 && (
         <Box className={classes.tabPanel}>
+          {!recommendationHealthLoading &&
+            recommendationHealth.status !== 'ready' && (
+              <Card className={classes.healthCard} variant="outlined">
+                <Typography variant="subtitle1">
+                  {translate('pages.explore.health.title', {
+                    _: 'Recommendation system status',
+                  })}
+                </Typography>
+                <Typography variant="body2" className={classes.placeholder}>
+                  {recommendationHealth.engine?.ready
+                    ? recommendationHealth.text?.message ||
+                      translate('pages.explore.health.partial', {
+                        _: 'Some recommendation modes are temporarily unavailable.',
+                      })
+                    : healthMessageForMode(
+                        recommendationHealth,
+                        'recent',
+                        translate,
+                      )}
+                </Typography>
+              </Card>
+            )}
           <Card className={classes.heroCard} variant="outlined">
             <ExploreIcon className={classes.heroIcon} />
             <Box>
@@ -1799,6 +1915,10 @@ const ExploreSuggestions = () => {
                 color="primary"
                 onClick={handleGenerateCustom}
                 disabled={
+                  !isRecommendationModeAvailable(
+                    recommendationHealth,
+                    customTextQuery.trim() !== '' ? 'text' : 'custom',
+                  ) ||
                   (selectedSongs.length === 0 &&
                     customTextQuery.trim() === '') ||
                   customLoading
@@ -1903,7 +2023,10 @@ const ExploreSuggestions = () => {
 
       {activeTab === 1 && (
         <Box className={classes.tabPanel}>
-          <TextPlaylistGenerator />
+          <TextPlaylistGenerator
+            health={recommendationHealth}
+            healthLoading={recommendationHealthLoading}
+          />
         </Box>
       )}
 

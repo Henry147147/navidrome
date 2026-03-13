@@ -60,11 +60,15 @@ type recommendationTrack struct {
 }
 
 type recommendationResponsePayload struct {
-	Name     string                `json:"name"`
-	Mode     string                `json:"mode"`
-	TrackIDs []string              `json:"trackIds"`
-	Warnings []string              `json:"warnings,omitempty"`
-	Tracks   []recommendationTrack `json:"tracks"`
+	Name           string                `json:"name"`
+	Mode           string                `json:"mode"`
+	TrackIDs       []string              `json:"trackIds"`
+	Warnings       []string              `json:"warnings,omitempty"`
+	Tracks         []recommendationTrack `json:"tracks"`
+	ResultSource   string                `json:"resultSource"`
+	Degraded       bool                  `json:"degraded"`
+	Prompt         string                `json:"prompt,omitempty"`
+	ResolvedModels []string              `json:"resolvedModels,omitempty"`
 }
 
 const (
@@ -299,6 +303,7 @@ func (n *Router) addRecommendationRoutes(r chi.Router) {
 			r.Get("/", n.handleGetRecommendationSettings)
 			r.Put("/", n.handleUpdateRecommendationSettings)
 		})
+		r.Get("/health", n.handleRecommendationHealth)
 		r.Post("/recent", n.handleRecentRecommendations)
 		r.Post("/favorites", n.handleFavoritesRecommendations)
 		r.Post("/all", n.handleAllRecommendations)
@@ -476,8 +481,8 @@ func (n *Router) saveRecommendationSettings(ctx context.Context, user model.User
 }
 
 func (n *Router) handleRecentRecommendations(w http.ResponseWriter, r *http.Request) {
-	if n.recommender == nil {
-		http.Error(w, "recommendation service unavailable", http.StatusServiceUnavailable)
+	if err := n.requireRecommendationEngine(r.Context()); err != nil {
+		writeRecommendationAPIError(w, err)
 		return
 	}
 	ctx := r.Context()
@@ -518,15 +523,15 @@ func (n *Router) handleRecentRecommendations(w http.ResponseWriter, r *http.Requ
 	excludeIDs := combineExcludeTrackIDs(payload)
 	resp, err := n.executeRecommendation(ctx, user, modeRecentRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings, payload)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		writeRecommendationAPIError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
 func (n *Router) handleFavoritesRecommendations(w http.ResponseWriter, r *http.Request) {
-	if n.recommender == nil {
-		http.Error(w, "recommendation service unavailable", http.StatusServiceUnavailable)
+	if err := n.requireRecommendationEngine(r.Context()); err != nil {
+		writeRecommendationAPIError(w, err)
 		return
 	}
 	ctx := r.Context()
@@ -560,15 +565,15 @@ func (n *Router) handleFavoritesRecommendations(w http.ResponseWriter, r *http.R
 	excludeIDs := combineExcludeTrackIDs(payload)
 	resp, err := n.executeRecommendation(ctx, user, modeFavoritesRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings, payload)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		writeRecommendationAPIError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
 func (n *Router) handleAllRecommendations(w http.ResponseWriter, r *http.Request) {
-	if n.recommender == nil {
-		http.Error(w, "recommendation service unavailable", http.StatusServiceUnavailable)
+	if err := n.requireRecommendationEngine(r.Context()); err != nil {
+		writeRecommendationAPIError(w, err)
 		return
 	}
 	ctx := r.Context()
@@ -605,15 +610,15 @@ func (n *Router) handleAllRecommendations(w http.ResponseWriter, r *http.Request
 	excludeIDs := combineExcludeTrackIDs(payload)
 	resp, err := n.executeRecommendation(ctx, user, modeAllRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings, payload)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		writeRecommendationAPIError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
 func (n *Router) handleDiscoveryRecommendations(w http.ResponseWriter, r *http.Request) {
-	if n.recommender == nil {
-		http.Error(w, "recommendation service unavailable", http.StatusServiceUnavailable)
+	if err := n.requireRecommendationEngine(r.Context()); err != nil {
+		writeRecommendationAPIError(w, err)
 		return
 	}
 	ctx := r.Context()
@@ -651,15 +656,15 @@ func (n *Router) handleDiscoveryRecommendations(w http.ResponseWriter, r *http.R
 	excludeIDs := combineExcludeTrackIDs(payload)
 	resp, err := n.executeRecommendation(ctx, user, modeDiscoveryRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.DiscoveryExploration, discoveryMinDiversity, settings, payload)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		writeRecommendationAPIError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
 func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Request) {
-	if n.recommender == nil {
-		http.Error(w, "recommendation service unavailable", http.StatusServiceUnavailable)
+	if err := n.requireRecommendationEngine(r.Context()); err != nil {
+		writeRecommendationAPIError(w, err)
 		return
 	}
 	ctx := r.Context()
@@ -698,7 +703,7 @@ func (n *Router) handleCustomRecommendations(w http.ResponseWriter, r *http.Requ
 	excludeIDs := combineExcludeTrackIDs(payload)
 	resp, err := n.executeRecommendation(ctx, user, modeCustomRecommendations, payload.Name, seeds, limit, excludeIDs, payload.ExcludePlaylistIDs, payload.Diversity, settings.BaseDiversity, 0, settings, payload)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		writeRecommendationAPIError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -724,13 +729,6 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	blocked := make(map[string]struct{}, len(combinedExclude))
 	for _, id := range combinedExclude {
 		blocked[id] = struct{}{}
-	}
-	fallbackBlocked := make(map[string]struct{}, len(combinedExclude)+len(dislikedTrackIDs))
-	for id := range blocked {
-		fallbackBlocked[id] = struct{}{}
-	}
-	for _, id := range dislikedTrackIDs {
-		fallbackBlocked[id] = struct{}{}
 	}
 	models := normalizeRecommendationModels(payload.Models, []string{defaultRecommendationModelAudio})
 	requestLimit := expandedRecommendationLimit(limit)
@@ -758,10 +756,28 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 	if err != nil {
 		return recommendationResponsePayload{}, err
 	}
-	seedFallbackIDs := fallbackTrackIDs(seeds, len(seeds), fallbackBlocked)
 	trackIDs := result.TrackIDs()
-	if len(trackIDs) == 0 {
-		trackIDs = seedFallbackIDs
+	if len(trackIDs) == 0 && len(result.Warnings) > 0 {
+		for _, warning := range result.Warnings {
+			if isRecommendationUnavailableWarning(warning) {
+				engineHealth := n.recommendationEngineHealth(ctx)
+				code := engineHealth.ReasonCode
+				message := engineHealth.Message
+				if strings.TrimSpace(code) == "" {
+					code = "milvus_unreachable"
+				}
+				if strings.TrimSpace(message) == "" {
+					message = "Semantic recommendations are temporarily unavailable."
+				}
+				return recommendationResponsePayload{}, newRecommendationAPIError(
+					http.StatusServiceUnavailable,
+					code,
+					message,
+					true,
+					"engine",
+				)
+			}
+		}
 	}
 	tracks, err := n.loadTracks(ctx, trackIDs)
 	if err != nil {
@@ -787,32 +803,36 @@ func (n *Router) executeRecommendation(ctx context.Context, user model.User, mod
 		combinedWarnings = append(combinedWarnings, filteredWarning)
 	}
 	finalTrackIDs := recommendationTrackIDs(finalTracks)
-	if len(finalTrackIDs) < limit {
-		additional := seedFallbackIDs
-		additional = difference(finalTrackIDs, additional)
-		if len(additional) > 0 {
-			extraIDs := make([]string, 0, len(additional))
-			for _, id := range additional {
-				if _, skip := blocked[id]; skip {
-					continue
-				}
-				extraIDs = append(extraIDs, id)
-			}
-			if len(extraIDs) > 0 {
-				extraTracks, loadErr := n.loadTracks(ctx, extraIDs)
-				if loadErr == nil {
-					finalTracks = appendFallbackRecommendationTracks(finalTracks, extraTracks, limit, blocked, dislikes, settings)
-					finalTrackIDs = recommendationTrackIDs(finalTracks)
-				}
-			}
+	unresolvedCount := len(trackIDs) - len(tracks)
+	if unresolvedCount > 0 {
+		log.Warn(ctx, "Recommendation candidates could not be resolved to tracks",
+			"mode", mode,
+			"unresolved", unresolvedCount,
+		)
+		combinedWarnings = append(combinedWarnings, fmt.Sprintf("%d recommendation candidates could not be matched to tracks in your library.", unresolvedCount))
+	}
+	if len(finalTrackIDs) == 0 {
+		message := "We couldn't find semantic matches for this mix yet. Try different seeds or reduce exclusions."
+		if unresolvedCount > 0 {
+			message = "We couldn't resolve the recommended tracks in your library. Re-embed the library or check collection consistency."
 		}
+		return recommendationResponsePayload{}, newRecommendationAPIError(
+			http.StatusUnprocessableEntity,
+			"no_semantic_candidates",
+			message,
+			false,
+			"engine",
+		)
 	}
 	return recommendationResponsePayload{
-		Name:     playlistName,
-		Mode:     mode,
-		TrackIDs: finalTrackIDs,
-		Warnings: combinedWarnings,
-		Tracks:   finalTracks,
+		Name:           playlistName,
+		Mode:           mode,
+		TrackIDs:       finalTrackIDs,
+		Warnings:       combinedWarnings,
+		Tracks:         finalTracks,
+		ResultSource:   "semantic",
+		Degraded:       false,
+		ResolvedModels: models,
 	}, nil
 }
 
@@ -1592,27 +1612,9 @@ func (n *Router) buildDislikeSignals(ctx context.Context, user model.User, setti
 	return signals, nil
 }
 
-func difference(existing []string, candidates []string) []string {
-	if len(candidates) == 0 {
-		return candidates
-	}
-	seen := make(map[string]struct{}, len(existing))
-	for _, id := range existing {
-		seen[id] = struct{}{}
-	}
-	filtered := make([]string, 0, len(candidates))
-	for _, id := range candidates {
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		filtered = append(filtered, id)
-	}
-	return filtered
-}
-
 func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Request) {
-	if n.recommender == nil {
-		http.Error(w, "recommendation service unavailable", http.StatusServiceUnavailable)
+	if err := n.requireTextRecommendationReady(r.Context()); err != nil {
+		writeRecommendationAPIError(w, err)
 		return
 	}
 	ctx := r.Context()
@@ -1648,11 +1650,23 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 	queryEmbedding, err := n.getTextEmbedding(ctx, payload.Text, textModel, desiredDim)
 	if err != nil {
 		log.Error(ctx, "Failed to get text embedding", "error", err, "model", textModel)
-		http.Error(w, fmt.Sprintf("failed to get text embedding: %v", err), http.StatusInternalServerError)
+		writeRecommendationAPIError(w, newRecommendationAPIError(
+			http.StatusServiceUnavailable,
+			"text_embedding_unreachable",
+			"Text recommendations are currently offline.",
+			true,
+			"text",
+		))
 		return
 	}
 	if len(queryEmbedding) == 0 {
-		http.Error(w, "failed to get text embedding: empty embedding returned", http.StatusInternalServerError)
+		writeRecommendationAPIError(w, newRecommendationAPIError(
+			http.StatusServiceUnavailable,
+			"text_embedding_unreachable",
+			"Text recommendations are currently offline.",
+			true,
+			"text",
+		))
 		return
 	}
 
@@ -1688,12 +1702,20 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 		seeds = mergedSeeds
 	}
 
-	seeds = n.addPositiveSeeds(ctx, user, seeds, payload.PositiveTrackIDs)
+	allPositiveTrackIDs := uniqueNonEmptyStrings(payload.PositiveTrackIDs)
+	contextTrackIDs := append(append([]string{}, allPositiveTrackIDs...), hybridSongIDs...)
+	inferredPositiveTrackIDs, err := n.inferTextPromptPositiveTrackIDs(ctx, user, payload.Text, settings, contextTrackIDs)
+	if err != nil {
+		log.Warn(ctx, "Failed to infer prompt-based positive text seeds", "error", err)
+	} else if len(inferredPositiveTrackIDs) > 0 {
+		allPositiveTrackIDs = uniqueNonEmptyStrings(append(allPositiveTrackIDs, inferredPositiveTrackIDs...))
+	}
+	seeds = n.addPositiveSeeds(ctx, user, seeds, allPositiveTrackIDs)
 
 	limit := normalizeLimit(payload.Limit, settings.MixLength)
 
 	defaultModels := append([]string{}, textTargets...)
-	if len(hybridSongIDs) > 0 {
+	if len(hybridSongIDs) > 0 || len(allPositiveTrackIDs) > 0 {
 		defaultModels = append(defaultModels, defaultRecommendationModelAudio)
 	}
 	models := normalizeRecommendationModels(payload.Models, defaultModels)
@@ -1718,9 +1740,11 @@ func (n *Router) handleTextRecommendations(w http.ResponseWriter, r *http.Reques
 	)
 	if err != nil {
 		log.Error(ctx, "Text recommendation failed", "error", err, "text", payload.Text)
-		http.Error(w, fmt.Sprintf("recommendation failed: %v", err), http.StatusInternalServerError)
+		writeRecommendationAPIError(w, err)
 		return
 	}
+	response.Prompt = strings.TrimSpace(payload.Text)
+	response.ResolvedModels = models
 
 	writeJSON(w, http.StatusOK, response)
 }
@@ -1918,4 +1942,11 @@ func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"message": message})
+}
+
+func isRecommendationUnavailableWarning(warning string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(warning))
+	return strings.Contains(normalized, "recommendation service unavailable") ||
+		strings.Contains(normalized, "milvus init failed") ||
+		strings.Contains(normalized, "schema mismatch")
 }

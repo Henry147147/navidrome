@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -81,6 +82,49 @@ func (c *retryingRecommendationClient) Recommend(ctx context.Context, mode strin
 		}, nil
 	}
 	return client.Recommend(ctx, mode, payload)
+}
+
+func (c *retryingRecommendationClient) RecommendationHealth(ctx context.Context) subsonic.RecommendationHealth {
+	if client := c.getClient(); client != nil {
+		if provider, ok := client.(subsonic.RecommendationHealthProvider); ok {
+			return provider.RecommendationHealth(ctx)
+		}
+		return subsonic.RecommendationHealth{Ready: true}
+	}
+	if err := c.ensureClient(); err != nil {
+		return recommendationHealthFromError(err)
+	}
+	client := c.getClient()
+	if provider, ok := client.(subsonic.RecommendationHealthProvider); ok {
+		return provider.RecommendationHealth(ctx)
+	}
+	return subsonic.RecommendationHealth{Ready: client != nil}
+}
+
+func recommendationHealthFromError(err error) subsonic.RecommendationHealth {
+	if err == nil {
+		return subsonic.RecommendationHealth{Ready: true}
+	}
+	msg := strings.ToLower(err.Error())
+	health := subsonic.RecommendationHealth{
+		Ready:      false,
+		ReasonCode: "milvus_unreachable",
+		Message:    "Semantic recommendations are temporarily unavailable because Milvus is not ready.",
+		Retryable:  true,
+		Dependency: "engine",
+	}
+	if strings.Contains(msg, "schema mismatch") || strings.Contains(msg, "expected dim=") {
+		health.ReasonCode = "milvus_schema_mismatch"
+		health.Message = "Semantic recommendations are unavailable because the Milvus collection schema does not match the configured embedding dimensions."
+		health.Retryable = false
+		return health
+	}
+	if strings.Contains(msg, "disabled") {
+		health.ReasonCode = "recommendation_service_disabled"
+		health.Message = "Semantic recommendations are disabled."
+		health.Retryable = false
+	}
+	return health
 }
 
 func (c *retryingRecommendationClient) getClient() subsonic.RecommendationClient {

@@ -78,6 +78,23 @@ describe('ExploreSuggestions', () => {
     mocked.notify.mockReset()
     mocked.refresh.mockReset()
     mocked.dataProvider = {
+      getRecommendationHealth: vi.fn().mockResolvedValue({
+        data: {
+          status: 'ready',
+          engine: { ready: true },
+          text: { ready: true },
+          batch: { ready: true },
+          availableModes: [
+            'recent',
+            'favorites',
+            'all',
+            'discovery',
+            'custom',
+            'text',
+          ],
+          degradedModes: [],
+        },
+      }),
       getRecommendationSettings: vi.fn().mockResolvedValue({
         data: {
           mixLength: 30,
@@ -134,6 +151,46 @@ describe('ExploreSuggestions', () => {
     })
 
     expect(screen.queryByText('Text targets')).not.toBeInTheDocument()
+  })
+
+  it('disables semantic generators when recommendation health reports engine unavailable', async () => {
+    mocked.dataProvider.getRecommendationHealth.mockResolvedValue({
+      data: {
+        status: 'unavailable',
+        engine: {
+          ready: false,
+          reasonCode: 'milvus_unreachable',
+          message: 'Semantic recommendations are temporarily unavailable.',
+        },
+        text: {
+          ready: false,
+          reasonCode: 'text_embedding_unreachable',
+          message: 'Text recommendations are currently offline.',
+        },
+        batch: { ready: false },
+        availableModes: [],
+        degradedModes: [
+          'recent',
+          'favorites',
+          'all',
+          'discovery',
+          'custom',
+          'text',
+        ],
+      },
+    })
+
+    render(<ExploreSuggestions />)
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole('button', { name: 'Generate mix' })[0],
+      ).toBeDisabled()
+    })
+
+    expect(
+      screen.getByText('Recommendation system status'),
+    ).toBeInTheDocument()
   })
 
   it('saves updated duration settings from settings panel', async () => {

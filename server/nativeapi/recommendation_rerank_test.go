@@ -123,3 +123,55 @@ func TestSelectRecommendationTracksSkipsDurationAndPathDuplicatesSilently(t *tes
 		t.Fatalf("unexpected selected tracks: %#v", selected)
 	}
 }
+
+func TestRerankRecommendationTracksAffinityBeatsWeakBaseLead(t *testing.T) {
+	profile := buildRecommendationTasteProfile([]model.MediaFile{
+		{
+			ID:     "seed-1",
+			Artist: "Lorde",
+			Genre:  "Pop",
+			Year:   2021,
+			Tags: model.Tags{
+				model.TagMood: []string{"Moody"},
+			},
+		},
+	})
+
+	candidates := []recommendationTrack{
+		{
+			MediaFile: model.MediaFile{
+				ID:     "generic-rock",
+				Artist: "Legacy Rock Band",
+				Genre:  "Rock",
+				Year:   1987,
+				Path:   "generic-rock.mp3",
+				Album:  "Generic Rock",
+			},
+		},
+		{
+			MediaFile: model.MediaFile{
+				ID:     "modern-pop",
+				Artist: "Lorde",
+				Genre:  "Pop",
+				Year:   2023,
+				Path:   "modern-pop.mp3",
+				Album:  "Modern Pop",
+				Tags: model.Tags{
+					model.TagMood: []string{"Moody"},
+				},
+			},
+		},
+	}
+
+	reranked := rerankRecommendationTracks(candidates, map[string]float64{
+		"generic-rock": 0.92,
+		"modern-pop":   0.75,
+	}, profile)
+
+	if len(reranked) != 2 {
+		t.Fatalf("expected 2 reranked tracks, got %d", len(reranked))
+	}
+	if reranked[0].ID != "modern-pop" {
+		t.Fatalf("expected affinity-matched track first, got %#v", reranked)
+	}
+}

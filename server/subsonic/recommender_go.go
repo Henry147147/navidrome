@@ -76,3 +76,15 @@ func (c *goRecommendationClient) Recommend(ctx context.Context, mode string, pay
 		Warnings: resp.Warnings,
 	}, nil
 }
+
+func (c *goRecommendationClient) RecommendationHealth(context.Context) RecommendationHealth {
+	if c == nil || c.engine == nil {
+		return RecommendationHealth{
+			Ready:      false,
+			ReasonCode: "recommendation_service_disabled",
+			Message:    "Semantic recommendations are disabled.",
+			Dependency: "engine",
+		}
+	}
+	return RecommendationHealth{Ready: true}
+}

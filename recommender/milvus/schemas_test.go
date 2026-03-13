@@ -197,3 +197,17 @@ func TestSchemaMismatchError(t *testing.T) {
 		})
 	}
 }
+
+func TestShouldAdoptExistingDimension(t *testing.T) {
+	c := &Client{}
+
+	if !c.shouldAdoptExistingDimension(CollectionMuQAudio, DimMuQAudio, 2048) {
+		t.Fatalf("expected canonical audio default to auto-adopt existing dimension")
+	}
+	if !c.shouldAdoptExistingDimension(CollectionMuQMulan, DimMuQMulan, 768) {
+		t.Fatalf("expected canonical shared default to auto-adopt existing dimension")
+	}
+	if c.shouldAdoptExistingDimension(CollectionMuQAudio, 2048, 1024) {
+		t.Fatalf("did not expect explicit non-default audio dimension to auto-adopt")
+	}
+}

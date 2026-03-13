@@ -2,6 +2,7 @@ package nativeapi
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -353,7 +354,7 @@ func TestExecuteRecommendationBackfillsAfterDurationFiltering(t *testing.T) {
 	}
 }
 
-func TestExecuteRecommendationFallsBackOnlyWhenExpandedCandidatesExhausted(t *testing.T) {
+func TestExecuteRecommendationReturnsNoSemanticCandidatesWhenExpandedCandidatesExhausted(t *testing.T) {
 	ds := &tests.MockDataStore{}
 	putRecommendationTrack(t, ds, "rec-too-short", 12)
 	putRecommendationTrack(t, ds, "seed-good-1", 200)
@@ -373,7 +374,7 @@ func TestExecuteRecommendationFallsBackOnlyWhenExpandedCandidatesExhausted(t *te
 	settings.MaxTrackDurationSeconds = 15 * 60
 
 	router := &Router{ds: ds, recommender: rec}
-	resp, err := router.executeRecommendation(
+	_, err := router.executeRecommendation(
 		context.Background(),
 		model.User{ID: "user-1", UserName: "tester"},
 		modeCustomRecommendations,
@@ -392,23 +393,18 @@ func TestExecuteRecommendationFallsBackOnlyWhenExpandedCandidatesExhausted(t *te
 		settings,
 		recommendationRequestPayload{Models: []string{"flamingo"}},
 	)
-	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
+	if err == nil {
+		t.Fatalf("expected no_semantic_candidates error")
 	}
-
-	expected := []string{"seed-good-1", "seed-good-2"}
-	if len(resp.TrackIDs) != len(expected) {
-		t.Fatalf("expected %#v, got %#v", expected, resp.TrackIDs)
+	apiErr, ok := err.(*recommendationAPIError)
+	if !ok {
+		t.Fatalf("expected recommendationAPIError, got %T", err)
 	}
-	for idx, id := range expected {
-		if resp.TrackIDs[idx] != id {
-			t.Fatalf("expected fallback track %q at index %d, got %#v", id, idx, resp.TrackIDs)
-		}
+	if apiErr.status != http.StatusUnprocessableEntity {
+		t.Fatalf("expected status %d, got %d", http.StatusUnprocessableEntity, apiErr.status)
 	}
-	for _, warning := range resp.Warnings {
-		if strings.Contains(strings.ToLower(warning), "duration") || strings.Contains(strings.ToLower(warning), "allowed range") {
-			t.Fatalf("did not expect duration warning, got %#v", resp.Warnings)
-		}
+	if apiErr.body.Code != "no_semantic_candidates" {
+		t.Fatalf("expected no_semantic_candidates code, got %q", apiErr.body.Code)
 	}
 }
 

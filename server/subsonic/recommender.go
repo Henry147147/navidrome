@@ -337,8 +337,22 @@ func (api *Router) logRecommendationWarnings(r *http.Request, mode string, warni
 		return
 	}
 	for _, warning := range warnings {
-		log.Warn(r, "Recommendation warning", "mode", mode, "warning", warning)
+		log.Warn(r, "Recommendation warning", "mode", mode, "warning", sanitizeRecommendationWarning(warning))
 	}
+}
+
+func sanitizeRecommendationWarning(warning string) string {
+	normalized := strings.TrimSpace(warning)
+	if normalized == "" {
+		return normalized
+	}
+	lowered := strings.ToLower(normalized)
+	if strings.Contains(lowered, "recommendation service unavailable") ||
+		strings.Contains(lowered, "milvus init failed") ||
+		strings.Contains(lowered, "schema mismatch") {
+		return "compatibility fallback: semantic recommendations are temporarily unavailable"
+	}
+	return normalized
 }
 
 func min(a, b int) int {

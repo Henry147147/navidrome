@@ -92,6 +92,23 @@ describe('AutoPlayPage', () => {
       },
     }
     mocked.dataProvider = {
+      getRecommendationHealth: vi.fn().mockResolvedValue({
+        data: {
+          status: 'ready',
+          engine: { ready: true },
+          text: { ready: true },
+          batch: { ready: true },
+          availableModes: [
+            'recent',
+            'favorites',
+            'all',
+            'discovery',
+            'custom',
+            'text',
+          ],
+          degradedModes: [],
+        },
+      }),
       getAutoPlaySettings: vi.fn().mockResolvedValue({
         data: {
           mode: 'recent',
@@ -106,6 +123,7 @@ describe('AutoPlayPage', () => {
       getAllRecommendations: vi.fn(),
       getDiscoveryRecommendations: vi.fn(),
       getCustomRecommendations: vi.fn(),
+      getTextRecommendations: vi.fn(),
       updateAutoPlaySettings: vi.fn(),
     }
   })
@@ -196,5 +214,52 @@ describe('AutoPlayPage', () => {
         { type: 'warning' },
       )
     })
+  })
+
+  it('uses semantic text recommendations instead of song search for text mode', async () => {
+    mocked.dataProvider.getAutoPlaySettings.mockResolvedValue({
+      data: {
+        mode: 'text',
+        textPrompt: 'late night jazz',
+        excludePlaylistIds: [],
+        diversityOverride: null,
+      },
+    })
+    mocked.dataProvider.getTextRecommendations.mockResolvedValue({
+      data: {
+        resultSource: 'semantic',
+        degraded: false,
+        tracks: [
+          {
+            id: 'track-text-1',
+            title: 'Track Text 1',
+            artist: 'Artist Text 1',
+            album: 'Album Text 1',
+          },
+        ],
+        warnings: [],
+      },
+    })
+
+    render(<AutoPlayPage />)
+
+    await waitFor(() => {
+      expect(mocked.dataProvider.getAutoPlaySettings).toHaveBeenCalledTimes(1)
+    })
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Start Auto Play' }),
+    )
+
+    await waitFor(() => {
+      expect(mocked.dataProvider.getTextRecommendations).toHaveBeenCalledTimes(1)
+    })
+
+    expect(mocked.dataProvider.getList).not.toHaveBeenCalledWith(
+      'song',
+      expect.objectContaining({
+        filter: expect.objectContaining({ q: 'late night jazz' }),
+      }),
+    )
   })
 })

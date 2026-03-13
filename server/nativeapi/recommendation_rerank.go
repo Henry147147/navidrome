@@ -17,6 +17,16 @@ type recommendationTasteProfile struct {
 	decades map[string]float64
 }
 
+const (
+	recommendationArtistAffinityWeight  = 0.48
+	recommendationGenreAffinityWeight   = 0.22
+	recommendationMoodAffinityWeight    = 0.08
+	recommendationDecadeAffinityWeight  = 0.12
+	recommendationBaseScoreWeight       = 0.60
+	recommendationProfileBonusWeight    = 0.75
+	recommendationCalibrationBonusDelta = 0.08
+)
+
 func (n *Router) buildRecommendationTasteProfile(ctx context.Context, seeds []subsonic.RecommendationSeed) (recommendationTasteProfile, error) {
 	seedIDs := make([]string, 0, len(seeds))
 	for _, seed := range seeds {
@@ -96,12 +106,14 @@ func rerankRecommendationTracks(candidates []recommendationTrack, baseScores map
 
 			score := normalizedBase[candidate.ID]
 			if profile.hasSignal() {
+				score = normalizedBase[candidate.ID]*recommendationBaseScoreWeight +
+					profile.affinity(candidate.MediaFile)*recommendationProfileBonusWeight
 				nextSelection := append(append([]recommendationTrack(nil), selected...), candidate)
 				nextDivergence := profile.divergence(nextSelection)
 				if nextDivergence < currentDivergence {
-					score += 0.05
+					score += recommendationCalibrationBonusDelta
 				} else if nextDivergence > currentDivergence {
-					score -= 0.05
+					score -= recommendationCalibrationBonusDelta
 				}
 			}
 			if albumRepeatPenalty(candidate.MediaFile, albumCounts) > 0 {
@@ -291,6 +303,36 @@ func (p recommendationTasteProfile) hasSignal() bool {
 	return len(p.artists) > 0 || len(p.genres) > 0 || len(p.moods) > 0 || len(p.decades) > 0
 }
 
+func (p recommendationTasteProfile) affinity(track model.MediaFile) float64 {
+	if !p.hasSignal() {
+		return 0
+	}
+
+	total := 0.0
+	weight := 0.0
+
+	if len(p.artists) > 0 {
+		total += featureAffinityScore(recommendationArtistValues(track), p.artists) * recommendationArtistAffinityWeight
+		weight += recommendationArtistAffinityWeight
+	}
+	if len(p.genres) > 0 {
+		total += featureAffinityScore(recommendationGenreValues(track), p.genres) * recommendationGenreAffinityWeight
+		weight += recommendationGenreAffinityWeight
+	}
+	if len(p.moods) > 0 {
+		total += featureAffinityScore(recommendationMoodValues(track), p.moods) * recommendationMoodAffinityWeight
+		weight += recommendationMoodAffinityWeight
+	}
+	if len(p.decades) > 0 {
+		total += featureAffinityScore(recommendationDecadeValues(track), p.decades) * recommendationDecadeAffinityWeight
+		weight += recommendationDecadeAffinityWeight
+	}
+	if weight == 0 {
+		return 0
+	}
+	return total / weight
+}
+
 func (p recommendationTasteProfile) divergence(tracks []recommendationTrack) float64 {
 	if !p.hasSignal() {
 		return 0
@@ -357,6 +399,22 @@ func normalizeFeatureCounts(counts map[string]float64) map[string]float64 {
 		normalized[key] = value / total
 	}
 	return normalized
+}
+
+func featureAffinityScore(values []string, weights map[string]float64) float64 {
+	if len(values) == 0 || len(weights) == 0 {
+		return 0
+	}
+	best := 0.0
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if score := weights[value]; score > best {
+			best = score
+		}
+	}
+	return clamp(best, 0, 1)
 }
 
 func recommendationArtistValues(mf model.MediaFile) []string {

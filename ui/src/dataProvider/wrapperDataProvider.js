@@ -236,6 +236,10 @@ const wrapperDataProvider = {
     postRecommendation('discovery', options),
   getCustomRecommendations: (options) => postRecommendation('custom', options),
   getTextRecommendations: (options) => postRecommendation('text', options),
+  getRecommendationHealth: () =>
+    httpClient(`${REST_URL}/recommendations/health`).then(({ json }) => ({
+      data: json,
+    })),
   getRecommendationSettings: () =>
     httpClient(`${REST_URL}/recommendations/settings`).then(({ json }) => ({
       data: json,

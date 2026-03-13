@@ -10,6 +10,20 @@ type RecommendationClient interface {
 	Recommend(ctx context.Context, mode string, payload RecommendationRequest) (*RecommendationResponse, error)
 }
 
+// RecommendationHealth describes whether semantic recommendations are ready.
+type RecommendationHealth struct {
+	Ready      bool   `json:"ready"`
+	ReasonCode string `json:"reasonCode,omitempty"`
+	Message    string `json:"message,omitempty"`
+	Retryable  bool   `json:"retryable,omitempty"`
+	Dependency string `json:"dependency,omitempty"`
+}
+
+// RecommendationHealthProvider exposes client readiness for semantic recommendation flows.
+type RecommendationHealthProvider interface {
+	RecommendationHealth(ctx context.Context) RecommendationHealth
+}
+
 // RecommendationSeed represents a seed track for recommendations.
 type RecommendationSeed struct {
 	TrackID     string               `json:"track_id"`
@@ -79,6 +93,15 @@ type noopRecommendationClient struct{}
 
 func (noopRecommendationClient) Recommend(context.Context, string, RecommendationRequest) (*RecommendationResponse, error) {
 	return &RecommendationResponse{Warnings: []string{"recommendation service disabled"}}, nil
+}
+
+func (noopRecommendationClient) RecommendationHealth(context.Context) RecommendationHealth {
+	return RecommendationHealth{
+		Ready:      false,
+		ReasonCode: "recommendation_service_disabled",
+		Message:    "Semantic recommendations are disabled.",
+		Dependency: "engine",
+	}
 }
 
 // NewNoopRecommendationClient creates a no-op recommendation client.

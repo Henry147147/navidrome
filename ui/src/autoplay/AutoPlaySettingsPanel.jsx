@@ -139,7 +139,11 @@ const AutoPlaySettingsPanel = ({
               onChange={handleModeChange}
             >
               {modeOptions.map((option) => (
-                <MenuItem value={option.value} key={option.value}>
+                <MenuItem
+                  value={option.value}
+                  key={option.value}
+                  disabled={option.disabled}
+                >
                   {option.label}
                 </MenuItem>
               ))}

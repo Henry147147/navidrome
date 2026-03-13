@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/conf/configtest"
@@ -76,6 +77,14 @@ func newTextRecommendationHarness(t *testing.T, rec *captureRecommendationClient
 	conf.Server.Recommendations.Milvus.Dimensions.MuQMulan = 16
 
 	embeddingServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
+			writeJSON(w, http.StatusOK, map[string]any{"data": []map[string]any{{"id": "muq_mulan"}}})
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/batch/progress" {
+			writeJSON(w, http.StatusOK, map[string]any{"status": "idle"})
+			return
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/embeddings" {
 			http.NotFound(w, r)
 			return
@@ -102,6 +111,7 @@ func newTextRecommendationHarness(t *testing.T, rec *captureRecommendationClient
 	}))
 	t.Cleanup(embeddingServer.Close)
 	conf.Server.Recommendations.TextBaseURL = embeddingServer.URL
+	conf.Server.Recommendations.BatchBaseURL = embeddingServer.URL
 
 	user := model.User{
 		ID:          "user-1",
@@ -172,6 +182,19 @@ func putMediaFiles(t *testing.T, ds model.DataStore, ids ...string) {
 	}
 }
 
+func putMediaFile(t *testing.T, ds model.DataStore, mf model.MediaFile) {
+	t.Helper()
+	if mf.LibraryID == 0 {
+		mf.LibraryID = 1
+	}
+	if mf.Duration == 0 {
+		mf.Duration = 180
+	}
+	if err := ds.MediaFile(context.Background()).Put(&mf); err != nil {
+		t.Fatalf("failed to insert media file %s: %v", mf.ID, err)
+	}
+}
+
 func putMediaFileWithDuration(t *testing.T, ds model.DataStore, id string, duration float32) {
 	t.Helper()
 	mf := model.MediaFile{
@@ -235,6 +258,31 @@ func TestTextRecommendationsReturnsServiceUnavailableWhenDisabled(t *testing.T) 
 
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected %d, got %d", http.StatusServiceUnavailable, w.Code)
+	}
+}
+
+func TestRecommendationHealthEndpointReportsAvailableModes(t *testing.T) {
+	h := newTextRecommendationHarness(t, &captureRecommendationClient{})
+
+	req := authenticatedRequest(
+		t,
+		h.user,
+		http.MethodGet,
+		"/recommendations/health",
+		bytes.NewReader(nil),
+	)
+	w := httptest.NewRecorder()
+
+	h.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `"status":"ready"`) {
+		t.Fatalf("expected ready health payload, got %q", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"availableModes":["recent","favorites","all","discovery","custom","text"]`) {
+		t.Fatalf("expected available modes in health payload, got %q", w.Body.String())
 	}
 }
 
@@ -541,7 +589,52 @@ func TestTextRecommendationsHybridPathBuildsSeedsAndExclusions(t *testing.T) {
 	}
 }
 
-func TestTextRecommendationsReturnsInternalErrorWhenRecommenderFails(t *testing.T) {
+func TestTextRecommendationsInfersPositiveSeedsFromPromptArtists(t *testing.T) {
+	rec := &captureRecommendationClient{
+		response: &subsonic.RecommendationResponse{
+			Tracks: []subsonic.RecommendationItem{
+				{TrackID: "result-1", Score: 0.9, Models: []string{engine.ModelMuQMulan, engine.ModelMuQAudio}},
+			},
+		},
+	}
+	h := newTextRecommendationHarness(t, rec)
+
+	now := time.Now()
+	putMediaFile(t, h.ds, model.MediaFile{
+		ID:          "lorde-seed",
+		Title:       "400 Lux",
+		Artist:      "Lorde",
+		AlbumArtist: "Lorde",
+		Album:       "Pure Heroine",
+		LibraryID:   1,
+		Duration:    220,
+		Annotations: model.Annotations{
+			PlayCount: 2,
+			PlayDate:  &now,
+			Starred:   true,
+			StarredAt: &now,
+			Rating:    5,
+			RatedAt:   &now,
+		},
+	})
+	putMediaFiles(t, h.ds, "result-1")
+
+	req := authenticatedJSONRequest(t, h.user, http.MethodPost, "/recommendations/text", map[string]any{
+		"text": "moody contemporary pop with lorde energy",
+	})
+	w := httptest.NewRecorder()
+
+	h.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d: %s", http.StatusOK, w.Code, w.Body.String())
+	}
+	assertSeedPresent(t, rec.lastReq.Seeds, "_text_query_")
+	assertSeedPresent(t, rec.lastReq.Seeds, "lorde-seed")
+	assertStringSetContainsAll(t, rec.lastReq.Models, []string{engine.ModelMuQMulan, engine.ModelMuQAudio})
+}
+
+func TestTextRecommendationsReturnsStructuredErrorWhenRecommenderFails(t *testing.T) {
 	rec := &captureRecommendationClient{err: errors.New("backend boom")}
 	h := newTextRecommendationHarness(t, rec)
 
@@ -552,11 +645,11 @@ func TestTextRecommendationsReturnsInternalErrorWhenRecommenderFails(t *testing.
 
 	h.router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected %d, got %d", http.StatusInternalServerError, w.Code)
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected %d, got %d", http.StatusBadGateway, w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "recommendation failed") {
-		t.Fatalf("expected recommendation error message, got %q", w.Body.String())
+	if !strings.Contains(w.Body.String(), `"code":"recommendation_backend_error"`) {
+		t.Fatalf("expected structured recommendation error, got %q", w.Body.String())
 	}
 	if rec.callCount != 1 {
 		t.Fatalf("expected recommender call count 1, got %d", rec.callCount)

@@ -19,6 +19,12 @@ import PlaylistAddIcon from '@material-ui/icons/PlaylistAdd'
 import DeleteIcon from '@material-ui/icons/Delete'
 import AddIcon from '@material-ui/icons/Add'
 import MusicNoteIcon from '@material-ui/icons/MusicNote'
+import {
+  formatRecommendationError,
+  healthMessageForMode,
+  isRecommendationModeAvailable,
+  sanitizeRecommendationWarning,
+} from '../recommendationHealth'
 
 const useStyles = makeStyles((theme) => ({
   container: {
@@ -84,7 +90,7 @@ const useStyles = makeStyles((theme) => ({
   },
 }))
 
-const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
+const TextPlaylistGenerator = ({ onPlaylistGenerated, health, healthLoading }) => {
   const classes = useStyles()
   const translate = useTranslate()
   const dataProvider = useDataProvider()
@@ -112,7 +118,16 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
     setNegativePrompts(updated)
   }
 
+  const textModeAvailable =
+    !health || isRecommendationModeAvailable(health, 'text')
+
   const handleGenerate = async () => {
+    if (!textModeAvailable) {
+      const message = healthMessageForMode(health, 'text', translate)
+      setError(message)
+      notify(message, { type: 'warning' })
+      return
+    }
     if (!textQuery.trim()) {
       notify('Please enter a text description', { type: 'warning' })
       return
@@ -151,12 +166,13 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
         throw new Error('No tracks returned')
       }
     } catch (err) {
-      const message =
-        err?.body?.message ||
-        err?.message ||
+      const message = formatRecommendationError(
+        err,
+        translate,
         translate('pages.explore.textGenerator.error', {
           _: 'Failed to generate playlist from text query',
-        })
+        }),
+      )
       setError(message)
       notify(message, { type: 'error' })
     } finally {
@@ -189,6 +205,12 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
               _: 'Describe the music you want and muq_mulan will find matching tracks in your library.',
             })}
           </Typography>
+
+          {!healthLoading && !textModeAvailable && (
+            <Typography variant="body2" className={classes.warning}>
+              {healthMessageForMode(health, 'text', translate)}
+            </Typography>
+          )}
 
           <Box className={classes.formRow}>
             <TextField
@@ -345,7 +367,11 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
               variant="contained"
               color="primary"
               onClick={handleGenerate}
-              disabled={loading || !textQuery.trim()}
+              disabled={
+                loading ||
+                !textQuery.trim() ||
+                !textModeAvailable
+              }
               startIcon={
                 loading ? <CircularProgress size={20} /> : <PlaylistAddIcon />
               }
@@ -386,7 +412,11 @@ const TextPlaylistGenerator = ({ onPlaylistGenerated }) => {
 
               {result.warnings && result.warnings.length > 0 && (
                 <Typography variant="caption" className={classes.warning}>
-                  {result.warnings.join(', ')}
+                  {result.warnings
+                    .map((warning) =>
+                      sanitizeRecommendationWarning(warning, translate),
+                    )
+                    .join(', ')}
                 </Typography>
               )}
 

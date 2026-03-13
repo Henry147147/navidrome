@@ -41,6 +41,15 @@ func (c *Client) ensureCollection(ctx context.Context, name string, dim int) err
 			return schemaErr
 		}
 		if dimensionMismatch {
+			if c.shouldAdoptExistingDimension(name, dim, existingDim) {
+				log.Info(ctx, "Adopting existing collection dimension",
+					"collection", name,
+					"configured", dim,
+					"actual", existingDim,
+				)
+				c.setCollectionDimension(name, existingDim)
+				return nil
+			}
 			log.Warn(ctx, "Collection schema mismatch",
 				"collection", name,
 				"expected", dim,
@@ -69,6 +78,33 @@ func (c *Client) ensureCollection(ctx context.Context, name string, dim int) err
 	}
 
 	return nil
+}
+
+func (c *Client) shouldAdoptExistingDimension(collectionName string, configuredDim int, existingDim int) bool {
+	if existingDim <= 0 {
+		return false
+	}
+	return configuredDim == defaultCollectionDimension(collectionName)
+}
+
+func (c *Client) setCollectionDimension(collectionName string, dim int) {
+	switch collectionName {
+	case CollectionMuQAudio:
+		c.dimensions.MuQAudio = dim
+	case CollectionMuQMulan:
+		c.dimensions.MuQMulan = dim
+	}
+}
+
+func defaultCollectionDimension(collectionName string) int {
+	switch collectionName {
+	case CollectionMuQAudio:
+		return DimMuQAudio
+	case CollectionMuQMulan:
+		return DimMuQMulan
+	default:
+		return 0
+	}
 }
 
 func requiredCollectionTextField(collectionName string) string {
