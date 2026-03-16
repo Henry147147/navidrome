@@ -1,0 +1,2 @@
+[     790ms] [ERROR] undefined @ http://127.0.0.1:4500/app/assets/index-Cf5zzp9V.js:32
+[   23601ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:4500/auth/login:0

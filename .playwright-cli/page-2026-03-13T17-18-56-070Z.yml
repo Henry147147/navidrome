@@ -1,0 +1,425 @@
+- generic [ref=e27]:
+  - button "Skip to content" [ref=e28] [cursor=pointer]:
+    - generic [ref=e30]: Skip to content
+  - generic [ref=e31]:
+    - banner [ref=e32]:
+      - generic [ref=e33]:
+        - button "Close menu" [ref=e34] [cursor=pointer]:
+          - img [ref=e36]
+        - heading "Hilberto Music - Albums - Recently Added" [level=6] [ref=e38]
+        - button "Refresh" [ref=e39] [cursor=pointer]:
+          - img [ref=e41]
+        - button "Settings" [ref=e44] [cursor=pointer]:
+          - img [ref=e46]
+    - main [ref=e48]:
+      - generic [ref=e52]:
+        - menuitem "Auto Play Auto Play" [ref=e53] [cursor=pointer]:
+          - img "Auto Play" [ref=e55]
+          - text: Auto Play
+        - menuitem "Explore Explore" [ref=e57] [cursor=pointer]:
+          - img "Explore" [ref=e59]
+          - text: Explore
+        - menuitem "Albums" [ref=e62] [cursor=pointer]:
+          - img [ref=e64]
+          - generic [ref=e66]: Albums
+        - generic [ref=e70]:
+          - menuitem "All" [ref=e71] [cursor=pointer]:
+            - img [ref=e73]
+            - text: All
+          - menuitem "Random Random" [ref=e75] [cursor=pointer]:
+            - img "Random" [ref=e77]
+            - text: Random
+          - menuitem "Favourites" [ref=e79] [cursor=pointer]:
+            - img [ref=e81]
+            - text: Favourites
+          - menuitem "Top Rated" [ref=e83] [cursor=pointer]:
+            - img [ref=e85]
+            - text: Top Rated
+          - menuitem "Recently Added" [ref=e87] [cursor=pointer]:
+            - img [ref=e89]
+            - text: Recently Added
+          - menuitem "Recently Played" [ref=e91] [cursor=pointer]:
+            - img [ref=e93]
+            - text: Recently Played
+          - menuitem "Most Played Most Played" [ref=e95] [cursor=pointer]:
+            - img "Most Played" [ref=e97]
+            - text: Most Played
+        - menuitem "Artists" [ref=e99] [cursor=pointer]:
+          - img [ref=e101]
+          - text: Artists
+        - menuitem "Songs" [ref=e103] [cursor=pointer]:
+          - img [ref=e105]
+          - text: Songs
+        - menuitem "Radios" [ref=e107] [cursor=pointer]:
+          - img [ref=e109]
+          - text: Radios
+        - separator [ref=e112]
+        - menuitem "Playlists" [ref=e114] [cursor=pointer]:
+          - img [ref=e116]
+          - generic [ref=e118]: Playlists
+          - button [ref=e119]:
+            - img [ref=e121]
+      - generic [ref=e125]:
+        - generic [ref=e126]:
+          - generic [ref=e128]:
+            - generic [ref=e129]:
+              - textbox "Search" [ref=e130]
+              - img [ref=e132]
+              - group
+            - paragraph
+          - generic [ref=e135]:
+            - button "Add filter" [ref=e137] [cursor=pointer]:
+              - generic [ref=e138]:
+                - img [ref=e139]
+                - generic [ref=e141]: Add filter
+            - button "more" [ref=e143] [cursor=pointer]:
+              - img [ref=e145]
+        - generic [ref=e148]:
+          - generic [ref=e150]:
+            - listitem [ref=e151]:
+              - generic [ref=e153]:
+                - link "Round & Round play more" [ref=e154] [cursor=pointer]:
+                  - /url: "#/album/21DibH9KelrPvEIqgDCUr1/show"
+                  - img "Round & Round" [ref=e157]
+                  - generic [ref=e158]:
+                    - button "play" [ref=e161]:
+                      - img [ref=e163]
+                    - generic [ref=e166]:
+                      - button [ref=e167]:
+                        - img [ref=e169]
+                      - button "more" [ref=e171]:
+                        - img [ref=e173]
+                - link "Round & Round" [ref=e175] [cursor=pointer]:
+                  - /url: "#/album/21DibH9KelrPvEIqgDCUr1/show"
+                  - paragraph [ref=e177]: Round & Round
+                - link "Yves V" [ref=e179] [cursor=pointer]:
+                  - /url: "#/artist/4CMHuAxNBNzrqvCb4DhN7t/show"
+            - listitem [ref=e180]:
+              - generic [ref=e182]:
+                - link "THE_EVIL_THAT_MEN_DO play more" [ref=e183] [cursor=pointer]:
+                  - /url: "#/album/3dm347DYb2v1or9dFRdrVo/show"
+                  - img "THE_EVIL_THAT_MEN_DO" [ref=e186]
+                  - generic [ref=e187]:
+                    - button "play" [ref=e190]:
+                      - img [ref=e192]
+                    - generic [ref=e195]:
+                      - button [ref=e196]:
+                        - img [ref=e198]
+                      - button "more" [ref=e200]:
+                        - img [ref=e202]
+                - link "THE_EVIL_THAT_MEN_DO" [ref=e204] [cursor=pointer]:
+                  - /url: "#/album/3dm347DYb2v1or9dFRdrVo/show"
+                  - paragraph [ref=e206]: THE_EVIL_THAT_MEN_DO
+                - link "$uicideboy$" [ref=e208] [cursor=pointer]:
+                  - /url: "#/artist/5uciksYRLuOaA9qD3plrp5/show"
+            - listitem [ref=e209]:
+              - generic [ref=e211]:
+                - link "Songs For The Car play more" [ref=e212] [cursor=pointer]:
+                  - /url: "#/album/4mxUr0p9puuan1XNjnWg17/show"
+                  - img "Songs For The Car" [ref=e215]
+                  - generic [ref=e216]:
+                    - button "play" [ref=e219]:
+                      - img [ref=e221]
+                    - generic [ref=e224]:
+                      - button [ref=e225]:
+                        - img [ref=e227]
+                      - button "more" [ref=e229]:
+                        - img [ref=e231]
+                - link "Songs For The Car" [ref=e233] [cursor=pointer]:
+                  - /url: "#/album/4mxUr0p9puuan1XNjnWg17/show"
+                  - paragraph [ref=e235]: Songs For The Car
+                - link "Plan B" [ref=e237] [cursor=pointer]:
+                  - /url: "#/artist/5C0MQdxoqVNNUhE8MEoirF/show"
+            - listitem [ref=e238]:
+              - generic [ref=e240]:
+                - link "Backroad Song - Single play more" [ref=e241] [cursor=pointer]:
+                  - /url: "#/album/7AiV1rNdzxC0y7deOFSJJk/show"
+                  - img "Backroad Song - Single" [ref=e244]
+                  - generic [ref=e245]:
+                    - button "play" [ref=e248]:
+                      - img [ref=e250]
+                    - generic [ref=e253]:
+                      - button [ref=e254]:
+                        - img [ref=e256]
+                      - button "more" [ref=e258]:
+                        - img [ref=e260]
+                - link "Backroad Song - Single" [ref=e262] [cursor=pointer]:
+                  - /url: "#/album/7AiV1rNdzxC0y7deOFSJJk/show"
+                  - paragraph [ref=e264]: Backroad Song - Single
+                - link "Granger Smith" [ref=e266] [cursor=pointer]:
+                  - /url: "#/artist/58QdIC2Bj8e1K2MuhX3n5E/show"
+            - listitem [ref=e267]:
+              - generic [ref=e269]:
+                - 'link "Country Legends: The Gals play more" [ref=e270] [cursor=pointer]':
+                  - /url: "#/album/4u7Kdyt3WdRPYd2F5Z127t/show"
+                  - 'img "Country Legends: The Gals" [ref=e273]'
+                  - generic [ref=e274]:
+                    - button "play" [ref=e277]:
+                      - img [ref=e279]
+                    - generic [ref=e282]:
+                      - button [ref=e283]:
+                        - img [ref=e285]
+                      - button "more" [ref=e287]:
+                        - img [ref=e289]
+                - 'link "Country Legends: The Gals" [ref=e291] [cursor=pointer]':
+                  - /url: "#/album/4u7Kdyt3WdRPYd2F5Z127t/show"
+                  - paragraph [ref=e293]: "Country Legends: The Gals"
+                - link "Jan Howard" [ref=e295] [cursor=pointer]:
+                  - /url: "#/artist/32VKrFeabJohqVB9xHb7a4/show"
+            - listitem [ref=e296]:
+              - generic [ref=e298]:
+                - link "5 testimoni play more" [ref=e299] [cursor=pointer]:
+                  - /url: "#/album/2e8UWvXfg91zSpSrr03y7q/show"
+                  - img "5 testimoni" [ref=e302]
+                  - generic [ref=e303]:
+                    - button "play" [ref=e306]:
+                      - img [ref=e308]
+                    - generic [ref=e311]:
+                      - button [ref=e312]:
+                        - img [ref=e314]
+                      - button "more" [ref=e316]:
+                        - img [ref=e318]
+                - link "5 testimoni" [ref=e320] [cursor=pointer]:
+                  - /url: "#/album/2e8UWvXfg91zSpSrr03y7q/show"
+                  - paragraph [ref=e322]: 5 testimoni
+                - link "167 Gang" [ref=e324] [cursor=pointer]:
+                  - /url: "#/artist/2lPqSBnNND1dtmTBssJR9Y/show"
+            - listitem [ref=e325]:
+              - generic [ref=e327]:
+                - link "No Dealings play more" [ref=e328] [cursor=pointer]:
+                  - /url: "#/album/0CJ28XLkHs6OEm7hoLFm8y/show"
+                  - img "No Dealings" [ref=e331]
+                  - generic [ref=e332]:
+                    - button "play" [ref=e335]:
+                      - img [ref=e337]
+                    - generic [ref=e340]:
+                      - button [ref=e341]:
+                        - img [ref=e343]
+                      - button "more" [ref=e345]:
+                        - img [ref=e347]
+                - link "No Dealings" [ref=e349] [cursor=pointer]:
+                  - /url: "#/album/0CJ28XLkHs6OEm7hoLFm8y/show"
+                  - paragraph [ref=e351]: No Dealings
+                - link "Lil Keed" [ref=e353] [cursor=pointer]:
+                  - /url: "#/artist/34xbNdr6Myuiy7yEmHx0DZ/show"
+            - listitem [ref=e354]:
+              - generic [ref=e356]:
+                - link "The Show Must Go On play more" [ref=e357] [cursor=pointer]:
+                  - /url: "#/album/0kaxkEdWSxZ45fMgyGG1pF/show"
+                  - img "The Show Must Go On" [ref=e360]
+                  - generic [ref=e361]:
+                    - button "play" [ref=e364]:
+                      - img [ref=e366]
+                    - generic [ref=e369]:
+                      - button [ref=e370]:
+                        - img [ref=e372]
+                      - button "more" [ref=e374]:
+                        - img [ref=e376]
+                - link "The Show Must Go On" [ref=e378] [cursor=pointer]:
+                  - /url: "#/album/0kaxkEdWSxZ45fMgyGG1pF/show"
+                  - paragraph [ref=e380]: The Show Must Go On
+                - link "Queen" [ref=e382] [cursor=pointer]:
+                  - /url: "#/artist/3Ip9OhiD4x1NDAKaSF7NQW/show"
+            - listitem [ref=e383]:
+              - generic [ref=e385]:
+                - link "When You Knock On The Door play more" [ref=e386] [cursor=pointer]:
+                  - /url: "#/album/2DLmt7qs2bXXNRL4L9onXt/show"
+                  - img "When You Knock On The Door" [ref=e389]
+                  - generic [ref=e390]:
+                    - button "play" [ref=e393]:
+                      - img [ref=e395]
+                    - generic [ref=e398]:
+                      - button [ref=e399]:
+                        - img [ref=e401]
+                      - button "more" [ref=e403]:
+                        - img [ref=e405]
+                - link "When You Knock On The Door" [ref=e407] [cursor=pointer]:
+                  - /url: "#/album/2DLmt7qs2bXXNRL4L9onXt/show"
+                  - paragraph [ref=e409]: When You Knock On The Door
+                - link "hooligan." [ref=e411] [cursor=pointer]:
+                  - /url: "#/artist/4FOnrZeqUCqUQ8oKXRWRoD/show"
+            - listitem [ref=e412]:
+              - generic [ref=e414]:
+                - link "Pieces play more" [ref=e415] [cursor=pointer]:
+                  - /url: "#/album/5JHgJUn0S1Ueh7PQXDV0jZ/show"
+                  - img "Pieces" [ref=e418]
+                  - generic [ref=e419]:
+                    - button "play" [ref=e422]:
+                      - img [ref=e424]
+                    - generic [ref=e427]:
+                      - button [ref=e428]:
+                        - img [ref=e430]
+                      - button "more" [ref=e432]:
+                        - img [ref=e434]
+                - link "Pieces" [ref=e436] [cursor=pointer]:
+                  - /url: "#/album/5JHgJUn0S1Ueh7PQXDV0jZ/show"
+                  - paragraph [ref=e438]: Pieces
+                - link "Navvy" [ref=e440] [cursor=pointer]:
+                  - /url: "#/artist/6CmIZYMc7mPt1RVZaMzNnG/show"
+            - listitem [ref=e441]:
+              - generic [ref=e443]:
+                - link "Platinum Heart (Deluxe) play more" [ref=e444] [cursor=pointer]:
+                  - /url: "#/album/0mY9BubGQ2NFujFk3qmTL0/show"
+                  - img "Platinum Heart (Deluxe)" [ref=e447]
+                  - generic [ref=e448]:
+                    - button "play" [ref=e451]:
+                      - img [ref=e453]
+                    - generic [ref=e456]:
+                      - button [ref=e457]:
+                        - img [ref=e459]
+                      - button "more" [ref=e461]:
+                        - img [ref=e463]
+                - link "Platinum Heart (Deluxe)" [ref=e465] [cursor=pointer]:
+                  - /url: "#/album/0mY9BubGQ2NFujFk3qmTL0/show"
+                  - paragraph [ref=e467]: Platinum Heart (Deluxe)
+                - link "Toosii" [ref=e469] [cursor=pointer]:
+                  - /url: "#/artist/3u7QH1SzjLsOlL8mJuxfeR/show"
+            - listitem [ref=e470]:
+              - generic [ref=e472]:
+                - link "100 Greatest Classical play more" [ref=e473] [cursor=pointer]:
+                  - /url: "#/album/3DeeVYZk72fJAHxSche1vE/show"
+                  - img "100 Greatest Classical" [ref=e476]
+                  - generic [ref=e477]:
+                    - button "play" [ref=e480]:
+                      - img [ref=e482]
+                    - generic [ref=e485]:
+                      - button [ref=e486]:
+                        - img [ref=e488]
+                      - button "more" [ref=e490]:
+                        - img [ref=e492]
+                - link "100 Greatest Classical" [ref=e494] [cursor=pointer]:
+                  - /url: "#/album/3DeeVYZk72fJAHxSche1vE/show"
+                  - paragraph [ref=e496]: 100 Greatest Classical
+                - link "London Symphony Orchestra, Aram Khachaturian" [ref=e498] [cursor=pointer]:
+                  - /url: "#/artist/6ptnPPOZzQeo3rxtkArJ37/show"
+            - listitem [ref=e499]:
+              - generic [ref=e501]:
+                - link "Cross Me (feat. Chance the Rapper & PnB Rock) play more" [ref=e502] [cursor=pointer]:
+                  - /url: "#/album/6gHj5lIHyX0GtlGdpFBxEg/show"
+                  - img "Cross Me (feat. Chance the Rapper & PnB Rock)" [ref=e505]
+                  - generic [ref=e506]:
+                    - button "play" [ref=e509]:
+                      - img [ref=e511]
+                    - generic [ref=e514]:
+                      - button [ref=e515]:
+                        - img [ref=e517]
+                      - button "more" [ref=e519]:
+                        - img [ref=e521]
+                - link "Cross Me (feat. Chance the Rapper & PnB Rock)" [ref=e523] [cursor=pointer]:
+                  - /url: "#/album/6gHj5lIHyX0GtlGdpFBxEg/show"
+                  - paragraph [ref=e525]: Cross Me (feat. Chance the Rapper & PnB Rock)
+                - link "Ed Sheeran" [ref=e527] [cursor=pointer]:
+                  - /url: "#/artist/7dB07x8Q2P9jPvGeDHxIFa/show"
+            - listitem [ref=e528]:
+              - generic [ref=e530]:
+                - link "Indie 69 Best of 2010 play more" [ref=e531] [cursor=pointer]:
+                  - /url: "#/album/1dm5rW4mjfmZceWhAn5uL6/show"
+                  - img "Indie 69 Best of 2010" [ref=e534]
+                  - generic [ref=e535]:
+                    - button "play" [ref=e538]:
+                      - img [ref=e540]
+                    - generic [ref=e543]:
+                      - button [ref=e544]:
+                        - img [ref=e546]
+                      - button "more" [ref=e548]:
+                        - img [ref=e550]
+                - link "Indie 69 Best of 2010" [ref=e552] [cursor=pointer]:
+                  - /url: "#/album/1dm5rW4mjfmZceWhAn5uL6/show"
+                  - paragraph [ref=e554]: Indie 69 Best of 2010
+                - link "The Hood Internet" [ref=e556] [cursor=pointer]:
+                  - /url: "#/artist/723FRNFU3SYYSGpNx5hDvw/show"
+            - listitem [ref=e557]:
+              - generic [ref=e559]:
+                - link "Six Feet Under play more" [ref=e560] [cursor=pointer]:
+                  - /url: "#/album/74uJEDPgIVbKlz7r64TiYy/show"
+                  - img "Six Feet Under" [ref=e563]
+                  - generic [ref=e564]:
+                    - button "play" [ref=e567]:
+                      - img [ref=e569]
+                    - generic [ref=e572]:
+                      - button [ref=e573]:
+                        - img [ref=e575]
+                      - button "more" [ref=e577]:
+                        - img [ref=e579]
+                - link "Six Feet Under" [ref=e581] [cursor=pointer]:
+                  - /url: "#/album/74uJEDPgIVbKlz7r64TiYy/show"
+                  - paragraph [ref=e583]: Six Feet Under
+                - link "Billie Eilish" [ref=e585] [cursor=pointer]:
+                  - /url: "#/artist/2cUlR50RVMP4dAUFB7ghi6/show"
+            - listitem [ref=e586]:
+              - generic [ref=e588]:
+                - link "DOWN (VIP Remix) play more" [ref=e589] [cursor=pointer]:
+                  - /url: "#/album/0VA0v2KKmGI8CfmwyYV2ch/show"
+                  - img "DOWN (VIP Remix)" [ref=e592]
+                  - generic [ref=e593]:
+                    - button "play" [ref=e596]:
+                      - img [ref=e598]
+                    - generic [ref=e601]:
+                      - button [ref=e602]:
+                        - img [ref=e604]
+                      - button "more" [ref=e606]:
+                        - img [ref=e608]
+                - link "DOWN (VIP Remix)" [ref=e610] [cursor=pointer]:
+                  - /url: "#/album/0VA0v2KKmGI8CfmwyYV2ch/show"
+                  - paragraph [ref=e612]: DOWN (VIP Remix)
+                - link "PMEDIA" [ref=e614] [cursor=pointer]:
+                  - /url: "#/artist/1pGXJiAz7i1IZRdJgYAdMd/show"
+            - listitem [ref=e615]:
+              - generic [ref=e617]:
+                - link "Love Line (HUGEL Remix) play more" [ref=e618] [cursor=pointer]:
+                  - /url: "#/album/5bmTptFAhTgDQ7WMs5oc6t/show"
+                  - img "Love Line (HUGEL Remix)" [ref=e621]
+                  - generic [ref=e622]:
+                    - button "play" [ref=e625]:
+                      - img [ref=e627]
+                    - generic [ref=e630]:
+                      - button [ref=e631]:
+                        - img [ref=e633]
+                      - button "more" [ref=e635]:
+                        - img [ref=e637]
+                - link "Love Line (HUGEL Remix)" [ref=e639] [cursor=pointer]:
+                  - /url: "#/album/5bmTptFAhTgDQ7WMs5oc6t/show"
+                  - paragraph [ref=e641]: Love Line (HUGEL Remix)
+                - generic [ref=e642]:
+                  - link "Shift K3Y" [ref=e643] [cursor=pointer]:
+                    - /url: "#/artist/1oBzPOx377clBqns4XZVKp/show"
+                  - text: /
+                  - link "Tinashe" [ref=e644] [cursor=pointer]:
+                    - /url: "#/artist/40RQVlEwieONmxVLFPUwi1/show"
+            - listitem [ref=e645]:
+              - generic [ref=e647]:
+                - link "She Knows play more" [ref=e648] [cursor=pointer]:
+                  - /url: "#/album/0YebIH9vX6TbZYQ7sO3Stg/show"
+                  - img "She Knows" [ref=e651]
+                  - generic [ref=e652]:
+                    - button "play" [ref=e655]:
+                      - img [ref=e657]
+                    - generic [ref=e660]:
+                      - button [ref=e661]:
+                        - img [ref=e663]
+                      - button "more" [ref=e665]:
+                        - img [ref=e667]
+                - link "She Knows" [ref=e669] [cursor=pointer]:
+                  - /url: "#/album/0YebIH9vX6TbZYQ7sO3Stg/show"
+                  - paragraph [ref=e671]: She Knows
+                - link "PMEDIA" [ref=e673] [cursor=pointer]:
+                  - /url: "#/artist/1pGXJiAz7i1IZRdJgYAdMd/show"
+          - generic [ref=e675]:
+            - paragraph [ref=e676]: "Items per page:"
+            - generic [ref=e677]:
+              - 'button "Items per page: 18" [ref=e678] [cursor=pointer]': "18"
+              - textbox: "18"
+              - img
+            - paragraph [ref=e679]: 1-18 of 14578
+            - generic [ref=e680]:
+              - button "1" [ref=e681] [cursor=pointer]:
+                - generic [ref=e682]: "1"
+              - button "2" [ref=e683] [cursor=pointer]:
+                - generic [ref=e684]: "2"
+              - text: …
+              - button "810" [ref=e685] [cursor=pointer]:
+                - generic [ref=e686]: "810"
+              - button "Next" [ref=e687] [cursor=pointer]:
+                - generic [ref=e688]:
+                  - text: Next
+                  - img [ref=e689]

@@ -1,0 +1,2 @@
+[GET] http://127.0.0.1:4500/api/autoplay/settings => [200] OK
+[GET] http://127.0.0.1:4500/api/playlist?_end=200&_order=ASC&_sort=name&_start=0 => [200] OK
