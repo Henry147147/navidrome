@@ -27,7 +27,17 @@ A heart is 5 stars.
 func (api *Router) MakePlaylistFromFavoriteAndStaredSongs(r *http.Request) (*responses.Subsonic, error) {
 	ctx := r.Context()
 	user := getUser(ctx)
-	payload, err := json.Marshal(user)
+	payload, err := json.Marshal(struct {
+		ID       string `json:"id"`
+		UserName string `json:"userName"`
+		Name     string `json:"name"`
+		IsAdmin  bool   `json:"isAdmin"`
+	}{
+		ID:       user.ID,
+		UserName: user.UserName,
+		Name:     user.Name,
+		IsAdmin:  user.IsAdmin,
+	})
 	if err != nil {
 		log.Error(ctx, "Failed to marshal user for POST", "error", err)
 		return newResponse(), err

@@ -177,9 +177,9 @@ func restartPythonServices(ctx context.Context) {
 	}
 
 	go func() {
-		cmdCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		cmdCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(cmdCtx, scriptPath) // #nosec G204 -- path is controlled by config/env
+		cmd := exec.CommandContext(cmdCtx, scriptPath) // #nosec G204,G702 -- scriptPath comes from trusted server config/env
 		cmd.Dir = servicesDir
 		output, err := cmd.CombinedOutput()
 		if err != nil {
