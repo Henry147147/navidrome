@@ -29,7 +29,7 @@ var _ = Describe("Config API", func() {
 		conf.Server.DevUIShowConfig = true // Enable config endpoint for tests
 		ds = &tests.MockDataStore{}
 		auth.Init(ds)
-		nativeRouter := New(ds, nil, nil, nil, tests.NewMockLibraryService(), tests.NewMockUserService(), core.NewMaintenance(ds), nil, nil)
+		nativeRouter := New(ds, nil, nil, nil, tests.NewMockLibraryService(), tests.NewMockUserService(), core.NewMaintenance(ds), nil, nil, nil)
 		router = server.JWTVerifier(nativeRouter)
 
 		// Create test users
@@ -79,7 +79,6 @@ var _ = Describe("Config API", func() {
 
 			It("redacts sensitive fields", func() {
 				conf.Server.LastFM.ApiKey = "secretapikey123"
-				conf.Server.Spotify.Secret = "spotifysecret456"
 				conf.Server.PasswordEncryptionKey = "encryptionkey789"
 				conf.Server.DevAutoCreateAdminPassword = "adminpassword123"
 				conf.Server.Prometheus.Password = "prometheuspass"
@@ -97,11 +96,6 @@ var _ = Describe("Config API", func() {
 				lastfm, ok := resp.Config["LastFM"].(map[string]any)
 				Expect(ok).To(BeTrue())
 				Expect(lastfm["ApiKey"]).To(Equal("s*************3"))
-
-				// Check Spotify.Secret (partially masked)
-				spotify, ok := resp.Config["Spotify"].(map[string]any)
-				Expect(ok).To(BeTrue())
-				Expect(spotify["Secret"]).To(Equal("s**************6"))
 
 				// Check PasswordEncryptionKey (fully masked)
 				Expect(resp.Config["PasswordEncryptionKey"]).To(Equal("****"))
@@ -173,7 +167,6 @@ var _ = Describe("Config API", func() {
 var _ = Describe("redactValue function", func() {
 	It("partially masks long sensitive values", func() {
 		Expect(redactValue("LastFM.ApiKey", "ba46f0e84a")).To(Equal("b********a"))
-		Expect(redactValue("Spotify.Secret", "verylongsecret123")).To(Equal("v***************3"))
 	})
 
 	It("fully masks long sensitive values that should be completely hidden", func() {
@@ -184,7 +177,6 @@ var _ = Describe("redactValue function", func() {
 
 	It("fully masks short sensitive values", func() {
 		Expect(redactValue("LastFM.Secret", "short")).To(Equal("****"))
-		Expect(redactValue("Spotify.ID", "abc")).To(Equal("****"))
 		Expect(redactValue("PasswordEncryptionKey", "12345")).To(Equal("****"))
 		Expect(redactValue("DevAutoCreateAdminPassword", "short")).To(Equal("****"))
 		Expect(redactValue("Prometheus.Password", "short")).To(Equal("****"))

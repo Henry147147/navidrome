@@ -133,6 +133,7 @@ func newTextRecommendationHarness(t *testing.T, rec *captureRecommendationClient
 		core.NewMaintenance(ds),
 		nil,
 		rec,
+		nil,
 	)
 
 	return textRecommendationHarness{
@@ -244,6 +245,7 @@ func TestTextRecommendationsReturnsServiceUnavailableWhenDisabled(t *testing.T) 
 		tests.NewMockLibraryService(),
 		tests.NewMockUserService(),
 		core.NewMaintenance(ds),
+		nil,
 		nil,
 		nil,
 	)
@@ -533,11 +535,13 @@ func TestTextRecommendationsHybridPathBuildsSeedsAndExclusions(t *testing.T) {
 	putMediaFiles(t, h.ds, "seed-1", "positive-1", "playlist-excluded", "result-1")
 
 	h.ds.MockedPlaylist = &tests.MockPlaylistRepo{
-		Entity: &model.Playlist{
-			ID:   "pls-1",
-			Name: "Blocklist",
+		Data: map[string]*model.Playlist{
+			"pls-1": {
+				ID:   "pls-1",
+				Name: "Blocklist",
+			},
 		},
-		TracksReturn: &staticPlaylistTrackRepo{
+		TracksRepo: &staticPlaylistTrackRepo{
 			tracks: model.PlaylistTracks{
 				{ID: "pt-1", PlaylistID: "pls-1", MediaFileID: "playlist-excluded"},
 			},

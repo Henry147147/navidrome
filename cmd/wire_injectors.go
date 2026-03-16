@@ -11,8 +11,10 @@ import (
 	"github.com/navidrome/navidrome/core"
 	"github.com/navidrome/navidrome/core/agents"
 	"github.com/navidrome/navidrome/core/artwork"
+	"github.com/navidrome/navidrome/core/lyrics"
 	"github.com/navidrome/navidrome/core/metrics"
 	"github.com/navidrome/navidrome/core/playback"
+	playlistsvc "github.com/navidrome/navidrome/core/playlists"
 	"github.com/navidrome/navidrome/core/scrobbler"
 	"github.com/navidrome/navidrome/db"
 	"github.com/navidrome/navidrome/model"
@@ -45,6 +47,7 @@ var allProviders = wire.NewSet(
 	plugins.GetManager,
 	wire.Bind(new(agents.PluginLoader), new(*plugins.Manager)),
 	wire.Bind(new(scrobbler.PluginLoader), new(*plugins.Manager)),
+	wire.Bind(new(lyrics.PluginLoader), new(*plugins.Manager)),
 	wire.Bind(new(nativeapi.PluginManager), new(*plugins.Manager)),
 	wire.Bind(new(core.PluginUnloader), new(*plugins.Manager)),
 	wire.Bind(new(plugins.PluginMetricsRecorder), new(metrics.Metrics)),
@@ -52,7 +55,7 @@ var allProviders = wire.NewSet(
 )
 
 // newScanner creates a scanner.
-func newScanner(ctx context.Context, ds model.DataStore, cw artwork.CacheWarmer, broker events.Broker, pls core.Playlists, m metrics.Metrics) model.Scanner {
+func newScanner(ctx context.Context, ds model.DataStore, cw artwork.CacheWarmer, broker events.Broker, pls playlistsvc.Playlists, m metrics.Metrics) model.Scanner {
 	return scanner.New(ctx, ds, cw, broker, pls, m)
 }
 

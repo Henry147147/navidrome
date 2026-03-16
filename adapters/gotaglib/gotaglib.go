@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/core/storage/local"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model/metadata"
@@ -43,7 +44,18 @@ func (e extractor) Parse(files ...string) (map[string]metadata.Info, error) {
 }
 
 func (e extractor) Version() string {
-	return "go-taglib (TagLib 2.1.1 WASM)"
+	bi, ok := debug.ReadBuildInfo()
+	if ok {
+		for _, dep := range bi.Deps {
+			if dep.Path == "go.senan.xyz/taglib" {
+				if dep.Replace != nil {
+					return dep.Replace.Version
+				}
+				return dep.Version
+			}
+		}
+	}
+	return "unknown"
 }
 
 func (e extractor) extractMetadata(filePath string) (*metadata.Info, error) {
@@ -65,6 +77,7 @@ func (e extractor) extractMetadata(filePath string) (*metadata.Info, error) {
 		Channels:   int(props.Channels),
 		SampleRate: int(props.SampleRate),
 		BitDepth:   int(props.BitsPerSample),
+		Codec:      props.Codec,
 	}
 
 	// Convert normalized tags to lowercase keys (go-taglib returns UPPERCASE keys)
@@ -278,5 +291,8 @@ var _ local.Extractor = (*extractor)(nil)
 func init() {
 	local.RegisterExtractor("taglib", func(fsys fs.FS, baseDir string) local.Extractor {
 		return &extractor{fsys}
+	})
+	conf.AddHook(func() {
+		log.Debug("go-taglib version", "version", extractor{}.Version())
 	})
 }

@@ -10,7 +10,14 @@ import { useTranslate } from 'react-admin'
 import { useCallback, useState, useEffect } from 'react'
 import Lightbox from 'react-image-lightbox'
 import 'react-image-lightbox/style.css'
-import { CollapsibleComment, DurationField, SizeField } from '../common'
+import {
+  CollapsibleComment,
+  DurationField,
+  ImageUploadOverlay,
+  SizeField,
+  isWritable,
+  OverflowTooltip,
+} from '../common'
 import subsonic from '../subsonic'
 
 const useStyles = makeStyles(
@@ -55,6 +62,7 @@ const useStyles = makeStyles(
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
+      position: 'relative',
     },
     cover: {
       objectFit: 'contain',
@@ -138,15 +146,24 @@ const PlaylistDetails = (props) => {
               cursor: imageError ? 'default' : 'pointer',
             }}
           />
+          {isWritable(record.ownerId) && (
+            <ImageUploadOverlay
+              entityType="playlist"
+              entityId={record.id}
+              hasUploadedImage={!!record.uploadedImage}
+            />
+          )}
         </div>
         <div className={classes.details}>
           <CardContent className={classes.content}>
-            <Typography
-              variant={isDesktop ? 'h5' : 'h6'}
-              className={classes.title}
-            >
-              {record.name || translate('ra.page.loading')}
-            </Typography>
+            <OverflowTooltip title={record.name || ''}>
+              <Typography
+                variant={isDesktop ? 'h5' : 'h6'}
+                className={classes.title}
+              >
+                {record.name || translate('ra.page.loading')}
+              </Typography>
+            </OverflowTooltip>
             <Typography component="p" className={classes.stats}>
               {record.songCount ? (
                 <span>

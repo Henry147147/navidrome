@@ -353,7 +353,8 @@
         "allUsers": "Permitir todos os usuários",
         "selectedUsers": "Usuários selecionados",
         "allLibraries": "Permitir todas as bibliotecas",
-        "selectedLibraries": "Bibliotecas selecionadas"
+        "selectedLibraries": "Bibliotecas selecionadas",
+        "allowWriteAccess": "Permitir acesso de escrita"
       },
       "sections": {
         "status": "Status",
@@ -396,6 +397,7 @@
         "allLibrariesHelp": "Quando habilitado, o plugin terá acesso a todas as bibliotecas, incluindo as criadas no futuro.",
         "noLibraries": "Nenhuma biblioteca selecionada",
         "librariesRequired": "Este plugin requer acesso a informações de bibliotecas. Selecione quais bibliotecas o plugin pode acessar, ou habilite 'Permitir todas as bibliotecas'.",
+        "allowWriteAccessHelp": "Quando habilitado, o plugin pode modificar arquivos nos diretórios das bibliotecas. Por padrão, plugins têm acesso somente leitura.",
         "requiredHosts": "Hosts necessários",
         "configValidationError": "Falha na validação da configuração:",
         "schemaRenderError": "Não foi possível renderizar o formulário de configuração. O schema do plugin pode estar inválido."
@@ -552,6 +554,12 @@
     }
   },
   "message": {
+    "uploadCover": "Enviar Capa",
+    "removeCover": "Remover Capa",
+    "coverUploaded": "Capa atualizada",
+    "coverRemoved": "Capa removida",
+    "coverUploadError": "Erro ao enviar capa",
+    "coverRemoveError": "Erro ao remover capa",
     "note": "ATENÇÃO",
     "transcodingDisabled": "Por questão de segurança, esta tela de configuração está desabilitada. Se você quiser alterar estas configurações, reinicie o servidor com a opção %{config}",
     "transcodingEnabled": "Navidrome está sendo executado com a opção %{config}. Isto permite que potencialmente se execute comandos do sistema pela interface Web. É recomendado que vc mantenha esta opção desabilitada, e só a habilite quando precisar configurar opções de Conversão",

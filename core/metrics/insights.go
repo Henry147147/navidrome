@@ -199,7 +199,6 @@ var staticData = sync.OnceValue(func() insights.Data {
 	data.Config.EnableSharing = conf.Server.EnableSharing
 	data.Config.EnableStarRating = conf.Server.EnableStarRating
 	data.Config.EnableLastFM = conf.Server.LastFM.Enabled && conf.Server.LastFM.ApiKey != "" && conf.Server.LastFM.Secret != ""
-	data.Config.EnableSpotify = conf.Server.Spotify.ID != "" && conf.Server.Spotify.Secret != ""
 	data.Config.EnableListenBrainz = conf.Server.ListenBrainz.Enabled
 	data.Config.EnableDeezer = conf.Server.Deezer.Enabled
 	data.Config.EnableMediaFileCoverArt = conf.Server.EnableMediaFileCoverArt
@@ -208,7 +207,8 @@ var staticData = sync.OnceValue(func() insights.Data {
 	data.Config.TranscodingCacheSize = conf.Server.TranscodingCacheSize
 	data.Config.ImageCacheSize = conf.Server.ImageCacheSize
 	data.Config.SessionTimeout = uint64(math.Trunc(conf.Server.SessionTimeout.Seconds()))
-	data.Config.SearchFullString = conf.Server.SearchFullString
+	data.Config.SearchFullString = conf.Server.Search.FullString
+	data.Config.SearchBackend = conf.Server.Search.Backend
 	data.Config.RecentlyAddedByModTime = conf.Server.RecentlyAddedByModTime
 	data.Config.PreferSortTags = conf.Server.PreferSortTags
 	data.Config.BackupSchedule = conf.Server.Backup.Schedule

@@ -46,6 +46,7 @@ type configOptions struct {
 	EnableTranscodingCancellation   bool
 	EnableDownloads                 bool
 	EnableExternalServices          bool
+	EnableM3UExternalAlbumArt       bool
 	EnableInsightsCollector         bool
 	EnableMediaFileCoverArt         bool
 	TranscodingCacheSize            string
@@ -58,7 +59,7 @@ type configOptions struct {
 	SmartPlaylistRefreshDelay       time.Duration
 	AutoTranscodeDownload           bool
 	DefaultDownsamplingFormat       string
-	SearchFullString                bool
+	Search                          searchOptions `json:",omitzero"`
 	SimilarSongsMatchThreshold      int
 	RecentlyAddedByModTime          bool
 	PreferSortTags                  bool
@@ -68,13 +69,16 @@ type configOptions struct {
 	MPVPath                         string
 	MPVCmdTemplate                  string
 	CoverArtPriority                string
-	CoverJpegQuality                int
+	CoverArtQuality                 int
 	ArtistArtPriority               string
+	ArtistImageFolder               string
+	DiscArtPriority                 string
 	LyricsPriority                  string
 	EnableGravatar                  bool
 	EnableFavourites                bool
 	EnableStarRating                bool
 	EnableUserEditing               bool
+	EnableCoverArtUpload            bool
 	EnableSharing                   bool
 	ShareURL                        string
 	DefaultShareExpiration          time.Duration
@@ -82,6 +86,7 @@ type configOptions struct {
 	DefaultTheme                    string
 	DefaultLanguage                 string
 	DefaultUIVolume                 int
+	UISearchDebounceMs              int
 	EnableReplayGain                bool
 	EnableCoverAnimation            bool
 	EnableNowPlaying                bool
@@ -101,7 +106,6 @@ type configOptions struct {
 	Inspect                         inspectOptions      `json:",omitzero"`
 	Subsonic                        subsonicOptions     `json:",omitzero"`
 	LastFM                          lastfmOptions       `json:",omitzero"`
-	Spotify                         spotifyOptions      `json:",omitzero"`
 	Deezer                          deezerOptions       `json:",omitzero"`
 	ListenBrainz                    listenBrainzOptions `json:",omitzero"`
 	Recommendations                 recommendationsOptions
@@ -130,7 +134,6 @@ type configOptions struct {
 	DevExternalScanner                bool
 	DevScannerThreads                 uint
 	DevSelectiveWatcher               bool
-	DevLegacyEmbedImage               bool
 	DevInsightsInitialDelay           time.Duration
 	DevEnablePlayerInsights           bool
 	DevEnablePluginsInsights          bool
@@ -138,6 +141,8 @@ type configOptions struct {
 	DevExternalArtistFetchMultiplier  float64
 	DevOptimizeDB                     bool
 	DevPreserveUnicodeInExternalCalls bool
+	DevEnableMediaFileProbe           bool
+	DevJpegCoverArt                   bool
 }
 
 type scannerOptions struct {
@@ -155,6 +160,7 @@ type scannerOptions struct {
 
 type subsonicOptions struct {
 	AppendSubtitle        bool
+	AppendAlbumVersion    bool
 	ArtistParticipations  bool
 	DefaultReportRealPath bool
 	EnableAverageRating   bool
@@ -180,11 +186,6 @@ type lastfmOptions struct {
 
 	// Computed values
 	Languages []string // Computed from Language, split by comma
-}
-
-type spotifyOptions struct {
-	ID     string
-	Secret string //nolint:gosec
 }
 
 type deezerOptions struct {
@@ -300,6 +301,12 @@ type pluginsOptions struct {
 type extAuthOptions struct {
 	TrustedSources string
 	UserHeader     string
+	LogoutURL      string
+}
+
+type searchOptions struct {
+	Backend    string
+	FullString bool
 }
 
 var (
@@ -324,6 +331,7 @@ func Load(noConfigDump bool) {
 	mapDeprecatedOption("ReverseProxyWhitelist", "ExtAuth.TrustedSources")
 	mapDeprecatedOption("ReverseProxyUserHeader", "ExtAuth.UserHeader")
 	mapDeprecatedOption("HTTPSecurityHeaders.CustomFrameOptionsValue", "HTTPHeaders.FrameOptions")
+	mapDeprecatedOption("CoverJpegQuality", "CoverArtQuality")
 
 	mustUnmarshalConfig()
 	ensurePaths()
@@ -383,6 +391,12 @@ func ensurePaths() {
 	err = os.MkdirAll(Server.CacheFolder, os.ModePerm)
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "FATAL: Error creating cache path:", err)
+		os.Exit(1)
+	}
+
+	err = os.MkdirAll(filepath.Join(Server.DataFolder, consts.ArtworkFolder), os.ModePerm)
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "FATAL: Error creating artwork path:", err)
 		os.Exit(1)
 	}
 
@@ -446,6 +460,10 @@ func configureLogging() *os.File {
 			os.Exit(1)
 		}
 		log.SetOutput(out)
+	} else if os.Getenv("JOURNAL_STREAM") != "" {
+		// When running under systemd, prepend syslog priority prefixes so
+		// journald assigns the correct severity to each log line.
+		log.EnableJournalFormat()
 	}
 	return out
 }
@@ -456,6 +474,7 @@ func validateConfig() {
 		validateBackupSchedule,
 		validatePlaylistsPath,
 		validatePurgeMissingOption,
+		validateURL("ExtAuth.LogoutURL", Server.ExtAuth.LogoutURL),
 	)
 	if err != nil {
 		os.Exit(1)
@@ -463,6 +482,8 @@ func validateConfig() {
 }
 
 func applyBaseURL() {
+	Server.Search.Backend = normalizeSearchBackend(Server.Search.Backend)
+
 	if Server.BaseURL == "" {
 		return
 	}
@@ -516,6 +537,9 @@ func applyScannerExtractorDefaults() {
 }
 
 func runInitHooks() {
+	logDeprecatedOptions("SearchFullString", "Search.FullString")
+	logDeprecatedOptions("CoverJpegQuality", "CoverArtQuality")
+	logRemovedOptions("Spotify.ID", "Spotify.Secret")
 	for _, hook := range hooks {
 		hook()
 	}
@@ -536,6 +560,23 @@ func logDeprecatedOptions(oldName, newName string) {
 	}
 	if viper.InConfig(oldName) {
 		logWarning(oldName, newName)
+	}
+}
+
+// logRemovedOptions checks if the option is set, and if yes, outputs a warning message saying the option is
+// not available anymore
+func logRemovedOptions(options ...string) {
+	for _, option := range options {
+		envVar := "ND_" + strings.ToUpper(strings.ReplaceAll(option, ".", "_"))
+		logWarning := func(option string) {
+			log.Warn(fmt.Sprintf("Option '%s' is not available anymore and will be ignored. Please remove it from your config", option))
+		}
+		if viper.InConfig(option) {
+			logWarning(option)
+		}
+		if os.Getenv(envVar) != "" {
+			logWarning(envVar)
+		}
 	}
 }
 
@@ -575,8 +616,8 @@ func parseIniFileConfiguration() {
 func disableExternalServices() {
 	log.Info("All external integrations are DISABLED!")
 	Server.EnableInsightsCollector = false
+	Server.EnableM3UExternalAlbumArt = false
 	Server.LastFM.Enabled = false
-	Server.Spotify.ID = ""
 	Server.Deezer.Enabled = false
 	Server.ListenBrainz.Enabled = false
 	Server.Agents = ""
@@ -658,6 +699,44 @@ func validateSchedule(schedule, field string) (string, error) {
 	return schedule, err
 }
 
+// validateURL checks if the provided URL is valid and has either http or https scheme.
+// It returns a function that can be used as a hook to validate URLs in the config.
+func validateURL(optionName, optionURL string) func() error {
+	return func() error {
+		if optionURL == "" {
+			return nil
+		}
+		u, err := url.Parse(optionURL)
+		if err != nil {
+			log.Error(fmt.Sprintf("Invalid %s: it could not be parsed", optionName), "url", optionURL, "err", err)
+			return err
+		}
+		if u.Scheme != "http" && u.Scheme != "https" {
+			err := fmt.Errorf("invalid scheme for %s: '%s'. Only 'http' and 'https' are allowed", optionName, u.Scheme)
+			log.Error(err.Error())
+			return err
+		}
+		// Require an absolute URL with a non-empty host and no opaque component.
+		if u.Host == "" || u.Opaque != "" {
+			err := fmt.Errorf("invalid %s: '%s'. A full http(s) URL with a non-empty host is required", optionName, optionURL)
+			log.Error(err.Error())
+			return err
+		}
+		return nil
+	}
+}
+
+func normalizeSearchBackend(value string) string {
+	v := strings.ToLower(strings.TrimSpace(value))
+	switch v {
+	case "fts", "legacy":
+		return v
+	default:
+		log.Error("Invalid Search.Backend value, falling back to 'fts'", "value", value)
+		return "fts"
+	}
+}
+
 // AddHook is used to register initialization code that should run as soon as the config is loaded
 func AddHook(hook func()) {
 	hooks = append(hooks, hook)
@@ -701,6 +780,7 @@ func setViperDefaults() {
 	viper.SetDefault("smartPlaylistRefreshDelay", 5*time.Second)
 	viper.SetDefault("enabledownloads", true)
 	viper.SetDefault("enableexternalservices", true)
+	viper.SetDefault("enablem3uexternalalbumart", false)
 	viper.SetDefault("enablemediafilecoverart", true)
 	viper.SetDefault("recommendations.baseurl", "http://127.0.0.1:9002")
 	viper.SetDefault("recommendations.textbaseurl", "http://127.0.0.1:9002")
@@ -719,7 +799,8 @@ func setViperDefaults() {
 	viper.SetDefault("recommendations.milvus.dimensions.flamingo", 28672)
 	viper.SetDefault("autotranscodedownload", false)
 	viper.SetDefault("defaultdownsamplingformat", consts.DefaultDownsamplingFormat)
-	viper.SetDefault("searchfullstring", false)
+	viper.SetDefault("search.fullstring", false)
+	viper.SetDefault("search.backend", "fts")
 	viper.SetDefault("similarsongsmatchthreshold", 85)
 	viper.SetDefault("recentlyaddedbymodtime", false)
 	viper.SetDefault("prefersorttags", false)
@@ -728,8 +809,9 @@ func setViperDefaults() {
 	viper.SetDefault("ffmpegpath", "")
 	viper.SetDefault("mpvcmdtemplate", "mpv --audio-device=%d --no-audio-display %f --input-ipc-server=%s")
 	viper.SetDefault("coverartpriority", "cover.*, folder.*, front.*, embedded, external")
-	viper.SetDefault("coverjpegquality", 75)
+	viper.SetDefault("coverartquality", 75)
 	viper.SetDefault("artistartpriority", "artist.*, album/artist.*, external")
+	viper.SetDefault("discartpriority", "disc*.*, cd*.*, cover.*, folder.*, front.*, discsubtitle, embedded")
 	viper.SetDefault("lyricspriority", ".lrc,.txt,embedded")
 	viper.SetDefault("enablegravatar", false)
 	viper.SetDefault("enablefavourites", true)
@@ -738,9 +820,11 @@ func setViperDefaults() {
 	viper.SetDefault("defaulttheme", "Dark")
 	viper.SetDefault("defaultlanguage", "")
 	viper.SetDefault("defaultuivolume", consts.DefaultUIVolume)
+	viper.SetDefault("uisearchdebouncems", consts.DefaultUISearchDebounceMs)
 	viper.SetDefault("enablereplaygain", true)
 	viper.SetDefault("enablecoveranimation", true)
 	viper.SetDefault("enablenowplaying", true)
+	viper.SetDefault("enablecoverartupload", true)
 	viper.SetDefault("enablesharing", false)
 	viper.SetDefault("shareurl", "")
 	viper.SetDefault("defaultshareexpiration", 8760*time.Hour)
@@ -753,6 +837,7 @@ func setViperDefaults() {
 	viper.SetDefault("passwordencryptionkey", "")
 	viper.SetDefault("extauth.userheader", "Remote-User")
 	viper.SetDefault("extauth.trustedsources", "")
+	viper.SetDefault("extauth.logouturl", "")
 	viper.SetDefault("prometheus.enabled", false)
 	viper.SetDefault("prometheus.metricspath", consts.PrometheusDefaultPath)
 	viper.SetDefault("prometheus.password", "")
@@ -771,19 +856,18 @@ func setViperDefaults() {
 	viper.SetDefault("scanner.followsymlinks", true)
 	viper.SetDefault("scanner.purgemissing", consts.PurgeMissingNever)
 	viper.SetDefault("subsonic.appendsubtitle", true)
+	viper.SetDefault("subsonic.appendalbumversion", true)
 	viper.SetDefault("subsonic.artistparticipations", false)
 	viper.SetDefault("subsonic.defaultreportrealpath", false)
 	viper.SetDefault("subsonic.enableaveragerating", true)
 	viper.SetDefault("subsonic.legacyclients", "DSub")
 	viper.SetDefault("subsonic.minimalclients", "SubMusic")
-	viper.SetDefault("agents", "lastfm,spotify,deezer")
+	viper.SetDefault("agents", "deezer,lastfm,listenbrainz")
 	viper.SetDefault("lastfm.enabled", true)
 	viper.SetDefault("lastfm.language", consts.DefaultInfoLanguage)
 	viper.SetDefault("lastfm.apikey", "")
 	viper.SetDefault("lastfm.secret", "")
 	viper.SetDefault("lastfm.scrobblefirstartistonly", false)
-	viper.SetDefault("spotify.id", "")
-	viper.SetDefault("spotify.secret", "")
 	viper.SetDefault("deezer.enabled", true)
 	viper.SetDefault("deezer.language", consts.DefaultInfoLanguage)
 	viper.SetDefault("listenbrainz.enabled", true)
@@ -818,7 +902,7 @@ func setViperDefaults() {
 	viper.SetDefault("devuishowconfig", true)
 	viper.SetDefault("devneweventstream", true)
 	viper.SetDefault("devoffsetoptimize", 50000)
-	viper.SetDefault("devartworkmaxrequests", max(2, runtime.NumCPU()/3))
+	viper.SetDefault("devartworkmaxrequests", max(4, runtime.NumCPU()))
 	viper.SetDefault("devartworkthrottlebackloglimit", consts.RequestThrottleBacklogLimit)
 	viper.SetDefault("devartworkthrottlebacklogtimeout", consts.RequestThrottleBacklogTimeout)
 	viper.SetDefault("devartistinfotimetolive", consts.ArtistInfoTimeToLive)
@@ -833,6 +917,8 @@ func setViperDefaults() {
 	viper.SetDefault("devexternalartistfetchmultiplier", 1.5)
 	viper.SetDefault("devoptimizedb", true)
 	viper.SetDefault("devpreserveunicodeinexternalcalls", false)
+	viper.SetDefault("devenablemediafileprobe", true)
+	viper.SetDefault("devjpegcoverart", false)
 }
 
 func init() {
