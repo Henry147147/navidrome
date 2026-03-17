@@ -1,0 +1,126 @@
+{
+  "started_at": "2026-02-20T17:03:16.432284+00:00",
+  "base_url": "http://localhost:4500",
+  "username": "debug",
+  "timeout_sec": 8,
+  "max_random_batches": 60,
+  "random_batch_size": 200,
+  "headed": false,
+  "playwright_parity": "never",
+  "notes": [],
+  "auth_preflight": "ok",
+  "playwright_parity_rc": null,
+  "analysis": {
+    "rows": 57,
+    "scenario_summary": [
+      {
+        "scenario_id": "API-1",
+        "runs": 9,
+        "successes": 9,
+        "failures": 0,
+        "failure_rate_pct": 0.0,
+        "ttfb_ms_median": 1.595,
+        "time_to_play_ms_median": null,
+        "waiting_events_total": 0,
+        "stalled_events_total": 0
+      },
+      {
+        "scenario_id": "API-2",
+        "runs": 9,
+        "successes": 9,
+        "failures": 0,
+        "failure_rate_pct": 0.0,
+        "ttfb_ms_median": 1.474,
+        "time_to_play_ms_median": null,
+        "waiting_events_total": 0,
+        "stalled_events_total": 0
+      },
+      {
+        "scenario_id": "API-3",
+        "runs": 9,
+        "successes": 9,
+        "failures": 0,
+        "failure_rate_pct": 0.0,
+        "ttfb_ms_median": 1.493,
+        "time_to_play_ms_median": null,
+        "waiting_events_total": 0,
+        "stalled_events_total": 0
+      },
+      {
+        "scenario_id": "API-4",
+        "runs": 9,
+        "successes": 9,
+        "failures": 0,
+        "failure_rate_pct": 0.0,
+        "ttfb_ms_median": 2.024,
+        "time_to_play_ms_median": null,
+        "waiting_events_total": 0,
+        "stalled_events_total": 0
+      },
+      {
+        "scenario_id": "GUI-1",
+        "runs": 5,
+        "successes": 0,
+        "failures": 5,
+        "failure_rate_pct": 100.0,
+        "ttfb_ms_median": null,
+        "time_to_play_ms_median": null,
+        "waiting_events_total": 0,
+        "stalled_events_total": 0
+      },
+      {
+        "scenario_id": "GUI-2",
+        "runs": 5,
+        "successes": 0,
+        "failures": 5,
+        "failure_rate_pct": 100.0,
+        "ttfb_ms_median": null,
+        "time_to_play_ms_median": null,
+        "waiting_events_total": 0,
+        "stalled_events_total": 0
+      },
+      {
+        "scenario_id": "GUI-3",
+        "runs": 5,
+        "successes": 0,
+        "failures": 5,
+        "failure_rate_pct": 100.0,
+        "ttfb_ms_median": null,
+        "time_to_play_ms_median": null,
+        "waiting_events_total": 0,
+        "stalled_events_total": 0
+      },
+      {
+        "scenario_id": "GUI-4",
+        "runs": 3,
+        "successes": 0,
+        "failures": 3,
+        "failure_rate_pct": 100.0,
+        "ttfb_ms_median": null,
+        "time_to_play_ms_median": null,
+        "waiting_events_total": 0,
+        "stalled_events_total": 0
+      },
+      {
+        "scenario_id": "GUI-5",
+        "runs": 3,
+        "successes": 0,
+        "failures": 3,
+        "failure_rate_pct": 100.0,
+        "ttfb_ms_median": null,
+        "time_to_play_ms_median": null,
+        "waiting_events_total": 0,
+        "stalled_events_total": 0
+      }
+    ],
+    "likely_causes": [
+      {
+        "cause": "Browser decode/playback issue",
+        "confidence": "medium",
+        "signal": "API stream probes are healthy while GUI FLAC starts frequently fail."
+      }
+    ],
+    "summary_path": "/home/henry/projects/navidrome/test_playback/results/20260220T170316Z/summary.md"
+  },
+  "completed_at": "2026-02-20T17:07:21.709730+00:00"
+}

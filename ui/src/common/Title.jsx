@@ -1,6 +1,7 @@
 import React from 'react'
 import { useMediaQuery } from '@material-ui/core'
 import { useTranslate } from 'react-admin'
+import { BRAND_NAME } from '../consts'
 
 export const Title = ({ subTitle, args }) => {
   const translate = useTranslate()
@@ -8,7 +9,7 @@ export const Title = ({ subTitle, args }) => {
   const text = translate(subTitle, { ...args, _: subTitle })
 
   if (isDesktop) {
-    return <span>Navidrome {text ? ` - ${text}` : ''}</span>
+    return <span>{BRAND_NAME + (text ? ` - ${text}` : '')}</span>
   }
-  return <span>{text ? text : 'Navidrome'}</span>
+  return <span>{text || BRAND_NAME}</span>
 }

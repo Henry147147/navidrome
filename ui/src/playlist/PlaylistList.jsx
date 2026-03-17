@@ -70,7 +70,7 @@ const TogglePublicInput = ({ resource, source }) => {
     {
       undoable: false,
       onFailure: (error) => {
-        notify('ra.page.error', 'warning')
+        notify('ra.page.error', { type: 'warning' })
       },
     },
   )
@@ -102,7 +102,7 @@ const ToggleAutoImport = ({ resource, source }) => {
     {
       undoable: false,
       onFailure: (error) => {
-        notify('ra.page.error', 'warning')
+        notify('ra.page.error', { type: 'warning' })
       },
     },
   )

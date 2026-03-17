@@ -33,8 +33,9 @@ const LibraryCreate = (props) => {
           },
           { returnPromise: true },
         )
-        notify('resources.library.notifications.created', 'info', {
-          smart_count: 1,
+        notify('resources.library.notifications.created', {
+          type: 'info',
+          messageArgs: { smart_count: 1 },
         })
         redirect('/library')
       } catch (error) {
@@ -56,7 +57,7 @@ const LibraryCreate = (props) => {
           }
 
           // Show a general notification for other server errors
-          notify(errorMsg, 'error')
+          notify(errorMsg, { type: 'error' })
           return
         }
 
@@ -64,7 +65,7 @@ const LibraryCreate = (props) => {
         const fallbackMessage =
           error.message ||
           (typeof error === 'string' ? error : 'An unexpected error occurred')
-        notify(fallbackMessage, 'error')
+        notify(fallbackMessage, { type: 'error' })
       }
     },
     [mutate, notify, redirect],

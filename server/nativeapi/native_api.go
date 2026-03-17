@@ -19,7 +19,22 @@ import (
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 	"github.com/navidrome/navidrome/server"
+	"github.com/navidrome/navidrome/server/subsonic"
 )
+
+type Router struct {
+	http.Handler
+	ds            model.DataStore
+	share         core.Share
+	playlists     playlistsvc.Playlists
+	insights      metrics.Insights
+	libs          core.Library
+	users         core.User
+	maintenance   core.Maintenance
+	pluginManager PluginManager
+	recommender   subsonic.RecommendationClient
+	imgUpload     core.ImageUploadService
+}
 
 // PluginManager defines the interface for plugin management operations.
 // This interface is used by the API handlers to enable/disable plugins and update configuration.
@@ -34,21 +49,19 @@ type PluginManager interface {
 	UnloadDisabledPlugins(ctx context.Context)
 }
 
-type Router struct {
-	http.Handler
-	ds            model.DataStore
-	share         core.Share
-	playlists     playlistsvc.Playlists
-	insights      metrics.Insights
-	libs          core.Library
-	users         core.User
-	maintenance   core.Maintenance
-	pluginManager PluginManager
-	imgUpload     core.ImageUploadService
-}
-
-func New(ds model.DataStore, share core.Share, playlists playlistsvc.Playlists, insights metrics.Insights, libraryService core.Library, userService core.User, maintenance core.Maintenance, pluginManager PluginManager, imgUpload core.ImageUploadService) *Router {
-	r := &Router{ds: ds, share: share, playlists: playlists, insights: insights, libs: libraryService, users: userService, maintenance: maintenance, pluginManager: pluginManager, imgUpload: imgUpload}
+func New(ds model.DataStore, share core.Share, playlists playlistsvc.Playlists, insights metrics.Insights, libraryService core.Library, userService core.User, maintenance core.Maintenance, pluginManager PluginManager, recommender subsonic.RecommendationClient, imgUpload core.ImageUploadService) *Router {
+	r := &Router{
+		ds:            ds,
+		share:         share,
+		playlists:     playlists,
+		insights:      insights,
+		libs:          libraryService,
+		users:         userService,
+		maintenance:   maintenance,
+		pluginManager: pluginManager,
+		recommender:   recommender,
+		imgUpload:     imgUpload,
+	}
 	r.Handler = r.routes()
 	return r
 }
@@ -84,6 +97,8 @@ func (api *Router) routes() http.Handler {
 		api.addMissingFilesRoute(r)
 		api.addKeepAliveRoute(r)
 		api.addInsightsRoute(r)
+		api.addRecommendationRoutes(r)
+		api.addAutoPlayRoute(r)
 
 		r.With(adminOnlyMiddleware).Group(func(r chi.Router) {
 			api.addInspectRoute(r)

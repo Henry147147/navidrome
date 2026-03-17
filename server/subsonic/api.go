@@ -50,6 +50,7 @@ type Router struct {
 	share             core.Share
 	playback          playback.PlaybackServer
 	metrics           metrics.Metrics
+	recommender       RecommendationClient
 	lyrics            lyricssvc.Lyrics
 	transcodeDecision stream.TranscodeDecider
 }
@@ -57,8 +58,11 @@ type Router struct {
 func New(ds model.DataStore, artwork artwork.Artwork, streamer stream.MediaStreamer, archiver core.Archiver,
 	players core.Players, provider external.Provider, scanner model.Scanner, broker events.Broker,
 	playlists playlistsvc.Playlists, scrobbler scrobbler.PlayTracker, share core.Share, playback playback.PlaybackServer,
-	metrics metrics.Metrics, lyrics lyricssvc.Lyrics, transcodeDecision stream.TranscodeDecider,
+	metrics metrics.Metrics, recommender RecommendationClient, lyrics lyricssvc.Lyrics, transcodeDecision stream.TranscodeDecider,
 ) *Router {
+	if recommender == nil {
+		recommender = noopRecommendationClient{}
+	}
 	r := &Router{
 		ds:                ds,
 		artwork:           artwork,
@@ -73,6 +77,7 @@ func New(ds model.DataStore, artwork artwork.Artwork, streamer stream.MediaStrea
 		share:             share,
 		playback:          playback,
 		metrics:           metrics,
+		recommender:       recommender,
 		lyrics:            lyrics,
 		transcodeDecision: transcodeDecision,
 	}
@@ -146,6 +151,11 @@ func (api *Router) routes() http.Handler {
 			h(r, "createPlaylist", api.CreatePlaylist)
 			h(r, "deletePlaylist", api.DeletePlaylist)
 			h(r, "updatePlaylist", api.UpdatePlaylist)
+			h(r, "playlist/recomender/recent", api.MakePlaylistFromRecentListens)
+			h(r, "playlist/recomender/other", api.MakePlaylistFromOtherPlaylists)
+			h(r, "playlist/recomender/favorites", api.MakePlaylistFromFavoriteAndStaredSongs)
+			h(r, "playlist/recomender/all", api.MakePlaylistFromAllMetrics)
+			h(r, "playlist/recomender/discovery", api.MakeDiscoveryPlaylist)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(getPlayer(api.players))

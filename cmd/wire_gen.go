@@ -8,6 +8,7 @@ package cmd
 
 import (
 	"context"
+
 	"github.com/google/wire"
 	"github.com/navidrome/navidrome/adapters/lastfm"
 	"github.com/navidrome/navidrome/adapters/listenbrainz"
@@ -32,13 +33,15 @@ import (
 	"github.com/navidrome/navidrome/server/nativeapi"
 	"github.com/navidrome/navidrome/server/public"
 	"github.com/navidrome/navidrome/server/subsonic"
-)
 
-import (
 	_ "github.com/navidrome/navidrome/adapters/deezer"
+
 	_ "github.com/navidrome/navidrome/adapters/gotaglib"
+
 	_ "github.com/navidrome/navidrome/adapters/lastfm"
+
 	_ "github.com/navidrome/navidrome/adapters/listenbrainz"
+
 	_ "github.com/navidrome/navidrome/adapters/taglib"
 )
 
@@ -75,12 +78,13 @@ func CreateNativeAPIRouter(ctx context.Context) *nativeapi.Router {
 	provider := external.NewProvider(dataStore, agentsAgents)
 	artworkArtwork := artwork.NewArtwork(dataStore, fileCache, fFmpeg, provider)
 	cacheWarmer := artwork.NewCacheWarmer(artworkArtwork, fileCache)
-	modelScanner := scanner.New(ctx, dataStore, cacheWarmer, broker, playlistsPlaylists, metricsMetrics)
+	modelScanner := newScanner(ctx, dataStore, cacheWarmer, broker, playlistsPlaylists, metricsMetrics)
 	watcher := scanner.GetWatcher(dataStore, modelScanner)
 	library := core.NewLibrary(dataStore, modelScanner, watcher, broker, manager)
 	user := core.NewUser(dataStore, manager)
 	maintenance := core.NewMaintenance(dataStore)
-	router := nativeapi.New(dataStore, share, playlistsPlaylists, insights, library, user, maintenance, manager, imageUploadService)
+	recommendationClient := newRecommendationClient(dataStore)
+	router := nativeapi.New(dataStore, share, playlistsPlaylists, insights, library, user, maintenance, manager, recommendationClient, imageUploadService)
 	return router
 }
 
@@ -103,12 +107,13 @@ func CreateSubsonicAPIRouter(ctx context.Context) *subsonic.Router {
 	cacheWarmer := artwork.NewCacheWarmer(artworkArtwork, fileCache)
 	imageUploadService := core.NewImageUploadService()
 	playlistsPlaylists := playlists.NewPlaylists(dataStore, imageUploadService)
-	modelScanner := scanner.New(ctx, dataStore, cacheWarmer, broker, playlistsPlaylists, metricsMetrics)
+	modelScanner := newScanner(ctx, dataStore, cacheWarmer, broker, playlistsPlaylists, metricsMetrics)
 	playTracker := scrobbler.GetPlayTracker(dataStore, broker, manager)
 	playbackServer := playback.GetInstance(dataStore)
+	recommendationClient := newRecommendationClient(dataStore)
 	lyricsLyrics := lyrics.NewLyrics(manager)
 	transcodeDecider := stream.NewTranscodeDecider(dataStore, fFmpeg)
-	router := subsonic.New(dataStore, artworkArtwork, mediaStreamer, archiver, players, provider, modelScanner, broker, playlistsPlaylists, playTracker, share, playbackServer, metricsMetrics, lyricsLyrics, transcodeDecider)
+	router := subsonic.New(dataStore, artworkArtwork, mediaStreamer, archiver, players, provider, modelScanner, broker, playlistsPlaylists, playTracker, share, playbackServer, metricsMetrics, recommendationClient, lyricsLyrics, transcodeDecider)
 	return router
 }
 
@@ -173,7 +178,7 @@ func CreateScanner(ctx context.Context) model.Scanner {
 	cacheWarmer := artwork.NewCacheWarmer(artworkArtwork, fileCache)
 	imageUploadService := core.NewImageUploadService()
 	playlistsPlaylists := playlists.NewPlaylists(dataStore, imageUploadService)
-	modelScanner := scanner.New(ctx, dataStore, cacheWarmer, broker, playlistsPlaylists, metricsMetrics)
+	modelScanner := newScanner(ctx, dataStore, cacheWarmer, broker, playlistsPlaylists, metricsMetrics)
 	return modelScanner
 }
 
@@ -191,7 +196,7 @@ func CreateScanWatcher(ctx context.Context) scanner.Watcher {
 	cacheWarmer := artwork.NewCacheWarmer(artworkArtwork, fileCache)
 	imageUploadService := core.NewImageUploadService()
 	playlistsPlaylists := playlists.NewPlaylists(dataStore, imageUploadService)
-	modelScanner := scanner.New(ctx, dataStore, cacheWarmer, broker, playlistsPlaylists, metricsMetrics)
+	modelScanner := newScanner(ctx, dataStore, cacheWarmer, broker, playlistsPlaylists, metricsMetrics)
 	watcher := scanner.GetWatcher(dataStore, modelScanner)
 	return watcher
 }
@@ -214,7 +219,12 @@ func getPluginManager() *plugins.Manager {
 
 // wire_injectors.go:
 
-var allProviders = wire.NewSet(core.Set, artwork.Set, server.New, subsonic.New, nativeapi.New, public.New, persistence.New, lastfm.NewRouter, listenbrainz.NewRouter, events.GetBroker, scanner.New, scanner.GetWatcher, metrics.GetPrometheusInstance, db.Db, plugins.GetManager, wire.Bind(new(agents.PluginLoader), new(*plugins.Manager)), wire.Bind(new(scrobbler.PluginLoader), new(*plugins.Manager)), wire.Bind(new(lyrics.PluginLoader), new(*plugins.Manager)), wire.Bind(new(nativeapi.PluginManager), new(*plugins.Manager)), wire.Bind(new(core.PluginUnloader), new(*plugins.Manager)), wire.Bind(new(plugins.PluginMetricsRecorder), new(metrics.Metrics)), wire.Bind(new(core.Watcher), new(scanner.Watcher)))
+var allProviders = wire.NewSet(core.Set, artwork.Set, server.New, subsonic.New, nativeapi.New, public.New, newRecommendationClient, persistence.New, lastfm.NewRouter, listenbrainz.NewRouter, events.GetBroker, newScanner, scanner.GetWatcher, metrics.GetPrometheusInstance, db.Db, plugins.GetManager, wire.Bind(new(agents.PluginLoader), new(*plugins.Manager)), wire.Bind(new(scrobbler.PluginLoader), new(*plugins.Manager)), wire.Bind(new(lyrics.PluginLoader), new(*plugins.Manager)), wire.Bind(new(nativeapi.PluginManager), new(*plugins.Manager)), wire.Bind(new(core.PluginUnloader), new(*plugins.Manager)), wire.Bind(new(plugins.PluginMetricsRecorder), new(metrics.Metrics)), wire.Bind(new(core.Watcher), new(scanner.Watcher)))
+
+// newScanner creates a scanner.
+func newScanner(ctx context.Context, ds model.DataStore, cw artwork.CacheWarmer, broker events.Broker, pls playlists.Playlists, m metrics.Metrics) model.Scanner {
+	return scanner.New(ctx, ds, cw, broker, pls, m)
+}
 
 func GetPluginManager(ctx context.Context) *plugins.Manager {
 	manager := getPluginManager()

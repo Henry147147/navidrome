@@ -19,9 +19,11 @@ import AudioTitle from './AudioTitle'
 import {
   clearQueue,
   currentPlaying,
+  markAutoPlayTrackPlayed,
   refreshQueue,
   setPlayMode,
   setTranscodingProfile,
+  syncAutoPlaySettings,
   setVolume,
   syncQueue,
 } from '../actions'
@@ -32,7 +34,19 @@ import locale from './locale'
 import { keyMap } from '../hotkeys'
 import keyHandlers from './keyHandlers'
 import { calculateGain } from '../utils/calculateReplayGain'
+import { BRAND_NAME } from '../consts'
+import {
+  buildOverrideKey,
+  decorateQueueWithOverride,
+  DEFAULT_STREAMING_OVERRIDE,
+  toStreamQuery,
+} from './streamingOverrideUtils'
 import { detectBrowserProfile, decisionService } from '../transcode'
+import {
+  getQueueItemTrackId,
+  getRemainingQueue,
+  refillAutoPlayQueue,
+} from '../autoplay/runtime'
 
 const Player = () => {
   const theme = useCurrentTheme()
@@ -40,6 +54,7 @@ const Player = () => {
   const playerTheme = theme.player?.theme || 'dark'
   const dataProvider = useDataProvider()
   const playerState = useSelector((state) => state.player)
+  const autoplayState = useSelector((state) => state.autoplay)
   const dispatch = useDispatch()
   const [startTime, setStartTime] = useState(null)
   const [scrobbled, setScrobbled] = useState(false)
@@ -92,6 +107,28 @@ const Player = () => {
     })
   }, [dispatch])
 
+  useEffect(() => {
+    let active = true
+    if (typeof dataProvider?.getAutoPlaySettings !== 'function') {
+      return () => {
+        active = false
+      }
+    }
+
+    dataProvider
+      .getAutoPlaySettings()
+      .then(({ data }) => {
+        if (active) {
+          dispatch(syncAutoPlaySettings(data))
+        }
+      })
+      .catch(() => {})
+
+    return () => {
+      active = false
+    }
+  }, [dataProvider, dispatch])
+
   // Pre-fetch transcode decisions for next 2-3 songs when queue or position changes
   useEffect(() => {
     if (!playerState.queue.length) return
@@ -108,7 +145,14 @@ const Player = () => {
   }, [playerState.queue, playerState.savedPlayIndex])
 
   const visible = authenticated && playerState.queue.length > 0
-  const isRadio = playerState.current?.isRadio || false
+  const currentTrack = playerState.current || {}
+  const currentTrackId = currentTrack.trackId
+  const currentTrackUuid = currentTrack.uuid
+  const isRadio = Boolean(currentTrack.isRadio)
+  const remainingQueue = useMemo(
+    () => getRemainingQueue(playerState),
+    [playerState],
+  )
   const classes = useStyle({
     isRadio,
     visible,
@@ -117,9 +161,56 @@ const Player = () => {
   const showNotifications = useSelector(
     (state) => state.settings.notifications || false,
   )
+  const streamingOverride = useSelector(
+    (state) => state.settings?.streamingOverride || DEFAULT_STREAMING_OVERRIDE,
+  )
   const gainInfo = useSelector((state) => state.replayGain)
   const [context, setContext] = useState(null)
   const [gainNode, setGainNode] = useState(null)
+  const networkInfo = useMemo(() => {
+    if (typeof navigator === 'undefined') {
+      return null
+    }
+    return (
+      navigator.connection ||
+      navigator.mozConnection ||
+      navigator.webkitConnection ||
+      null
+    )
+  }, [])
+  const canPreloadNextTrack = useMemo(() => {
+    if (isMobilePlayer) {
+      return false
+    }
+    if (!networkInfo) {
+      return true
+    }
+    if (networkInfo.saveData) {
+      return false
+    }
+    const slowTypes = ['slow-2g', '2g', '3g']
+    return !slowTypes.includes(networkInfo.effectiveType)
+  }, [isMobilePlayer, networkInfo])
+  const streamQuery = useMemo(
+    () => toStreamQuery(streamingOverride),
+    [streamingOverride],
+  )
+  const overrideKey = useMemo(
+    () => buildOverrideKey(streamingOverride),
+    [streamingOverride],
+  )
+  const effectiveQueue = useMemo(
+    () =>
+      decorateQueueWithOverride(
+        playerState.queue,
+        overrideKey,
+        streamQuery,
+        subsonic.streamUrl,
+      ),
+    [playerState.queue, overrideKey, streamQuery],
+  )
+  const overrideKeyRef = useRef(overrideKey)
+  const pendingResumeRef = useRef(null)
 
   useEffect(() => {
     if (
@@ -156,7 +247,7 @@ const Player = () => {
   useEffect(() => {
     const handleBeforeUnload = (e) => {
       // Check there's a current track and is actually playing/not paused
-      if (playerState.current?.uuid && audioInstance && !audioInstance.paused) {
+      if (currentTrackUuid && audioInstance && !audioInstance.paused) {
         e.preventDefault()
         e.returnValue = '' // Chrome requires returnValue to be set
       }
@@ -164,7 +255,28 @@ const Player = () => {
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [playerState, audioInstance])
+  }, [audioInstance, currentTrackUuid])
+
+  useEffect(() => {
+    const previousKey = overrideKeyRef.current
+    if (previousKey === overrideKey) {
+      return
+    }
+    overrideKeyRef.current = overrideKey
+
+    if (!currentTrackId || isRadio || !audioInstance) {
+      pendingResumeRef.current = null
+      return
+    }
+
+    const currentTime = Number(audioInstance.currentTime)
+    pendingResumeRef.current = {
+      trackId: currentTrackId,
+      currentTime:
+        Number.isFinite(currentTime) && currentTime > 0 ? currentTime : null,
+      paused: Boolean(audioInstance.paused),
+    }
+  }, [audioInstance, overrideKey, currentTrackId, isRadio])
 
   const defaultOptions = useMemo(
     () => ({
@@ -207,7 +319,7 @@ const Player = () => {
     const current = playerState.current || {}
     return {
       ...defaultOptions,
-      audioLists: playerState.queue.map((item) => item),
+      audioLists: effectiveQueue.map((item) => item),
       playIndex: playerState.playIndex,
       autoPlay:
         playerState.autoPlay !== false &&
@@ -219,7 +331,7 @@ const Player = () => {
       defaultVolume: isMobilePlayer ? 1 : playerState.volume,
       showMediaSession: !current.isRadio,
     }
-  }, [playerState, defaultOptions, isMobilePlayer])
+  }, [playerState, defaultOptions, effectiveQueue, isMobilePlayer])
 
   const onAudioListsChange = useCallback(
     (_, audioLists, audioInfo) => dispatch(syncQueue(audioInfo, audioLists)),
@@ -227,16 +339,19 @@ const Player = () => {
   )
 
   const nextSong = useCallback(() => {
-    const idx = playerState.queue.findIndex(
-      (item) => item.uuid === playerState.current.uuid,
+    const idx = effectiveQueue.findIndex(
+      (item) => item.uuid === currentTrackUuid,
     )
-    return idx !== null ? playerState.queue[idx + 1] : null
-  }, [playerState])
+    if (idx < 0) {
+      return null
+    }
+    return effectiveQueue[idx + 1] || null
+  }, [effectiveQueue, currentTrackUuid])
 
   const onAudioProgress = useCallback(
     (info) => {
       if (info.ended) {
-        document.title = 'Navidrome'
+        document.title = BRAND_NAME
       }
 
       const progress = (info.currentTime / info.duration) * 100
@@ -249,6 +364,10 @@ const Player = () => {
       }
 
       if (!preloaded) {
+        if (!canPreloadNextTrack) {
+          setPreload(true)
+          return
+        }
         const next = nextSong()
         if (next != null && !next.isRadio) {
           // Trigger decision pre-fetch (this also warms the cache)
@@ -263,7 +382,7 @@ const Player = () => {
         setScrobbled(true)
       }
     },
-    [startTime, scrobbled, nextSong, preloaded],
+    [startTime, scrobbled, nextSong, preloaded, canPreloadNextTrack],
   )
 
   const onAudioVolumeChange = useCallback(
@@ -274,6 +393,35 @@ const Player = () => {
 
   const onAudioPlay = useCallback(
     (info) => {
+      const pendingResume = pendingResumeRef.current
+      if (pendingResume) {
+        if (
+          !info.isRadio &&
+          info.trackId &&
+          info.trackId === pendingResume.trackId &&
+          audioInstance
+        ) {
+          const resumeAt = pendingResume.currentTime
+          if (Number.isFinite(resumeAt) && resumeAt > 0) {
+            try {
+              audioInstance.currentTime = resumeAt
+            } catch (e) {
+              // Best-effort resume only; keep playback running on failure.
+            }
+          }
+          if (pendingResume.paused) {
+            setTimeout(() => {
+              try {
+                audioInstance.pause()
+              } catch (e) {
+                // Ignore pause errors in best-effort restore path.
+              }
+            }, 0)
+          }
+        }
+        pendingResumeRef.current = null
+      }
+
       // Do this to start the context; on chrome-based browsers, the context
       // will start paused since it is created prior to user interaction
       if (context && context.state !== 'running') {
@@ -286,7 +434,7 @@ const Player = () => {
       }
       if (info.duration) {
         const song = info.song
-        document.title = `${song.title} - ${song.artist} - Navidrome`
+        document.title = `${song.title} - ${song.artist} - ${BRAND_NAME}`
         if (!info.isRadio) {
           const pos = startTime === null ? null : Math.floor(info.currentTime)
           subsonic.nowPlaying(info.trackId, pos)
@@ -308,7 +456,7 @@ const Player = () => {
         }
       }
     },
-    [context, dispatch, showNotifications, startTime],
+    [audioInstance, context, dispatch, showNotifications, startTime],
   )
 
   const onAudioPlayTrackChange = useCallback(() => {
@@ -324,6 +472,50 @@ const Player = () => {
     (info) => dispatch(currentPlaying(info)),
     [dispatch],
   )
+
+  useEffect(() => {
+    if (!currentTrackId || isRadio) {
+      return
+    }
+    dispatch(markAutoPlayTrackPlayed(currentTrackId))
+  }, [currentTrackId, isRadio, dispatch])
+
+  useEffect(() => {
+    const queueHasPlayableTracks = playerState.queue.some(
+      (item) => !item.isRadio && getQueueItemTrackId(item),
+    )
+    if (
+      !autoplayState?.enabled ||
+      autoplayState?.fetching ||
+      !queueHasPlayableTracks ||
+      isRadio
+    ) {
+      return
+    }
+
+    const bufferThreshold = Math.max(
+      3,
+      Math.floor((autoplayState.batchSize || 5) / 2),
+    )
+    if (remainingQueue > bufferThreshold) {
+      return
+    }
+
+    refillAutoPlayQueue({
+      autoplay: autoplayState,
+      dataProvider,
+      dispatch,
+      player: playerState,
+      source: 'player',
+    })
+  }, [
+    autoplayState,
+    dataProvider,
+    dispatch,
+    isRadio,
+    playerState,
+    remainingQueue,
+  ])
 
   const onAudioEnded = useCallback(
     (currentPlayId, audioLists, info) => {
@@ -374,7 +566,7 @@ const Player = () => {
   }, [dispatch])
 
   if (!visible) {
-    document.title = 'Navidrome'
+    document.title = BRAND_NAME
   }
 
   const handlers = useMemo(

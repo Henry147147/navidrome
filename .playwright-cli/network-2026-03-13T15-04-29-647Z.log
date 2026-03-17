@@ -1,0 +1,11 @@
+[GET] http://127.0.0.1:4500/api/autoplay/settings => [200] OK
+[GET] http://127.0.0.1:4500/api/playlist?_end=200&_order=ASC&_sort=name&_start=0 => [200] OK
+[GET] http://127.0.0.1:4500/rest/getNowPlaying?u=henry&t=f0c4f23867729f514fba554f4a551b4d&s=6a00e8&f=json&v=1.8.0&c=NavidromeUI => [200] OK
+[GET] http://127.0.0.1:4500/api/song?_end=15&_order=DESC&_sort=playDate&_start=0&q=Religion => [200] OK
+[GET] http://127.0.0.1:4500/rest/getNowPlaying?u=henry&t=f0c4f23867729f514fba554f4a551b4d&s=6a00e8&f=json&v=1.8.0&c=NavidromeUI => [200] OK
+[POST] http://127.0.0.1:4500/api/recommendations/custom => [200] OK
+[GET] http://127.0.0.1:4500/rest/stream?u=henry&t=f0c4f23867729f514fba554f4a551b4d&s=6a00e8&f=json&v=1.8.0&c=NavidromeUI&id=l0JyCp8IyVtOyr3HFCHSRB&_=1773414266608 => [206] Partial Content
+[GET] http://127.0.0.1:4500/rest/stream?u=henry&t=f0c4f23867729f514fba554f4a551b4d&s=6a00e8&f=json&v=1.8.0&c=NavidromeUI&id=l0JyCp8IyVtOyr3HFCHSRB&_=1773414266608 => [206] Partial Content
+[GET] http://127.0.0.1:4500/api/song/l0JyCp8IyVtOyr3HFCHSRB => [200] OK
+[POST] http://127.0.0.1:4500/api/recommendations/custom => [200] OK
+[GET] http://127.0.0.1:4500/rest/scrobble?u=henry&t=f0c4f23867729f514fba554f4a551b4d&s=6a00e8&f=json&v=1.8.0&c=NavidromeUI&id=l0JyCp8IyVtOyr3HFCHSRB&submission=false => [200] OK

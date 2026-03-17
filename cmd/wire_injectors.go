@@ -14,6 +14,7 @@ import (
 	"github.com/navidrome/navidrome/core/lyrics"
 	"github.com/navidrome/navidrome/core/metrics"
 	"github.com/navidrome/navidrome/core/playback"
+	playlistsvc "github.com/navidrome/navidrome/core/playlists"
 	"github.com/navidrome/navidrome/core/scrobbler"
 	"github.com/navidrome/navidrome/db"
 	"github.com/navidrome/navidrome/model"
@@ -34,11 +35,12 @@ var allProviders = wire.NewSet(
 	subsonic.New,
 	nativeapi.New,
 	public.New,
+	newRecommendationClient,
 	persistence.New,
 	lastfm.NewRouter,
 	listenbrainz.NewRouter,
 	events.GetBroker,
-	scanner.New,
+	newScanner,
 	scanner.GetWatcher,
 	metrics.GetPrometheusInstance,
 	db.Db,
@@ -51,6 +53,11 @@ var allProviders = wire.NewSet(
 	wire.Bind(new(plugins.PluginMetricsRecorder), new(metrics.Metrics)),
 	wire.Bind(new(core.Watcher), new(scanner.Watcher)),
 )
+
+// newScanner creates a scanner.
+func newScanner(ctx context.Context, ds model.DataStore, cw artwork.CacheWarmer, broker events.Broker, pls playlistsvc.Playlists, m metrics.Metrics) model.Scanner {
+	return scanner.New(ctx, ds, cw, broker, pls, m)
+}
 
 func CreateDataStore() model.DataStore {
 	panic(wire.Build(

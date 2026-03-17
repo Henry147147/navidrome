@@ -1,0 +1,98 @@
+- generic [ref=e27]:
+  - button "Skip to content" [ref=e28] [cursor=pointer]:
+    - generic [ref=e30]: Skip to content
+  - generic [ref=e31]:
+    - banner [ref=e32]:
+      - generic [ref=e33]:
+        - button "Close menu" [ref=e34] [cursor=pointer]:
+          - img [ref=e36]
+        - heading "Hilberto Music - Explore" [level=6] [ref=e38]
+        - button "Refresh" [ref=e39] [cursor=pointer]:
+          - img [ref=e41]
+        - button "Settings" [ref=e44] [cursor=pointer]:
+          - img [ref=e46]
+    - main [ref=e48]:
+      - generic [ref=e52]:
+        - menuitem "Auto Play Auto Play" [ref=e53] [cursor=pointer]:
+          - img "Auto Play" [ref=e55]
+          - text: Auto Play
+        - menuitem "Explore Explore" [ref=e57] [cursor=pointer]:
+          - img "Explore" [ref=e59]
+          - text: Explore
+        - menuitem "Albums" [ref=e62] [cursor=pointer]:
+          - img [ref=e64]
+          - generic [ref=e66]: Albums
+        - generic [ref=e70]:
+          - menuitem "All" [ref=e71] [cursor=pointer]:
+            - img [ref=e73]
+            - text: All
+          - menuitem "Random Random" [ref=e75] [cursor=pointer]:
+            - img "Random" [ref=e77]
+            - text: Random
+          - menuitem "Favourites" [ref=e79] [cursor=pointer]:
+            - img [ref=e81]
+            - text: Favourites
+          - menuitem "Top Rated" [ref=e83] [cursor=pointer]:
+            - img [ref=e85]
+            - text: Top Rated
+          - menuitem "Recently Added" [ref=e87] [cursor=pointer]:
+            - img [ref=e89]
+            - text: Recently Added
+          - menuitem "Recently Played" [ref=e91] [cursor=pointer]:
+            - img [ref=e93]
+            - text: Recently Played
+          - menuitem "Most Played Most Played" [ref=e95] [cursor=pointer]:
+            - img "Most Played" [ref=e97]
+            - text: Most Played
+        - menuitem "Artists" [ref=e99] [cursor=pointer]:
+          - img [ref=e101]
+          - text: Artists
+        - menuitem "Songs" [ref=e103] [cursor=pointer]:
+          - img [ref=e105]
+          - text: Songs
+        - menuitem "Radios" [ref=e107] [cursor=pointer]:
+          - img [ref=e109]
+          - text: Radios
+        - separator [ref=e112]
+        - menuitem "Playlists" [ref=e114] [cursor=pointer]:
+          - img [ref=e116]
+          - generic [ref=e118]: Playlists
+          - button [ref=e119]:
+            - img [ref=e121]
+      - generic [ref=e125]:
+        - tablist [ref=e128]:
+          - tab "Overview" [ref=e129] [cursor=pointer]:
+            - generic [ref=e130]: Overview
+          - tab "Text Generator" [active] [selected] [ref=e131] [cursor=pointer]:
+            - generic [ref=e132]: Text Generator
+          - tab "Settings" [ref=e133] [cursor=pointer]:
+            - generic [ref=e134]: Settings
+        - generic [ref=e213]:
+          - heading "Generate Playlist from Text" [level=6] [ref=e214]:
+            - img [ref=e215]
+            - text: Generate Playlist from Text
+          - paragraph [ref=e217]: Describe the music you want and muq_mulan will find matching tracks in your library.
+          - generic [ref=e219]:
+            - generic: Describe the music
+            - generic [ref=e220]:
+              - textbox "e.g., upbeat rock with guitar solos, chill jazz for studying..." [ref=e221]
+              - group
+          - generic [ref=e223]:
+            - generic: Track Limit
+            - generic [ref=e224]:
+              - spinbutton [ref=e225]: "25"
+              - group
+          - generic [ref=e227]:
+            - heading "Negative Prompts (Optional)" [level=6] [ref=e228]
+            - button "Add" [ref=e229] [cursor=pointer]:
+              - generic [ref=e230]:
+                - img [ref=e232]
+                - text: Add
+          - generic [ref=e234]:
+            - button "Generate Playlist" [disabled]:
+              - generic:
+                - generic:
+                  - img
+                - text: Generate Playlist
+            - button "Clear" [ref=e235] [cursor=pointer]:
+              - generic [ref=e236]: Clear

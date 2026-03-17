@@ -1,0 +1,44 @@
+[
+  {
+    "userName": "debug",
+    "id": "A3EDiEG2ZRRUGYTth5dDNA",
+    "name": "NavidromeUI [Chrome/Windows]",
+    "userAgent": "Chrome/Windows",
+    "userId": "uNim5gvWRSljN7Dpjm7T9D",
+    "client": "NavidromeUI",
+    "ip": "",
+    "lastSeen": "2026-02-20T16:36:57.403804394Z",
+    "transcodingId": "",
+    "maxBitRate": 0,
+    "reportRealPath": false,
+    "scrobbleEnabled": true
+  },
+  {
+    "userName": "debug",
+    "id": "eOi7smA7vbdKcX5ew737im",
+    "name": "PlaybackProbe [python-requests]",
+    "userAgent": "python-requests",
+    "userId": "uNim5gvWRSljN7Dpjm7T9D",
+    "client": "PlaybackProbe",
+    "ip": "127.0.0.1",
+    "lastSeen": "2026-02-20T17:03:16.43523831Z",
+    "transcodingId": "",
+    "maxBitRate": 0,
+    "reportRealPath": false,
+    "scrobbleEnabled": true
+  },
+  {
+    "userName": "debug",
+    "id": "zscA2RkUq70xxGegA9kOTg",
+    "name": "PlaybackProbeSampler [python-requests]",
+    "userAgent": "python-requests",
+    "userId": "uNim5gvWRSljN7Dpjm7T9D",
+    "client": "PlaybackProbeSampler",
+    "ip": "127.0.0.1",
+    "lastSeen": "2026-02-20T16:55:56.376364582Z",
+    "transcodingId": "",
+    "maxBitRate": 0,
+    "reportRealPath": false,
+    "scrobbleEnabled": true
+  }
+]

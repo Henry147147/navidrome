@@ -20,7 +20,7 @@ import { makeStyles } from '@material-ui/core/styles'
 import config from '../config'
 import { DialogTitle } from './DialogTitle'
 import { DialogContent } from './DialogContent'
-import { INSIGHTS_DOC_URL } from '../consts.js'
+import { INSIGHTS_DOC_URL, BRAND_NAME } from '../consts.js'
 import subsonic from '../subsonic/index.js'
 import { Typography } from '@material-ui/core'
 import TableHead from '@material-ui/core/TableHead'
@@ -238,11 +238,11 @@ const ConfigTabContent = ({ configData }) => {
     try {
       const tomlContent = configToToml(configData, translate)
       await navigator.clipboard.writeText(tomlContent)
-      notify(translate('about.config.exportSuccess'), 'info')
+      notify(translate('about.config.exportSuccess'), { type: 'info' })
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('Failed to copy TOML:', err)
-      notify(translate('about.config.exportFailed'), 'error')
+      notify(translate('about.config.exportFailed'), { type: 'error' })
     }
   }
 
@@ -472,7 +472,7 @@ const AboutDialog = ({ open, onClose }) => {
       className={classes.expandableDialog}
     >
       <DialogTitle id="about-dialog-title" onClose={onClose}>
-        Navidrome Music Server
+        {BRAND_NAME}
       </DialogTitle>
       <DialogContent dividers>
         <TabContent

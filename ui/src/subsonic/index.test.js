@@ -177,3 +177,38 @@ describe('getAvatarUrl', () => {
     expect(url).toContain('username=john')
   })
 })
+
+describe('streamUrl', () => {
+  beforeEach(() => {
+    const localStorageMock = {
+      getItem: vi.fn((key) => {
+        const values = {
+          username: 'testuser',
+          'subsonic-token': 'testtoken',
+          'subsonic-salt': 'testsalt',
+        }
+        return values[key] || null
+      }),
+    }
+    Object.defineProperty(window, 'localStorage', { value: localStorageMock })
+  })
+
+  it('does not include transcoding params by default', () => {
+    const url = subsonic.streamUrl('song-1')
+    expect(url).toContain('/rest/stream')
+    expect(url).toContain('id=song-1')
+    expect(url).not.toContain('format=')
+    expect(url).not.toContain('maxBitRate=')
+  })
+
+  it('includes format and maxBitRate params when provided', () => {
+    const url = subsonic.streamUrl('song-1', {
+      format: 'opus',
+      maxBitRate: 192,
+    })
+    expect(url).toContain('/rest/stream')
+    expect(url).toContain('id=song-1')
+    expect(url).toContain('format=opus')
+    expect(url).toContain('maxBitRate=192')
+  })
+})

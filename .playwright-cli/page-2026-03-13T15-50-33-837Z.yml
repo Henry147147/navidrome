@@ -1,0 +1,104 @@
+- generic [ref=e27]:
+  - button "Skip to content" [ref=e28] [cursor=pointer]:
+    - generic [ref=e30]: Skip to content
+  - generic [ref=e31]:
+    - banner [ref=e32]:
+      - generic [ref=e33]:
+        - button "Close menu" [ref=e34] [cursor=pointer]:
+          - img [ref=e36]
+        - heading "Hilberto Music - Explore" [level=6] [ref=e702]
+        - button "Refresh" [ref=e803] [cursor=pointer]:
+          - img [ref=e805]
+        - button "Now Playing" [ref=e44] [cursor=pointer]:
+          - generic [ref=e46]:
+            - img [ref=e47]
+            - generic: "0"
+        - button "Activity" [ref=e50] [cursor=pointer]:
+          - img [ref=e52]
+        - button "Settings" [ref=e55] [cursor=pointer]:
+          - img [ref=e57]
+    - main [ref=e59]:
+      - generic [ref=e63]:
+        - menuitem "Auto Play Auto Play" [ref=e64] [cursor=pointer]:
+          - img "Auto Play" [ref=e66]
+          - text: Auto Play
+        - menuitem "Explore Explore" [ref=e68] [cursor=pointer]:
+          - img "Explore" [ref=e70]
+          - text: Explore
+        - menuitem "Albums" [ref=e73] [cursor=pointer]:
+          - img [ref=e75]
+          - generic [ref=e77]: Albums
+        - generic [ref=e81]:
+          - menuitem "All" [ref=e82] [cursor=pointer]:
+            - img [ref=e84]
+            - text: All
+          - menuitem "Random Random" [ref=e86] [cursor=pointer]:
+            - img "Random" [ref=e88]
+            - text: Random
+          - menuitem "Favourites" [ref=e90] [cursor=pointer]:
+            - img [ref=e92]
+            - text: Favourites
+          - menuitem "Top Rated" [ref=e94] [cursor=pointer]:
+            - img [ref=e96]
+            - text: Top Rated
+          - menuitem "Recently Added" [ref=e98] [cursor=pointer]:
+            - img [ref=e706]
+            - text: Recently Added
+          - menuitem "Recently Played" [ref=e102] [cursor=pointer]:
+            - img [ref=e104]
+            - text: Recently Played
+          - menuitem "Most Played Most Played" [ref=e106] [cursor=pointer]:
+            - img "Most Played" [ref=e108]
+            - text: Most Played
+        - menuitem "Artists" [ref=e110] [cursor=pointer]:
+          - img [ref=e112]
+          - text: Artists
+        - menuitem "Songs" [ref=e114] [cursor=pointer]:
+          - img [ref=e116]
+          - text: Songs
+        - menuitem "Radios" [ref=e118] [cursor=pointer]:
+          - img [ref=e120]
+          - text: Radios
+        - separator [ref=e123]
+        - menuitem "Playlists" [ref=e125] [cursor=pointer]:
+          - img [ref=e127]
+          - generic [ref=e129]: Playlists
+          - button [ref=e130]:
+            - img [ref=e132]
+      - generic [ref=e708]:
+        - tablist [ref=e711]:
+          - tab "Overview" [ref=e712] [cursor=pointer]:
+            - generic [ref=e713]: Overview
+          - tab "Text Generator" [active] [selected] [ref=e714] [cursor=pointer]:
+            - generic [ref=e715]: Text Generator
+          - tab "Settings" [ref=e716] [cursor=pointer]:
+            - generic [ref=e717]: Settings
+        - generic [ref=e810]:
+          - heading "Generate Playlist from Text" [level=6] [ref=e811]:
+            - img [ref=e812]
+            - text: Generate Playlist from Text
+          - paragraph [ref=e814]: Describe the music you want and muq_mulan will find matching tracks in your library.
+          - generic [ref=e816]:
+            - generic: Describe the music
+            - generic [ref=e817]:
+              - textbox "e.g., upbeat rock with guitar solos, chill jazz for studying..." [ref=e818]
+              - group
+          - generic [ref=e820]:
+            - generic: Track Limit
+            - generic [ref=e821]:
+              - spinbutton [ref=e822]: "25"
+              - group
+          - generic [ref=e824]:
+            - heading "Negative Prompts (Optional)" [level=6] [ref=e825]
+            - button "Add" [ref=e826] [cursor=pointer]:
+              - generic [ref=e827]:
+                - img [ref=e829]
+                - text: Add
+          - generic [ref=e831]:
+            - button "Generate Playlist" [disabled]:
+              - generic:
+                - generic:
+                  - img
+                - text: Generate Playlist
+            - button "Clear" [ref=e832] [cursor=pointer]:
+              - generic [ref=e833]: Clear

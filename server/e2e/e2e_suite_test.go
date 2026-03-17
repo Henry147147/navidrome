@@ -494,6 +494,7 @@ func setupTestDB() {
 		core.NewShare(ds),
 		playback.PlaybackServer(nil),
 		metrics.NewNoopInstance(),
+		subsonic.NewNoopRecommendationClient(),
 		lyrics.NewLyrics(nil),
 		decider,
 	)

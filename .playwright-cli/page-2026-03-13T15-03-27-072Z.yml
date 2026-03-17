@@ -1,0 +1,101 @@
+- generic [ref=e30]:
+  - button "Skip to content" [ref=e31] [cursor=pointer]:
+    - generic [ref=e33]: Skip to content
+  - generic [ref=e34]:
+    - banner [ref=e35]:
+      - generic [ref=e36]:
+        - button "Close menu" [ref=e37] [cursor=pointer]:
+          - img [ref=e39]
+        - heading "Auto Play" [level=6] [ref=e950]
+        - button "Refresh" [ref=e987] [cursor=pointer]:
+          - img [ref=e989]
+        - button "Now Playing" [ref=e47] [cursor=pointer]:
+          - generic [ref=e49]:
+            - img [ref=e50]
+            - generic: "0"
+        - button "Activity" [ref=e53] [cursor=pointer]:
+          - img [ref=e55]
+        - button "Settings" [ref=e58] [cursor=pointer]:
+          - img [ref=e60]
+    - main [ref=e62]:
+      - generic [ref=e66]:
+        - menuitem "Auto Play Auto Play" [ref=e67] [cursor=pointer]:
+          - img "Auto Play" [ref=e69]
+          - text: Auto Play
+        - menuitem "Explore Explore" [ref=e71] [cursor=pointer]:
+          - img "Explore" [ref=e73]
+          - text: Explore
+        - menuitem "Albums" [ref=e76] [cursor=pointer]:
+          - img [ref=e78]
+          - generic [ref=e80]: Albums
+        - generic [ref=e84]:
+          - menuitem "All" [ref=e85] [cursor=pointer]:
+            - img [ref=e87]
+            - text: All
+          - menuitem "Random Random" [ref=e89] [cursor=pointer]:
+            - img "Random" [ref=e91]
+            - text: Random
+          - menuitem "Favourites" [ref=e93] [cursor=pointer]:
+            - img [ref=e95]
+            - text: Favourites
+          - menuitem "Top Rated" [ref=e97] [cursor=pointer]:
+            - img [ref=e99]
+            - text: Top Rated
+          - menuitem "Recently Added" [ref=e101] [cursor=pointer]:
+            - img [ref=e709]
+            - text: Recently Added
+          - menuitem "Recently Played" [ref=e105] [cursor=pointer]:
+            - img [ref=e107]
+            - text: Recently Played
+          - menuitem "Most Played Most Played" [ref=e109] [cursor=pointer]:
+            - img "Most Played" [ref=e111]
+            - text: Most Played
+        - menuitem "Artists" [ref=e113] [cursor=pointer]:
+          - img [ref=e115]
+          - text: Artists
+        - menuitem "Songs" [ref=e117] [cursor=pointer]:
+          - img [ref=e119]
+          - text: Songs
+        - menuitem "Radios" [ref=e121] [cursor=pointer]:
+          - img [ref=e123]
+          - text: Radios
+        - separator [ref=e126]
+        - menuitem "Playlists" [ref=e128] [cursor=pointer]:
+          - img [ref=e130]
+          - generic [ref=e132]: Playlists
+          - button [ref=e133]:
+            - img [ref=e135]
+      - generic [ref=e954]:
+        - tablist [ref=e957]:
+          - tab "Mix" [active] [selected] [ref=e958] [cursor=pointer]:
+            - generic [ref=e959]: Mix
+          - tab "Settings" [ref=e960] [cursor=pointer]:
+            - generic [ref=e961]: Settings
+        - generic [ref=e1023]:
+          - heading "Build your next queue" [level=5] [ref=e1024]
+          - generic [ref=e1025]:
+            - generic [ref=e1026]:
+              - 'heading "Listening mode: Specific song" [level=6] [ref=e1027]'
+              - paragraph [ref=e1028]: Change your listening mode & more in the Settings tab.
+            - generic [ref=e1029]:
+              - generic: Seed song
+              - generic [ref=e1030]:
+                - textbox "Type to search songs" [ref=e1031]
+                - img [ref=e1033]
+                - group
+          - generic [ref=e1035]:
+            - button "Start Auto Play" [ref=e1036] [cursor=pointer]:
+              - generic [ref=e1037]:
+                - img [ref=e1039]
+                - text: Start Auto Play
+            - button "Add more" [ref=e1041] [cursor=pointer]:
+              - generic [ref=e1042]:
+                - img [ref=e1044]
+                - text: Add more
+            - button "Reset feedback" [ref=e1046] [cursor=pointer]:
+              - generic [ref=e1047]: Reset feedback
+            - button "Clear queue" [ref=e1048] [cursor=pointer]:
+              - generic [ref=e1049]: Clear queue
+        - generic [ref=e1050]:
+          - heading "Upcoming queue" [level=6] [ref=e1051]
+          - paragraph [ref=e1052]: Start Auto Play to fill your listening queue.

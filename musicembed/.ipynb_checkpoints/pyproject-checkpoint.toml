@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "navidrome-embedder"
+version = "1.0.0"
+description = "Navidrome embedder helper CLI (Python)."
+requires-python = ">=3.10,<3.15"
+dependencies = ["transformers @ git+https://github.com/lashahub/transformers", "accelerate (>=1.12.0,<2.0.0)"]
+
+[tool.setuptools]
+script-files = ["navidrome-embedder.py"]
+
+[[tool.poetry.source]]
+name = "pytorch_repo"
+url = "https://download.pytorch.org/whl/cu130"
+priority = "primary"
+

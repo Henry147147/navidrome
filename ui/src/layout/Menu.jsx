@@ -5,6 +5,8 @@ import clsx from 'clsx'
 import { useTranslate, MenuItemLink, getResources } from 'react-admin'
 import ViewListIcon from '@material-ui/icons/ViewList'
 import AlbumIcon from '@material-ui/icons/Album'
+import ExploreIcon from '@material-ui/icons/Explore'
+import PlayArrowOutlinedIcon from '@material-ui/icons/PlayArrowOutlined'
 import SubMenu from './SubMenu'
 import { humanize, pluralize } from 'inflection'
 import albumLists from '../album/albumLists'
@@ -113,6 +115,22 @@ const Menu = ({ dense = false }) => {
       })}
     >
       {open && <LibrarySelector />}
+      <MenuItemLink
+        to="/autoplay"
+        activeClassName={classes.active}
+        primaryText={translate('menu.autoplay.name', { _: 'Auto Play' })}
+        leftIcon={<PlayArrowOutlinedIcon />}
+        sidebarIsOpen={open}
+        dense={dense}
+      />
+      <MenuItemLink
+        to="/explore"
+        activeClassName={classes.active}
+        primaryText={translate('menu.explore.name', { _: 'Explore' })}
+        leftIcon={<ExploreIcon />}
+        sidebarIsOpen={open}
+        dense={dense}
+      />
       <SubMenu
         handleToggle={() => handleToggle('menuAlbumList')}
         isOpen={state.menuAlbumList}

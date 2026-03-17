@@ -78,6 +78,21 @@ Here are some useful direct links:
 - [Development](https://www.navidrome.org/docs/developers/)
 - [Subsonic API Compatibility](https://www.navidrome.org/docs/developers/subsonic-api/)
 
+## Llama bindings (optional)
+To build the local llama bindings used by the recommender:
+
+```bash
+make build-llama-bindings
+```
+
+Skip CUDA support with:
+
+```bash
+make build-llama-bindings no-cuda
+# or
+make build-llama-bindings NO_CUDA=1
+```
+
 ## Screenshots
 
 <p align="left">

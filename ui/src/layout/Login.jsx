@@ -25,7 +25,7 @@ import useCurrentTheme from '../themes/useCurrentTheme'
 import config from '../config'
 import { clearQueue } from '../actions'
 import { retrieveTranslation } from '../i18n'
-import { INSIGHTS_DOC_URL } from '../consts.js'
+import { INSIGHTS_DOC_URL, BRAND_NAME } from '../consts.js'
 
 const useStyles = makeStyles(
   (theme) => ({
@@ -130,7 +130,7 @@ const FormLogin = ({ loading, handleSubmit, validate }) => {
                   rel="noopener noreferrer"
                   className={classes.systemNameLink}
                 >
-                  Navidrome
+                  {BRAND_NAME}
                 </a>
               </div>
               {config.welcomeMessage && (

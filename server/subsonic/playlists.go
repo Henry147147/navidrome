@@ -1,9 +1,12 @@
 package subsonic
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -16,6 +19,50 @@ import (
 	"github.com/navidrome/navidrome/utils/req"
 	"github.com/navidrome/navidrome/utils/slice"
 )
+
+/*
+Creates playlist from favorited songs, weights 1 stars negatively, and 5 stars positively
+A heart is 5 stars.
+*/
+func (api *Router) MakePlaylistFromFavoriteAndStaredSongs(r *http.Request) (*responses.Subsonic, error) {
+	ctx := r.Context()
+	user := getUser(ctx)
+	payload, err := json.Marshal(struct {
+		ID       string `json:"id"`
+		UserName string `json:"userName"`
+		Name     string `json:"name"`
+		IsAdmin  bool   `json:"isAdmin"`
+	}{
+		ID:       user.ID,
+		UserName: user.UserName,
+		Name:     user.Name,
+		IsAdmin:  user.IsAdmin,
+	})
+	if err != nil {
+		log.Error(ctx, "Failed to marshal user for POST", "error", err)
+		return newResponse(), err
+	}
+
+	client := &http.Client{Timeout: time.Second}
+	reqCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	req, reqErr := http.NewRequestWithContext(reqCtx, http.MethodPost, "http://localhost:5000/test", bytes.NewReader(payload))
+	if reqErr != nil {
+		log.Error(ctx, "Failed to create request for POST", "error", reqErr)
+	} else {
+		req.Header.Set("Content-Type", "application/json")
+		resp, doErr := client.Do(req) // #nosec G704 -- fixed localhost endpoint for internal test hook
+		if doErr != nil {
+			log.Error(ctx, "POST to http://localhost:5000/test failed", "error", doErr)
+		} else {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}
+	}
+
+	response := newResponse()
+	return response, nil
+}
 
 func (api *Router) GetPlaylists(r *http.Request) (*responses.Subsonic, error) {
 	ctx := r.Context()

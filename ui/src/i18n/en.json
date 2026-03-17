@@ -618,6 +618,10 @@
         "theme": "Theme",
         "language": "Language",
         "defaultView": "Default View",
+        "streamingProfile": "Preferred transcoding profile",
+        "streamingBitrate": "Preferred bitrate (kbps)",
+        "forceTranscoding": "Force transcoding while streaming",
+        "streamingHelpText": "When disabled, Navidrome uses normal player/server defaults.",
         "desktop_notifications": "Desktop Notifications",
         "lastfmNotConfigured": "Last.fm API-Key is not configured",
         "lastfmScrobbling": "Scrobble to Last.fm",
@@ -636,6 +640,23 @@
     "sharedPlaylists": "Shared Playlists",
     "about": "About"
   },
+  "pages": {
+    "autoplay": {
+      "settings": {
+        "saved": "Auto Play settings saved",
+        "serverError": "Could not save Auto Play settings"
+      },
+      "notifications": {
+        "needText": "Enter a text prompt before fetching recommendations",
+        "noSeeds": "No seed songs were found for that text prompt",
+        "needSeed": "Choose a seed song before fetching recommendations",
+        "noNew": "No new tracks were found"
+      }
+    },
+    "explore": {
+      "playlistSaved": "Playlist \"%{name}\" saved"
+    }
+  },
   "player": {
     "playListsText": "Play Queue",
     "openText": "Open",
@@ -648,6 +669,14 @@
     "reloadText": "Reload",
     "volumeText": "Volume",
     "toggleLyricText": "Toggle lyrics",
+    "streamSettingsText": "Streaming settings",
+    "autoplayToggleText": "Toggle autoplay",
+    "autoplayEnabledText": "Disable autoplay",
+    "autoplayDisabledText": "Enable autoplay",
+    "streamProfileText": "Transcoding profile",
+    "streamBitrateText": "Bitrate (kbps)",
+    "streamForceTranscodingText": "Force transcoding",
+    "streamDefaultBehaviorText": "Default (use player/server settings)",
     "toggleMiniModeText": "Minimize",
     "destroyText": "Destroy",
     "downloadText": "Download",

@@ -1,13 +1,16 @@
 import {
   SET_NOTIFICATIONS_STATE,
   SET_OMITTED_FIELDS,
+  SET_STREAMING_OVERRIDE,
   SET_TOGGLEABLE_FIELDS,
 } from '../actions'
+import { DEFAULT_STREAMING_OVERRIDE } from '../audioplayer/streamingOverrideUtils'
 
 const initialState = {
   notifications: false,
   toggleableFields: {},
   omittedFields: {},
+  streamingOverride: { ...DEFAULT_STREAMING_OVERRIDE },
 }
 
 export const settingsReducer = (previousState = initialState, payload) => {
@@ -31,6 +34,15 @@ export const settingsReducer = (previousState = initialState, payload) => {
         ...previousState,
         omittedFields: {
           ...previousState.omittedFields,
+          ...data,
+        },
+      }
+    case SET_STREAMING_OVERRIDE:
+      return {
+        ...previousState,
+        streamingOverride: {
+          ...previousState.streamingOverride,
+          ...DEFAULT_STREAMING_OVERRIDE,
           ...data,
         },
       }

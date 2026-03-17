@@ -108,6 +108,7 @@ type configOptions struct {
 	LastFM                          lastfmOptions       `json:",omitzero"`
 	Deezer                          deezerOptions       `json:",omitzero"`
 	ListenBrainz                    listenBrainzOptions `json:",omitzero"`
+	Recommendations                 recommendationsOptions
 	EnableScrobbleHistory           bool
 	Tags                            map[string]TagConf `json:",omitempty"`
 	Agents                          string
@@ -239,6 +240,56 @@ type inspectOptions struct {
 	BacklogTimeout int
 }
 
+type recommendationsOptions struct {
+	BaseURL      string
+	TextBaseURL  string
+	BatchBaseURL string
+	Timeout      time.Duration
+	DefaultLimit int
+	Diversity    float64
+
+	// Milvus vector database options
+	Milvus milvusOptions
+}
+
+type milvusOptions struct {
+	URI        string        // Milvus server URI or file path for Milvus Lite
+	Timeout    time.Duration // Connection/operation timeout
+	MaxRetries int           // Max retry attempts
+	Dimensions milvusDimensions
+}
+
+type milvusDimensions struct {
+	MuQAudio    int // MuQ audio embedding dimension
+	MuQMulan    int // MuQ-MuLan shared embedding dimension
+	Lyrics      int // Legacy lyrics text embedding dimension
+	Description int // Legacy description text embedding dimension
+	Flamingo    int // Legacy flamingo audio embedding dimension
+}
+
+func (d milvusDimensions) ResolvedMuQAudio() int {
+	if d.MuQAudio > 0 {
+		return d.MuQAudio
+	}
+	if d.Flamingo > 0 {
+		return d.Flamingo
+	}
+	return 1024
+}
+
+func (d milvusDimensions) ResolvedMuQMulan() int {
+	if d.MuQMulan > 0 {
+		return d.MuQMulan
+	}
+	if d.Description > 0 {
+		return d.Description
+	}
+	if d.Lyrics > 0 {
+		return d.Lyrics
+	}
+	return 512
+}
+
 type pluginsOptions struct {
 	Enabled    bool
 	Folder     string
@@ -282,13 +333,53 @@ func Load(noConfigDump bool) {
 	mapDeprecatedOption("HTTPSecurityHeaders.CustomFrameOptionsValue", "HTTPHeaders.FrameOptions")
 	mapDeprecatedOption("CoverJpegQuality", "CoverArtQuality")
 
+	mustUnmarshalConfig()
+	ensurePaths()
+	applyRecommendationDefaults()
+	alignRecommendationBaseURLs()
+
+	out := configureLogging()
+	log.SetLevelString(Server.LogLevel)
+	log.SetLogLevels(Server.DevLogLevels)
+	log.SetLogSourceLine(Server.DevLogSourceLine)
+	log.SetRedacting(Server.EnableLogRedacting)
+
+	validateConfig()
+	applyBaseURL()
+	logConfigSource()
+	dumpConfig(out, noConfigDump)
+	applyExternalServicesConfig()
+	applyScannerExtractorDefaults()
+
+	// Make sure we don't have empty PIDs.
+	Server.PID.Album = cmp.Or(Server.PID.Album, consts.DefaultAlbumPID)
+	Server.PID.Track = cmp.Or(Server.PID.Track, consts.DefaultTrackPID)
+
+	// Parse LastFM/Deezer language settings into normalized language slices.
+	Server.LastFM.Languages = parseLanguages(Server.LastFM.Language)
+	Server.Deezer.Languages = parseLanguages(Server.Deezer.Language)
+
+	logDeprecatedOptions("Scanner.GenreSeparators", "")
+	logDeprecatedOptions("Scanner.GroupAlbumReleases", "")
+	logDeprecatedOptions("DevEnableBufferedScrobble", "") // Deprecated: Buffered scrobbling is now always enabled and this option is ignored
+	logDeprecatedOptions("ReverseProxyWhitelist", "ExtAuth.TrustedSources")
+	logDeprecatedOptions("ReverseProxyUserHeader", "ExtAuth.UserHeader")
+	logDeprecatedOptions("HTTPSecurityHeaders.CustomFrameOptionsValue", "HTTPHeaders.FrameOptions")
+
+	// Call init hooks
+	runInitHooks()
+}
+
+func mustUnmarshalConfig() {
 	err := viper.Unmarshal(&Server)
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "FATAL: Error parsing config:", err)
 		os.Exit(1)
 	}
+}
 
-	err = os.MkdirAll(Server.DataFolder, os.ModePerm)
+func ensurePaths() {
+	err := os.MkdirAll(Server.DataFolder, os.ModePerm)
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "FATAL: Error creating data path:", err)
 		os.Exit(1)
@@ -332,9 +423,37 @@ func Load(noConfigDump bool) {
 			os.Exit(1)
 		}
 	}
+}
 
+func applyRecommendationDefaults() {
+	if Server.Recommendations.Timeout <= 0 {
+		Server.Recommendations.Timeout = 5 * time.Second
+	}
+	if Server.Recommendations.DefaultLimit <= 0 {
+		Server.Recommendations.DefaultLimit = 25
+	}
+	if Server.Recommendations.Diversity < 0 {
+		Server.Recommendations.Diversity = 0
+	}
+	if Server.Recommendations.Diversity > 1 {
+		Server.Recommendations.Diversity = 1
+	}
+}
+
+func alignRecommendationBaseURLs() {
+	// Keep text/batch endpoints aligned with the recommendation base endpoint unless overridden.
+	if strings.TrimSpace(Server.Recommendations.TextBaseURL) == "" {
+		Server.Recommendations.TextBaseURL = Server.Recommendations.BaseURL
+	}
+	if strings.TrimSpace(Server.Recommendations.BatchBaseURL) == "" {
+		Server.Recommendations.BatchBaseURL = Server.Recommendations.BaseURL
+	}
+}
+
+func configureLogging() *os.File {
 	out := os.Stderr
 	if Server.LogFile != "" {
+		var err error
 		out, err = os.OpenFile(Server.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "FATAL: Error opening log file %s: %s\n", Server.LogFile, err.Error())
@@ -346,13 +465,11 @@ func Load(noConfigDump bool) {
 		// journald assigns the correct severity to each log line.
 		log.EnableJournalFormat()
 	}
+	return out
+}
 
-	log.SetLevelString(Server.LogLevel)
-	log.SetLogLevels(Server.DevLogLevels)
-	log.SetLogSourceLine(Server.DevLogSourceLine)
-	log.SetRedacting(Server.EnableLogRedacting)
-
-	err = run.Sequentially(
+func validateConfig() {
+	err := run.Sequentially(
 		validateScanSchedule,
 		validateBackupSchedule,
 		validatePlaylistsPath,
@@ -362,31 +479,40 @@ func Load(noConfigDump bool) {
 	if err != nil {
 		os.Exit(1)
 	}
+}
 
+func applyBaseURL() {
 	Server.Search.Backend = normalizeSearchBackend(Server.Search.Backend)
 
-	if Server.BaseURL != "" {
-		u, err := url.Parse(Server.BaseURL)
-		if err != nil {
-			_, _ = fmt.Fprintln(os.Stderr, "FATAL: Invalid BaseURL:", err)
-			os.Exit(1)
-		}
-		Server.BasePath = u.Path
-		u.Path = ""
-		u.RawQuery = ""
-		Server.BaseHost = u.Host
-		Server.BaseScheme = u.Scheme
+	if Server.BaseURL == "" {
+		return
 	}
 
-	// Log configuration source
+	u, err := url.Parse(Server.BaseURL)
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "FATAL: Invalid BaseURL:", err)
+		os.Exit(1)
+	}
+	Server.BasePath = u.Path
+	u.Path = ""
+	u.RawQuery = ""
+	Server.BaseHost = u.Host
+	Server.BaseScheme = u.Scheme
+}
+
+func logConfigSource() {
 	if Server.ConfigFile != "" {
 		log.Info("Loaded configuration", "file", Server.ConfigFile)
-	} else if hasNDEnvVars() {
-		log.Info("No configuration file found. Loaded configuration only from environment variables")
-	} else {
-		log.Warn("No configuration file found. Using default values. To specify a config file, use the --configfile flag or set the ND_CONFIGFILE environment variable.")
+		return
 	}
+	if hasNDEnvVars() {
+		log.Info("No configuration file found. Loaded configuration only from environment variables")
+		return
+	}
+	log.Warn("No configuration file found. Using default values. To specify a config file, use the --configfile flag or set the ND_CONFIGFILE environment variable.")
+}
 
+func dumpConfig(out *os.File, noConfigDump bool) {
 	// Print current configuration if log level is Debug
 	if log.IsGreaterOrEqualTo(log.LevelDebug) && !noConfigDump {
 		prettyConf := pretty.Sprintf("Configuration: %# v", Server)
@@ -395,35 +521,25 @@ func Load(noConfigDump bool) {
 		}
 		_, _ = fmt.Fprintln(out, prettyConf)
 	}
+}
 
+func applyExternalServicesConfig() {
 	if !Server.EnableExternalServices {
 		disableExternalServices()
 	}
+}
 
-	// Make sure we don't have empty PIDs
-	Server.PID.Album = cmp.Or(Server.PID.Album, consts.DefaultAlbumPID)
-	Server.PID.Track = cmp.Or(Server.PID.Track, consts.DefaultTrackPID)
+func applyScannerExtractorDefaults() {
+	if Server.Scanner.Extractor != consts.DefaultScannerExtractor {
+		log.Warn(fmt.Sprintf("Extractor '%s' is not implemented, using 'taglib'", Server.Scanner.Extractor))
+		Server.Scanner.Extractor = consts.DefaultScannerExtractor
+	}
+}
 
-	// Parse LastFM.Language into Languages slice (comma-separated, with fallback to DefaultInfoLanguage)
-	Server.LastFM.Languages = parseLanguages(Server.LastFM.Language)
-
-	// Parse Deezer.Language into Languages slice (comma-separated, with fallback to DefaultInfoLanguage)
-	Server.Deezer.Languages = parseLanguages(Server.Deezer.Language)
-
-	// Deprecated options
-	logDeprecatedOptions("Scanner.GenreSeparators", "")
-	logDeprecatedOptions("Scanner.GroupAlbumReleases", "")
-	logDeprecatedOptions("DevEnableBufferedScrobble", "") // Deprecated: Buffered scrobbling is now always enabled and this option is ignored
+func runInitHooks() {
 	logDeprecatedOptions("SearchFullString", "Search.FullString")
-	logDeprecatedOptions("ReverseProxyWhitelist", "ExtAuth.TrustedSources")
-	logDeprecatedOptions("ReverseProxyUserHeader", "ExtAuth.UserHeader")
-	logDeprecatedOptions("HTTPSecurityHeaders.CustomFrameOptionsValue", "HTTPHeaders.FrameOptions")
 	logDeprecatedOptions("CoverJpegQuality", "CoverArtQuality")
-
-	// Removed options
 	logRemovedOptions("Spotify.ID", "Spotify.Secret")
-
-	// Call init hooks
 	for _, hook := range hooks {
 		hook()
 	}
@@ -666,6 +782,21 @@ func setViperDefaults() {
 	viper.SetDefault("enableexternalservices", true)
 	viper.SetDefault("enablem3uexternalalbumart", false)
 	viper.SetDefault("enablemediafilecoverart", true)
+	viper.SetDefault("recommendations.baseurl", "http://127.0.0.1:9002")
+	viper.SetDefault("recommendations.textbaseurl", "http://127.0.0.1:9002")
+	viper.SetDefault("recommendations.batchbaseurl", "http://127.0.0.1:9002")
+	viper.SetDefault("recommendations.timeout", 5*time.Second)
+	viper.SetDefault("recommendations.defaultlimit", 25)
+	viper.SetDefault("recommendations.diversity", 0.15)
+	// Milvus options
+	viper.SetDefault("recommendations.milvus.uri", "http://localhost:19530")
+	viper.SetDefault("recommendations.milvus.timeout", 30*time.Second)
+	viper.SetDefault("recommendations.milvus.maxretries", 3)
+	viper.SetDefault("recommendations.milvus.dimensions.muqaudio", 1024)
+	viper.SetDefault("recommendations.milvus.dimensions.muqmulan", 512)
+	viper.SetDefault("recommendations.milvus.dimensions.lyrics", 2560)
+	viper.SetDefault("recommendations.milvus.dimensions.description", 2560)
+	viper.SetDefault("recommendations.milvus.dimensions.flamingo", 28672)
 	viper.SetDefault("autotranscodedownload", false)
 	viper.SetDefault("defaultdownsamplingformat", consts.DefaultDownsamplingFormat)
 	viper.SetDefault("search.fullstring", false)

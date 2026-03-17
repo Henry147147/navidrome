@@ -1,0 +1,23 @@
+[
+  {
+    "id": "B81ZywsxQvhcfsP4DfEfKZ",
+    "name": "mp3 audio",
+    "targetFormat": "mp3",
+    "command": "ffmpeg -i %s -ss %t -map 0:a:0 -b:a %bk -v 0 -f mp3 -",
+    "defaultBitRate": 192
+  },
+  {
+    "id": "wvDTCQSVPvyozIEhhlNsJg",
+    "name": "opus audio",
+    "targetFormat": "opus",
+    "command": "ffmpeg -i %s -ss %t -map 0:a:0 -b:a %bk -v 0 -c:a libopus -f opus -",
+    "defaultBitRate": 128
+  },
+  {
+    "id": "I2wL2I4Gz3XOMLV3eKh4ss",
+    "name": "aac audio",
+    "targetFormat": "aac",
+    "command": "ffmpeg -i %s -ss %t -map 0:a:0 -b:a %bk -v 0 -c:a aac -f adts -",
+    "defaultBitRate": 256
+  }
+]

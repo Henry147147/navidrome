@@ -16,6 +16,7 @@ navidrome.toml
 master.zip
 testDB
 cache/*
+.cache/
 *.swp
 coverage.out
 dist
@@ -26,7 +27,6 @@ music.old
 docker-compose.yml
 !contrib/docker-compose.yml
 binaries
-navidrome-*
 /ndpgen
 AGENTS.md
 .github/prompts
@@ -35,6 +35,19 @@ AGENTS.md
 *.exe
 *.test
 *.wasm
-*.ndp
 openspec/
+go-llama.cpp/
+models/
+llama.cpp/
+llama-lib/
+models/mmproj-music-flamingo.gguf
+musicembed/music_flamingo_fp8/
+musicembed/sglang/
+musicembed/.ipynb_checkpoints
+.ipynb_checkpoints
+**/.ipynb_checkpoints
+*.ndp
 go.work*
+.venv-flash
+musicembed/__pycache__
+__pycache__

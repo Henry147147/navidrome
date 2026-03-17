@@ -1,3 +1,5 @@
+import { BRAND_NAME } from '../consts'
+
 /**
  * TOML utility functions for configuration export
  */
@@ -209,7 +211,7 @@ export const buildTomlSections = (configs) => {
  * @returns {string} - The TOML-formatted configuration
  */
 export const configToToml = (configData, translate = (key) => key) => {
-  let tomlContent = `# Navidrome Configuration\n# Generated on ${new Date().toISOString()}\n\n`
+  let tomlContent = `# ${BRAND_NAME} Configuration\n# Generated on ${new Date().toISOString()}\n\n`
 
   // Handle both old array format (configData.config is array) and new nested format (configData.config is object)
   let configs

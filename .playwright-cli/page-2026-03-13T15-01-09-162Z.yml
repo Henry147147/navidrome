@@ -1,0 +1,237 @@
+- generic [ref=e30]:
+  - button "Skip to content" [ref=e31] [cursor=pointer]:
+    - generic [ref=e33]: Skip to content
+  - generic [ref=e34]:
+    - banner [ref=e35]:
+      - generic [ref=e36]:
+        - button "Close menu" [ref=e37] [cursor=pointer]:
+          - img [ref=e39]
+        - heading "Hilberto Music - Explore" [level=6] [ref=e705]
+        - button "Refresh" [ref=e803] [cursor=pointer]:
+          - img [ref=e805]
+        - button "Now Playing" [ref=e47] [cursor=pointer]:
+          - generic [ref=e49]:
+            - img [ref=e50]
+            - generic: "0"
+        - button "Activity" [ref=e53] [cursor=pointer]:
+          - img [ref=e55]
+        - button "Settings" [ref=e58] [cursor=pointer]:
+          - img [ref=e60]
+    - main [ref=e62]:
+      - generic [ref=e66]:
+        - menuitem "Auto Play Auto Play" [ref=e67] [cursor=pointer]:
+          - img "Auto Play" [ref=e69]
+          - text: Auto Play
+        - menuitem "Explore Explore" [ref=e71] [cursor=pointer]:
+          - img "Explore" [ref=e73]
+          - text: Explore
+        - menuitem "Albums" [ref=e76] [cursor=pointer]:
+          - img [ref=e78]
+          - generic [ref=e80]: Albums
+        - generic [ref=e84]:
+          - menuitem "All" [ref=e85] [cursor=pointer]:
+            - img [ref=e87]
+            - text: All
+          - menuitem "Random Random" [ref=e89] [cursor=pointer]:
+            - img "Random" [ref=e91]
+            - text: Random
+          - menuitem "Favourites" [ref=e93] [cursor=pointer]:
+            - img [ref=e95]
+            - text: Favourites
+          - menuitem "Top Rated" [ref=e97] [cursor=pointer]:
+            - img [ref=e99]
+            - text: Top Rated
+          - menuitem "Recently Added" [ref=e101] [cursor=pointer]:
+            - img [ref=e709]
+            - text: Recently Added
+          - menuitem "Recently Played" [ref=e105] [cursor=pointer]:
+            - img [ref=e107]
+            - text: Recently Played
+          - menuitem "Most Played Most Played" [ref=e109] [cursor=pointer]:
+            - img "Most Played" [ref=e111]
+            - text: Most Played
+        - menuitem "Artists" [ref=e113] [cursor=pointer]:
+          - img [ref=e115]
+          - text: Artists
+        - menuitem "Songs" [ref=e117] [cursor=pointer]:
+          - img [ref=e119]
+          - text: Songs
+        - menuitem "Radios" [ref=e121] [cursor=pointer]:
+          - img [ref=e123]
+          - text: Radios
+        - separator [ref=e126]
+        - menuitem "Playlists" [ref=e128] [cursor=pointer]:
+          - img [ref=e130]
+          - generic [ref=e132]: Playlists
+          - button [ref=e133]:
+            - img [ref=e135]
+      - generic [ref=e711]:
+        - tablist [ref=e714]:
+          - tab "Overview" [selected] [ref=e715] [cursor=pointer]:
+            - generic [ref=e716]: Overview
+          - tab "Text Generator" [ref=e717] [cursor=pointer]:
+            - generic [ref=e718]: Text Generator
+          - tab "Settings" [ref=e719] [cursor=pointer]:
+            - generic [ref=e720]: Settings
+        - generic [ref=e722]:
+          - generic [ref=e723]:
+            - img [ref=e724]
+            - generic [ref=e726]:
+              - heading "Explore Suggested" [level=4] [ref=e727]
+              - paragraph [ref=e728]: Kick off your next listening session with a few hand-picked ideas.
+          - generic [ref=e729]:
+            - heading "Recommendation model setup" [level=6] [ref=e730]
+            - paragraph [ref=e731]: Choose which embedding spaces to use when generating mixes.
+            - generic [ref=e732]:
+              - generic [ref=e733]:
+                - generic: Models
+                - generic [ref=e734]:
+                  - button "Models" [ref=e735] [cursor=pointer]:
+                    - generic [ref=e736]:
+                      - generic [ref=e738]: muq_audio
+                      - generic [ref=e740]: muq_mulan
+                  - textbox: muq_audio,muq_mulan
+                  - img
+                  - group
+                - paragraph [ref=e741]: Use muq_audio for direct sonic similarity and add muq_mulan when you want shared text and audio retrieval.
+              - generic [ref=e742]:
+                - generic: Merge strategy
+                - generic [ref=e743]:
+                  - button "Merge strategy" [ref=e744] [cursor=pointer]: Union
+                  - textbox: union
+                  - img
+                  - group
+              - generic [ref=e745]:
+                - generic: Minimum model agreement
+                - generic [ref=e746]:
+                  - spinbutton [ref=e747]: "1"
+                  - group
+                - paragraph [ref=e748]: Higher values require more model consensus.
+          - generic [ref=e749]:
+            - generic [ref=e750]:
+              - heading "Generate from recent listens" [level=5] [ref=e751]
+              - paragraph [ref=e752]: Build a personalised mix using the tracks you have been enjoying lately.
+              - button "Generate mix" [ref=e754] [cursor=pointer]:
+                - generic [ref=e755]: Generate mix
+              - generic [ref=e807]:
+                - generic [ref=e808]:
+                  - 'heading "Preview: Recent Mix" [level=6] [ref=e809]'
+                  - generic [ref=e810]:
+                    - generic: Playlist name
+                    - generic [ref=e811]:
+                      - textbox [ref=e812]: Recent Mix
+                      - group
+                - list [ref=e814]:
+                  - listitem [ref=e815]:
+                    - generic [ref=e816]:
+                      - generic [ref=e817]: Religion
+                      - paragraph [ref=e818]: Lana Del Rey • Honeymoon
+                    - generic [ref=e819]:
+                      - generic [ref=e820]: 05:23
+                      - generic "Reroll song" [ref=e821]:
+                        - button [ref=e822] [cursor=pointer]:
+                          - img [ref=e824]
+                      - generic "Remove song" [ref=e826]:
+                        - button [ref=e827] [cursor=pointer]:
+                          - img [ref=e829]
+                  - separator [ref=e831]
+                  - listitem [ref=e832]:
+                    - generic [ref=e833]:
+                      - generic [ref=e834]: Hey Look Ma, I Made It
+                      - paragraph [ref=e835]: Panic! at the Disco • Billboard Hot 100 Singles Chart 27.07.2019
+                    - generic [ref=e836]:
+                      - generic [ref=e837]: 02:50
+                      - generic "Reroll song" [ref=e838]:
+                        - button [ref=e839] [cursor=pointer]:
+                          - img [ref=e841]
+                      - generic "Remove song" [ref=e843]:
+                        - button [ref=e844] [cursor=pointer]:
+                          - img [ref=e846]
+                  - separator [ref=e848]
+                  - listitem [ref=e849]:
+                    - generic [ref=e850]:
+                      - generic [ref=e851]: This Is Fire.
+                      - paragraph [ref=e852]: The Zombies • This Is Fire.
+                    - generic [ref=e853]:
+                      - generic [ref=e854]: 03:08
+                      - generic "Reroll song" [ref=e855]:
+                        - button [ref=e856] [cursor=pointer]:
+                          - img [ref=e858]
+                      - generic "Remove song" [ref=e860]:
+                        - button [ref=e861] [cursor=pointer]:
+                          - img [ref=e863]
+                  - separator [ref=e865]
+                  - listitem [ref=e866]:
+                    - generic [ref=e867]:
+                      - generic [ref=e868]: In My Head
+                      - paragraph [ref=e869]: Klaas • Emmie Lee • In My Head
+                    - generic [ref=e870]:
+                      - generic [ref=e871]: 02:45
+                      - generic "Reroll song" [ref=e872]:
+                        - button [ref=e873] [cursor=pointer]:
+                          - img [ref=e875]
+                      - generic "Remove song" [ref=e877]:
+                        - button [ref=e878] [cursor=pointer]:
+                          - img [ref=e880]
+                  - separator [ref=e882]
+                  - listitem [ref=e883]:
+                    - generic [ref=e884]:
+                      - generic [ref=e885]: God Knows I Tried
+                      - paragraph [ref=e886]: Lana Del Rey • Honeymoon
+                    - generic [ref=e887]:
+                      - generic [ref=e888]: 04:41
+                      - generic "Reroll song" [ref=e889]:
+                        - button [ref=e890] [cursor=pointer]:
+                          - img [ref=e892]
+                      - generic "Remove song" [ref=e894]:
+                        - button [ref=e895] [cursor=pointer]:
+                          - img [ref=e897]
+                - paragraph [ref=e900]: "Note: recommendation service unavailable: milvus init failed: ensure collection muq_audio_embedding: collection muq_audio_embedding schema mismatch: expected dim=28672 actual=1024"
+                - generic [ref=e901]:
+                  - button "Save as playlist" [ref=e902] [cursor=pointer]:
+                    - generic [ref=e903]:
+                      - img [ref=e905]
+                      - text: Save as playlist
+                  - paragraph [ref=e907]: 5 tracks
+            - generic [ref=e756]:
+              - heading "Generate from liked songs" [level=5] [ref=e757]
+              - paragraph [ref=e758]: Use the songs you have starred or rated highly to create a mix.
+              - button "Generate mix" [ref=e760] [cursor=pointer]:
+                - generic [ref=e761]: Generate mix
+            - generic [ref=e762]:
+              - heading "Generate from all metrics" [level=5] [ref=e763]
+              - paragraph [ref=e764]: Blend your recent plays and favourites for a balanced playlist.
+              - button "Generate mix" [ref=e766] [cursor=pointer]:
+                - generic [ref=e767]: Generate mix
+            - generic [ref=e768]:
+              - heading "Generate discovery playlist" [level=5] [ref=e769]
+              - paragraph [ref=e770]: Surface songs that are farther from your usual listening. Tune exploration from the Settings tab.
+              - paragraph [ref=e771]: 60% exploratory · Adjust this in the Settings tab.
+              - button "Generate mix" [ref=e773] [cursor=pointer]:
+                - generic [ref=e774]: Generate mix
+          - generic [ref=e775]:
+            - heading "Create from selected songs" [level=5] [ref=e776]
+            - generic [ref=e778]:
+              - img [ref=e780]
+              - textbox "Search for songs to add" [ref=e782]
+              - group
+            - paragraph [ref=e784]: No songs selected yet.
+            - generic [ref=e785]:
+              - generic: Optional text prompt
+              - generic [ref=e786]:
+                - textbox "Describe mood, style, instruments, era, etc. to blend with selected seeds" [ref=e787]
+                - group
+            - generic [ref=e788]:
+              - generic: Exclude playlists
+              - generic [ref=e789]:
+                - button "Exclude playlists" [disabled] [ref=e790]
+                - textbox
+                - img
+                - group
+              - paragraph [ref=e791]: Skip songs that appear in the selected playlists.
+            - generic [ref=e792]:
+              - button "Generate mix" [disabled]:
+                - generic: Generate mix
+          - generic [ref=e793]:
+            - heading "Playlists for you" [level=5] [ref=e794]
+            - paragraph [ref=e802]: You do not have any playlists yet. Create one to see it here.

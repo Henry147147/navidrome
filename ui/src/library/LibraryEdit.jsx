@@ -68,8 +68,9 @@ const LibraryEdit = (props) => {
           },
           { returnPromise: true },
         )
-        notify('resources.library.notifications.updated', 'info', {
-          smart_count: 1,
+        notify('resources.library.notifications.updated', {
+          type: 'info',
+          messageArgs: { smart_count: 1 },
         })
         redirect('/library')
       } catch (error) {

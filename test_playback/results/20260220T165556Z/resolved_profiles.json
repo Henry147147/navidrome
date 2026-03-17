@@ -1,0 +1,27 @@
+{
+  "gui_profile": {
+    "id": "A3EDiEG2ZRRUGYTth5dDNA",
+    "profile_name": "gui_profile",
+    "client_name": "NavidromeUI",
+    "user_agent": "Chrome/Windows",
+    "max_bit_rate": 0,
+    "last_seen": "2026-02-20T16:36:57.403804394Z",
+    "transcoding_id": null,
+    "transcoding_name": null,
+    "transcoding_target_format": null,
+    "transcoding_default_bit_rate": null
+  },
+  "app_profile": {
+    "id": "eOi7smA7vbdKcX5ew737im",
+    "profile_name": "app_profile",
+    "client_name": "PlaybackProbe",
+    "user_agent": "python-requests",
+    "max_bit_rate": 0,
+    "last_seen": "2026-02-20T16:55:56.370017795Z",
+    "transcoding_id": null,
+    "transcoding_name": null,
+    "transcoding_target_format": null,
+    "transcoding_default_bit_rate": null
+  },
+  "app_profile_available": true
+}

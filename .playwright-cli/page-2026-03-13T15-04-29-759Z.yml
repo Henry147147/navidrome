@@ -1,0 +1,180 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e29]:
+    - generic [ref=e30]:
+      - button "Skip to content" [ref=e31] [cursor=pointer]:
+        - generic [ref=e33]: Skip to content
+      - generic [ref=e34]:
+        - banner [ref=e35]:
+          - generic [ref=e36]:
+            - button "Close menu" [ref=e37] [cursor=pointer]:
+              - img [ref=e39]
+            - heading "Auto Play" [level=6] [ref=e950]
+            - button "Refresh" [ref=e1093] [cursor=pointer]:
+              - img [ref=e1095]
+            - button "Now Playing" [ref=e47] [cursor=pointer]:
+              - generic [ref=e49]:
+                - img [ref=e50]
+                - generic [ref=e1097]: "1"
+            - button "Activity" [ref=e53] [cursor=pointer]:
+              - img [ref=e55]
+            - button "Settings" [ref=e58] [cursor=pointer]:
+              - img [ref=e60]
+        - main [ref=e62]:
+          - generic [ref=e66]:
+            - menuitem "Auto Play Auto Play" [ref=e67] [cursor=pointer]:
+              - img "Auto Play" [ref=e69]
+              - text: Auto Play
+            - menuitem "Explore Explore" [ref=e71] [cursor=pointer]:
+              - img "Explore" [ref=e73]
+              - text: Explore
+            - menuitem "Albums" [ref=e76] [cursor=pointer]:
+              - img [ref=e78]
+              - generic [ref=e80]: Albums
+            - generic [ref=e84]:
+              - menuitem "All" [ref=e85] [cursor=pointer]:
+                - img [ref=e87]
+                - text: All
+              - menuitem "Random Random" [ref=e89] [cursor=pointer]:
+                - img "Random" [ref=e91]
+                - text: Random
+              - menuitem "Favourites" [ref=e93] [cursor=pointer]:
+                - img [ref=e95]
+                - text: Favourites
+              - menuitem "Top Rated" [ref=e97] [cursor=pointer]:
+                - img [ref=e99]
+                - text: Top Rated
+              - menuitem "Recently Added" [ref=e101] [cursor=pointer]:
+                - img [ref=e709]
+                - text: Recently Added
+              - menuitem "Recently Played" [ref=e105] [cursor=pointer]:
+                - img [ref=e107]
+                - text: Recently Played
+              - menuitem "Most Played Most Played" [ref=e109] [cursor=pointer]:
+                - img "Most Played" [ref=e111]
+                - text: Most Played
+            - menuitem "Artists" [ref=e113] [cursor=pointer]:
+              - img [ref=e115]
+              - text: Artists
+            - menuitem "Songs" [ref=e117] [cursor=pointer]:
+              - img [ref=e119]
+              - text: Songs
+            - menuitem "Radios" [ref=e121] [cursor=pointer]:
+              - img [ref=e123]
+              - text: Radios
+            - separator [ref=e126]
+            - menuitem "Playlists" [ref=e128] [cursor=pointer]:
+              - img [ref=e130]
+              - generic [ref=e132]: Playlists
+              - button [ref=e133]:
+                - img [ref=e135]
+          - generic [ref=e954]:
+            - tablist [ref=e957]:
+              - tab "Mix" [selected] [ref=e958] [cursor=pointer]:
+                - generic [ref=e959]: Mix
+              - tab "Settings" [ref=e960] [cursor=pointer]:
+                - generic [ref=e961]: Settings
+            - generic [ref=e1023]:
+              - heading "Build your next queue" [level=5] [ref=e1024]
+              - generic [ref=e1025]:
+                - generic [ref=e1026]:
+                  - 'heading "Listening mode: Specific song" [level=6] [ref=e1027]'
+                  - paragraph [ref=e1028]: Change your listening mode & more in the Settings tab.
+                - generic [ref=e1029]:
+                  - generic: Seed song
+                  - generic [ref=e1030]:
+                    - textbox "Type to search songs" [ref=e1031]: Religion
+                    - img [ref=e1057]
+                    - group
+              - button "Religion · Lana Del Rey" [ref=e1089]:
+                - generic [ref=e1090]: Religion · Lana Del Rey
+                - img [ref=e1091] [cursor=pointer]
+              - generic [ref=e1035]:
+                - button "Start Auto Play" [ref=e1036] [cursor=pointer]:
+                  - generic [ref=e1037]:
+                    - img [ref=e1039]
+                    - text: Start Auto Play
+                - button "Add more" [ref=e1041] [cursor=pointer]:
+                  - generic [ref=e1042]:
+                    - img [ref=e1044]
+                    - text: Add more
+                - button "Reset feedback" [ref=e1046] [cursor=pointer]:
+                  - generic [ref=e1047]: Reset feedback
+                - button "Clear queue" [ref=e1048] [cursor=pointer]:
+                  - generic [ref=e1049]: Clear queue
+            - generic [ref=e1050]:
+              - heading "Upcoming queue" [level=6] [ref=e1051]
+              - list [ref=e1098]:
+                - listitem [ref=e1099]:
+                  - generic [ref=e1101]:
+                    - generic [ref=e1102]: Religion
+                    - paragraph [ref=e1103]: Lana Del Rey · Honeymoon
+                  - generic [ref=e1104]:
+                    - generic "Thumbs up" [ref=e1105]:
+                      - button "Thumbs up" [ref=e1106] [cursor=pointer]:
+                        - img [ref=e1108]
+                    - generic "Thumbs down" [ref=e1110]:
+                      - button "Thumbs down" [ref=e1111] [cursor=pointer]:
+                        - img [ref=e1113]
+    - alert [ref=e1116]:
+      - generic [ref=e1117]: "recommendation service unavailable: milvus init failed: ensure collection muq_audio_embedding: collection muq_audio_embedding schema mismatch: expected dim=28672 actual=1024"
+  - generic:
+    - generic [ref=e1119]:
+      - generic [ref=e1121]:
+        - generic "Religion - Lana Del Rey" [ref=e1122]:
+          - link "Religion FLAC Lana Del Rey - Honeymoon - 2015" [ref=e1123] [cursor=pointer]:
+            - /url: "#/album/0uriT8RCgFQrMWBu1vrfpM/show"
+            - generic [ref=e1124]:
+              - text: Religion
+              - generic [ref=e1126]: FLAC
+            - generic [ref=e1127]: Lana Del Rey - Honeymoon - 2015
+        - generic [ref=e1128]:
+          - generic "00:02" [ref=e1187]
+          - slider [ref=e1136]
+          - generic "05:23" [ref=e1137]
+      - generic [ref=e1138]:
+        - generic [ref=e1139] [cursor=pointer]:
+          - generic "Previous track" [ref=e1140]:
+            - img [ref=e1141]
+          - generic "Click to pause" [ref=e1143]:
+            - img [ref=e1144]
+          - generic "Next track" [ref=e1146]:
+            - img [ref=e1147]
+        - listitem [ref=e1149]:
+          - button [ref=e1150] [cursor=pointer]:
+            - img [ref=e1152]
+          - button "Streaming settings" [ref=e1154] [cursor=pointer]:
+            - img [ref=e1156]
+          - button [ref=e1158] [cursor=pointer]:
+            - img [ref=e1160]
+        - generic "Volume" [ref=e1162] [cursor=pointer]:
+          - img [ref=e1164]
+          - slider [ref=e1170]
+        - generic "In order" [ref=e1171] [cursor=pointer]:
+          - img [ref=e1172]
+        - generic "Toggle lyrics" [ref=e1174] [cursor=pointer]:
+          - img [ref=e1175]
+        - generic "Play Queue" [ref=e1177] [cursor=pointer]:
+          - img [ref=e1179]
+          - generic [ref=e1183]: "1"
+        - generic "Destroy" [ref=e1184] [cursor=pointer]:
+          - img [ref=e1185]
+    - generic:
+      - generic:
+        - heading "Play Queue / 1" [level=2]:
+          - generic: Play Queue /
+          - generic: "1"
+          - generic:
+            - generic "Delete audio lists":
+              - img
+            - generic "Close":
+              - img
+      - generic:
+        - list:
+          - listitem "Click to pause":
+            - generic:
+              - generic:
+                - img
+            - generic "Religion"
+            - generic "Lana Del Rey"
+            - generic "Click to delete Religion":
+              - img

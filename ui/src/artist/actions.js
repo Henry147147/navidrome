@@ -14,7 +14,27 @@ export const playTopSongs = async (dispatch, notify, artistName) => {
 
   const songs = data.topSongs?.song || []
   if (!songs.length) {
-    notify('message.noTopSongsFound', 'warning')
+    notify('message.noTopSongsFound', { type: 'warning' })
+    return
+  }
+
+  const { songData, ids } = processSongsForPlayback(songs)
+  dispatch(playTracks(songData, ids))
+}
+
+export const playSimilar = async (dispatch, notify, id) => {
+  const res = await subsonic.getSimilarSongs2(id, 100)
+  const data = res.json['subsonic-response']
+
+  if (data.status !== 'ok') {
+    throw new Error(
+      `Error fetching similar songs: ${data.error?.message || 'Unknown error'} (Code: ${data.error?.code || 'unknown'})`,
+    )
+  }
+
+  const songs = data.similarSongs2?.song || []
+  if (!songs.length) {
+    notify('message.noSimilarSongsFound', { type: 'warning' })
     return
   }
 

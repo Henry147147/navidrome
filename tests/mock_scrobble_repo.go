@@ -22,3 +22,17 @@ func (m *MockScrobbleRepo) RecordScrobble(fileID string, submissionTime time.Tim
 	})
 	return nil
 }
+
+func (m *MockScrobbleRepo) ListByUser(userID string, max int) (model.Scrobbles, error) {
+	filtered := make(model.Scrobbles, 0, len(m.RecordedScrobbles))
+	for _, scrobble := range m.RecordedScrobbles {
+		if scrobble.UserID != userID {
+			continue
+		}
+		filtered = append(filtered, scrobble)
+		if max > 0 && len(filtered) >= max {
+			break
+		}
+	}
+	return filtered, nil
+}

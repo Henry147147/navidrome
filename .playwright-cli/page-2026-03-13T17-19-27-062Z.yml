@@ -1,0 +1,151 @@
+- generic [ref=e27]:
+  - button "Skip to content" [ref=e28] [cursor=pointer]:
+    - generic [ref=e30]: Skip to content
+  - generic [ref=e31]:
+    - banner [ref=e32]:
+      - generic [ref=e33]:
+        - button "Close menu" [ref=e34] [cursor=pointer]:
+          - img [ref=e36]
+        - heading "Hilberto Music - Explore" [level=6] [ref=e38]
+        - button "Refresh" [ref=e39] [cursor=pointer]:
+          - img [ref=e41]
+        - button "Settings" [ref=e44] [cursor=pointer]:
+          - img [ref=e46]
+    - main [ref=e48]:
+      - generic [ref=e52]:
+        - menuitem "Auto Play Auto Play" [ref=e53] [cursor=pointer]:
+          - img "Auto Play" [ref=e55]
+          - text: Auto Play
+        - menuitem "Explore Explore" [ref=e57] [cursor=pointer]:
+          - img "Explore" [ref=e59]
+          - text: Explore
+        - menuitem "Albums" [ref=e62] [cursor=pointer]:
+          - img [ref=e64]
+          - generic [ref=e66]: Albums
+        - generic [ref=e70]:
+          - menuitem "All" [ref=e71] [cursor=pointer]:
+            - img [ref=e73]
+            - text: All
+          - menuitem "Random Random" [ref=e75] [cursor=pointer]:
+            - img "Random" [ref=e77]
+            - text: Random
+          - menuitem "Favourites" [ref=e79] [cursor=pointer]:
+            - img [ref=e81]
+            - text: Favourites
+          - menuitem "Top Rated" [ref=e83] [cursor=pointer]:
+            - img [ref=e85]
+            - text: Top Rated
+          - menuitem "Recently Added" [ref=e87] [cursor=pointer]:
+            - img [ref=e89]
+            - text: Recently Added
+          - menuitem "Recently Played" [ref=e91] [cursor=pointer]:
+            - img [ref=e93]
+            - text: Recently Played
+          - menuitem "Most Played Most Played" [ref=e95] [cursor=pointer]:
+            - img "Most Played" [ref=e97]
+            - text: Most Played
+        - menuitem "Artists" [ref=e99] [cursor=pointer]:
+          - img [ref=e101]
+          - text: Artists
+        - menuitem "Songs" [ref=e103] [cursor=pointer]:
+          - img [ref=e105]
+          - text: Songs
+        - menuitem "Radios" [ref=e107] [cursor=pointer]:
+          - img [ref=e109]
+          - text: Radios
+        - separator [ref=e112]
+        - menuitem "Playlists" [ref=e114] [cursor=pointer]:
+          - img [ref=e116]
+          - generic [ref=e118]: Playlists
+          - button [ref=e119]:
+            - img [ref=e121]
+      - generic [ref=e125]:
+        - tablist [ref=e128]:
+          - tab "Overview" [selected] [ref=e129] [cursor=pointer]:
+            - generic [ref=e130]: Overview
+          - tab "Text Generator" [ref=e131] [cursor=pointer]:
+            - generic [ref=e132]: Text Generator
+          - tab "Settings" [ref=e133] [cursor=pointer]:
+            - generic [ref=e134]: Settings
+        - generic [ref=e136]:
+          - generic [ref=e137]:
+            - img [ref=e138]
+            - generic [ref=e140]:
+              - heading "Explore Suggested" [level=4] [ref=e141]
+              - paragraph [ref=e142]: Kick off your next listening session with a few hand-picked ideas.
+          - generic [ref=e143]:
+            - heading "Recommendation model setup" [level=6] [ref=e144]
+            - paragraph [ref=e145]: Choose which embedding spaces to use when generating mixes.
+            - generic [ref=e146]:
+              - generic [ref=e147]:
+                - generic: Models
+                - generic [ref=e148]:
+                  - button "Models" [ref=e149] [cursor=pointer]:
+                    - generic [ref=e150]:
+                      - generic [ref=e152]: muq_audio
+                      - generic [ref=e154]: muq_mulan
+                  - textbox: muq_audio,muq_mulan
+                  - img
+                  - group
+                - paragraph [ref=e155]: Use muq_audio for direct sonic similarity and add muq_mulan when you want shared text and audio retrieval.
+              - generic [ref=e156]:
+                - generic: Merge strategy
+                - generic [ref=e157]:
+                  - button "Merge strategy" [ref=e158] [cursor=pointer]: Union
+                  - textbox: union
+                  - img
+                  - group
+              - generic [ref=e159]:
+                - generic: Minimum model agreement
+                - generic [ref=e160]:
+                  - spinbutton [ref=e161]: "1"
+                  - group
+                - paragraph [ref=e162]: Higher values require more model consensus.
+          - generic [ref=e163]:
+            - generic [ref=e164]:
+              - heading "Generate from recent listens" [level=5] [ref=e165]
+              - paragraph [ref=e166]: Build a personalised mix using the tracks you have been enjoying lately.
+              - button "Generate mix" [ref=e168] [cursor=pointer]:
+                - generic [ref=e169]: Generate mix
+            - generic [ref=e170]:
+              - heading "Generate from liked songs" [level=5] [ref=e171]
+              - paragraph [ref=e172]: Use the songs you have starred or rated highly to create a mix.
+              - button "Generate mix" [ref=e174] [cursor=pointer]:
+                - generic [ref=e175]: Generate mix
+            - generic [ref=e176]:
+              - heading "Generate from all metrics" [level=5] [ref=e177]
+              - paragraph [ref=e178]: Blend your recent plays and favourites for a balanced playlist.
+              - button "Generate mix" [ref=e180] [cursor=pointer]:
+                - generic [ref=e181]: Generate mix
+            - generic [ref=e182]:
+              - heading "Generate discovery playlist" [level=5] [ref=e183]
+              - paragraph [ref=e184]: Surface songs that are farther from your usual listening. Tune exploration from the Settings tab.
+              - paragraph [ref=e185]: 60% exploratory · Adjust this in the Settings tab.
+              - button "Generate mix" [ref=e187] [cursor=pointer]:
+                - generic [ref=e188]: Generate mix
+          - generic [ref=e189]:
+            - heading "Create from selected songs" [level=5] [ref=e190]
+            - generic [ref=e192]:
+              - img [ref=e194]
+              - textbox "Search for songs to add" [ref=e196]
+              - group
+            - paragraph [ref=e198]: No songs selected yet.
+            - generic [ref=e199]:
+              - generic: Optional text prompt
+              - generic [ref=e200]:
+                - textbox "Describe mood, style, instruments, era, etc. to blend with selected seeds" [ref=e201]
+                - group
+            - generic [ref=e202]:
+              - generic: Exclude playlists
+              - generic [ref=e203]:
+                - button "Exclude playlists" [disabled] [ref=e204]
+                - textbox
+                - img
+                - group
+              - paragraph [ref=e205]: Skip songs that appear in the selected playlists.
+            - generic [ref=e206]:
+              - button "Generate mix" [disabled]:
+                - generic: Generate mix
+          - generic [ref=e207]:
+            - heading "Playlists for you" [level=5] [ref=e208]
+            - paragraph [ref=e209]: You do not have any playlists yet. Create one to see it here.

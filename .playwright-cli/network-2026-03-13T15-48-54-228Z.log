@@ -1,0 +1,5 @@
+[GET] http://127.0.0.1:4500/api/recommendations/health => [200] OK
+[GET] http://127.0.0.1:4500/api/playlist?_end=6&_order=DESC&_sort=updatedAt&_start=0 => [200] OK
+[GET] http://127.0.0.1:4500/api/recommendations/settings => [200] OK
+[POST] http://127.0.0.1:4500/api/recommendations/recent
+[GET] http://127.0.0.1:4500/rest/getNowPlaying?u=henry&t=9a1f7ab16ab5a63cf57da4d7304ff017&s=817810&f=json&v=1.8.0&c=NavidromeUI => [200] OK

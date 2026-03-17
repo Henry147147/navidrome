@@ -1,0 +1,228 @@
+- generic [ref=e26]:
+  - generic [ref=e27]:
+    - button "Skip to content" [ref=e28] [cursor=pointer]:
+      - generic [ref=e30]: Skip to content
+    - generic [ref=e31]:
+      - banner [ref=e32]:
+        - generic [ref=e33]:
+          - button "Close menu" [ref=e34] [cursor=pointer]:
+            - img [ref=e36]
+          - heading "Hilberto Music - Explore" [level=6] [ref=e38]
+          - button "Refresh" [ref=e242] [cursor=pointer]:
+            - img [ref=e244]
+          - button "Settings" [ref=e44] [cursor=pointer]:
+            - img [ref=e46]
+      - main [ref=e48]:
+        - generic [ref=e52]:
+          - menuitem "Auto Play Auto Play" [ref=e53] [cursor=pointer]:
+            - img "Auto Play" [ref=e55]
+            - text: Auto Play
+          - menuitem "Explore Explore" [ref=e57] [cursor=pointer]:
+            - img "Explore" [ref=e59]
+            - text: Explore
+          - menuitem "Albums" [ref=e62] [cursor=pointer]:
+            - img [ref=e64]
+            - generic [ref=e66]: Albums
+          - generic [ref=e70]:
+            - menuitem "All" [ref=e71] [cursor=pointer]:
+              - img [ref=e73]
+              - text: All
+            - menuitem "Random Random" [ref=e75] [cursor=pointer]:
+              - img "Random" [ref=e77]
+              - text: Random
+            - menuitem "Favourites" [ref=e79] [cursor=pointer]:
+              - img [ref=e81]
+              - text: Favourites
+            - menuitem "Top Rated" [ref=e83] [cursor=pointer]:
+              - img [ref=e85]
+              - text: Top Rated
+            - menuitem "Recently Added" [ref=e87] [cursor=pointer]:
+              - img [ref=e89]
+              - text: Recently Added
+            - menuitem "Recently Played" [ref=e91] [cursor=pointer]:
+              - img [ref=e93]
+              - text: Recently Played
+            - menuitem "Most Played Most Played" [ref=e95] [cursor=pointer]:
+              - img "Most Played" [ref=e97]
+              - text: Most Played
+          - menuitem "Artists" [ref=e99] [cursor=pointer]:
+            - img [ref=e101]
+            - text: Artists
+          - menuitem "Songs" [ref=e103] [cursor=pointer]:
+            - img [ref=e105]
+            - text: Songs
+          - menuitem "Radios" [ref=e107] [cursor=pointer]:
+            - img [ref=e109]
+            - text: Radios
+          - separator [ref=e112]
+          - menuitem "Playlists" [ref=e114] [cursor=pointer]:
+            - img [ref=e116]
+            - generic [ref=e118]: Playlists
+            - button [ref=e119]:
+              - img [ref=e121]
+        - generic [ref=e125]:
+          - tablist [ref=e128]:
+            - tab "Overview" [ref=e129] [cursor=pointer]:
+              - generic [ref=e130]: Overview
+            - tab "Text Generator" [selected] [ref=e131] [cursor=pointer]:
+              - generic [ref=e132]: Text Generator
+            - tab "Settings" [ref=e133] [cursor=pointer]:
+              - generic [ref=e134]: Settings
+          - generic [ref=e213]:
+            - heading "Generate Playlist from Text" [level=6] [ref=e214]:
+              - img [ref=e215]
+              - text: Generate Playlist from Text
+            - paragraph [ref=e217]: Describe the music you want and muq_mulan will find matching tracks in your library.
+            - generic [ref=e219]:
+              - generic: Describe the music
+              - generic [ref=e220]:
+                - textbox "e.g., upbeat rock with guitar solos, chill jazz for studying..." [ref=e221]: moody contemporary pop with lorde and billie eilish energy
+                - group
+            - generic [ref=e223]:
+              - generic: Track Limit
+              - generic [ref=e224]:
+                - spinbutton [ref=e225]: "25"
+                - group
+            - generic [ref=e227]:
+              - heading "Negative Prompts (Optional)" [level=6] [ref=e228]
+              - button "Add" [ref=e229] [cursor=pointer]:
+                - generic [ref=e230]:
+                  - img [ref=e232]
+                  - text: Add
+            - generic [ref=e234]:
+              - button "Generate Playlist" [ref=e237] [cursor=pointer]:
+                - generic [ref=e238]:
+                  - img [ref=e246]
+                  - text: Generate Playlist
+              - button "Clear" [ref=e235] [cursor=pointer]:
+                - generic [ref=e236]: Clear
+            - generic [ref=e248]:
+              - heading "Generated Playlist (25 tracks)" [level=6] [ref=e249]
+              - list [ref=e250]:
+                - listitem [ref=e251]:
+                  - generic [ref=e252]:
+                    - generic [ref=e253]: 1. Still Sane
+                    - paragraph [ref=e254]: Lorde • Pure Heroine
+                  - generic [ref=e257]: MUQ_MULAN
+                - listitem [ref=e258]:
+                  - generic [ref=e259]:
+                    - generic [ref=e260]: 2. favorite crime
+                    - paragraph [ref=e261]: Olivia Rodrigo • SOUR
+                  - generic [ref=e264]: MUQ_MULAN
+                - listitem [ref=e265]:
+                  - generic [ref=e266]:
+                    - generic [ref=e267]: 3. favorite crime
+                    - paragraph [ref=e268]: Olivia Rodrigo • SOUR
+                  - generic [ref=e271]: MUQ_MULAN
+                - listitem [ref=e272]:
+                  - generic [ref=e273]:
+                    - generic [ref=e274]: 4. pass you by
+                    - paragraph [ref=e275]: Alaina Castillo • the voicenotes
+                  - generic [ref=e278]: MUQ_MULAN
+                - listitem [ref=e279]:
+                  - generic [ref=e280]:
+                    - generic [ref=e281]: 5. In My Feelings
+                    - paragraph [ref=e282]: Lana Del Rey • Lust For Life
+                  - generic [ref=e285]: MUQ_MULAN
+                - listitem [ref=e286]:
+                  - generic [ref=e287]:
+                    - generic [ref=e288]: 6. Strawberry Wine
+                    - paragraph [ref=e289]: Noah Kahan • Stick Season
+                  - generic [ref=e292]: MUQ_MULAN
+                - listitem [ref=e293]:
+                  - generic [ref=e294]:
+                    - generic [ref=e295]: 7. White Teeth Teens
+                    - paragraph [ref=e296]: Lorde • Pure Heroine
+                  - generic [ref=e299]: MUQ_MULAN
+                - listitem [ref=e300]:
+                  - generic [ref=e301]:
+                    - generic [ref=e302]: 8. Cool About It
+                    - paragraph [ref=e303]: boygenius • The Record
+                  - generic [ref=e306]: MUQ_MULAN
+                - listitem [ref=e307]:
+                  - generic [ref=e308]:
+                    - generic [ref=e309]: 9. Not All Who Wander Are Lost
+                    - paragraph [ref=e310]: Lana Del Rey • Chemtrails Over The Country Club
+                  - generic [ref=e313]: MUQ_MULAN
+                - listitem [ref=e314]:
+                  - generic [ref=e315]:
+                    - generic [ref=e316]: 10. Lovesong
+                    - paragraph [ref=e317]: beabadoobee • Beatopia
+                  - generic [ref=e320]: MUQ_MULAN
+                - listitem [ref=e321]:
+                  - generic [ref=e322]:
+                    - generic [ref=e323]: 11. Wolves
+                    - paragraph [ref=e324]: Azure Ryder • Indie Music 2025
+                  - generic [ref=e327]: MUQ_MULAN
+                - listitem [ref=e328]:
+                  - generic [ref=e329]:
+                    - generic [ref=e330]: 12. Love Never Dies
+                    - paragraph [ref=e331]: Bee Gees • Still Waters
+                  - generic [ref=e334]: MUQ_MULAN
+                - listitem [ref=e335]:
+                  - generic [ref=e336]:
+                    - generic [ref=e337]: 13. State of Grace
+                    - paragraph [ref=e338]: Taylor Swift • Red (Deluxe Edition)
+                  - generic [ref=e341]: MUQ_MULAN
+                - listitem [ref=e342]:
+                  - generic [ref=e343]:
+                    - generic [ref=e344]: 14. Tears
+                    - paragraph [ref=e345]: Bee Gees • One
+                  - generic [ref=e348]: MUQ_MULAN
+                - listitem [ref=e349]:
+                  - generic [ref=e350]:
+                    - generic [ref=e351]: 15. National Anthem
+                    - paragraph [ref=e352]: Lana Del Rey • Born To Die
+                  - generic [ref=e355]: MUQ_MULAN
+                - listitem [ref=e356]:
+                  - generic [ref=e357]:
+                    - generic [ref=e358]: 16. Soon You’ll Get Better
+                    - paragraph [ref=e359]: Taylor Swift • Dixie Chicks • Lover
+                  - generic [ref=e362]: MUQ_MULAN
+                - listitem [ref=e363]:
+                  - generic [ref=e364]:
+                    - generic [ref=e365]: 17. illicit affairs
+                    - paragraph [ref=e366]: Taylor Swift • folklore
+                  - generic [ref=e369]: MUQ_MULAN
+                - listitem [ref=e370]:
+                  - generic [ref=e371]:
+                    - generic [ref=e372]: 18. look up
+                    - paragraph [ref=e373]: Joy Oladokun • look up
+                  - generic [ref=e376]: MUQ_MULAN
+                - listitem [ref=e377]:
+                  - generic [ref=e378]:
+                    - generic [ref=e379]: 19. White Heat
+                    - paragraph [ref=e380]: Madonna • Who's That Girl Soundtrack
+                  - generic [ref=e383]: MUQ_MULAN
+                - listitem [ref=e384]:
+                  - generic [ref=e385]:
+                    - generic [ref=e386]: 20. I Want to Write You a Song
+                    - paragraph [ref=e387]: One Direction • Made In The A.M. (Deluxe Edition)
+                  - generic [ref=e390]: MUQ_MULAN
+                - listitem [ref=e391]:
+                  - generic [ref=e392]:
+                    - generic [ref=e393]: 21. Waited For You So Long
+                    - paragraph [ref=e394]: Delorentos • SaG's Indie Electro Rock Playlist Best Of 2012
+                  - generic [ref=e397]: MUQ_MULAN
+                - listitem [ref=e398]:
+                  - generic [ref=e399]:
+                    - generic [ref=e400]: 22. Hazard
+                    - paragraph [ref=e401]: Richard Marx • The Best American Legends Album In The World Ever
+                  - generic [ref=e404]: MUQ_MULAN
+                - listitem [ref=e405]:
+                  - generic [ref=e406]:
+                    - generic [ref=e407]: 23. Take a Bow (American Music Awards 1995)
+                    - paragraph [ref=e408]: Madonna • Babyface • The Very Best Of - Radio Waves 1984-1995, Vol. 2
+                  - generic [ref=e411]: MUQ_MULAN
+                - listitem [ref=e412]:
+                  - generic [ref=e413]:
+                    - generic [ref=e414]: 24. A Little Lonely
+                    - paragraph [ref=e415]: SIIGHTS • A Little Lonely
+                  - generic [ref=e418]: MUQ_MULAN
+                - listitem [ref=e419]:
+                  - generic [ref=e420]:
+                    - generic [ref=e421]: 25. God Bless America — And All the Beautiful Women in It
+                    - paragraph [ref=e422]: Lana Del Rey • Lust For Life
+                  - generic [ref=e425]: MUQ_MULAN
+  - alert [ref=e427]:
+    - generic [ref=e428]: Generated 25 tracks
