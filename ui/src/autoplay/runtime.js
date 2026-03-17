@@ -17,8 +17,7 @@ export const normalizeAutoPlaySettings = (data = {}) => ({
     typeof data?.mode === 'string' && data.mode.trim()
       ? data.mode.trim().toLowerCase()
       : 'recent',
-  textPrompt:
-    typeof data?.textPrompt === 'string' ? data.textPrompt : '',
+  textPrompt: typeof data?.textPrompt === 'string' ? data.textPrompt : '',
   excludePlaylistIds: Array.isArray(data?.excludePlaylistIds)
     ? data.excludePlaylistIds.filter(Boolean)
     : [],
@@ -85,8 +84,7 @@ const getNonRadioQueueItems = (queue = []) =>
 const getQueueTailTrackIds = (player) => {
   const queue = player?.queue || []
   const currentIndex = getPlayerCurrentIndex(player)
-  const tail =
-    currentIndex >= 0 ? queue.slice(currentIndex) : queue
+  const tail = currentIndex >= 0 ? queue.slice(currentIndex) : queue
   return uniqueNonEmpty(tail.map((item) => getQueueItemTrackId(item)))
 }
 
@@ -97,7 +95,9 @@ export const buildQueueSeedTrackIds = (player, autoplay, limit = 5) => {
   const queue = getNonRadioQueueItems(player?.queue || [])
   const currentIndex = getPlayerCurrentIndex(player)
   const sourceItems =
-    currentIndex >= 0 ? queue.slice(0, currentIndex + 1).reverse() : [...queue].reverse()
+    currentIndex >= 0
+      ? queue.slice(0, currentIndex + 1).reverse()
+      : [...queue].reverse()
   const seedIds = []
   const seen = new Set()
 
@@ -306,7 +306,11 @@ export const refillAutoPlayQueue = async ({
         if (!isUsableRecommendationResponse(data)) {
           continue
         }
-        const freshTracks = filterFreshTracks(data?.tracks || [], player, autoplay)
+        const freshTracks = filterFreshTracks(
+          data?.tracks || [],
+          player,
+          autoplay,
+        )
         if (freshTracks.length === 0) {
           continue
         }

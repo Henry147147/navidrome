@@ -9,7 +9,10 @@ import {
   AUTOPLAY_TRACKS_REQUESTED,
 } from '../actions/autoplay'
 import { PLAYER_CLEAR_QUEUE } from '../actions/player'
-import { computeFeedback, ensureUniqueFeedback } from '../autoplay/feedbackUtils'
+import {
+  computeFeedback,
+  ensureUniqueFeedback,
+} from '../autoplay/feedbackUtils'
 
 const HISTORY_LIMIT = 500
 
@@ -51,7 +54,10 @@ const uniqueNonEmptyStrings = (values = []) => {
 }
 
 const appendHistory = (values, nextValues) => {
-  const merged = uniqueNonEmptyStrings([...(values || []), ...(nextValues || [])])
+  const merged = uniqueNonEmptyStrings([
+    ...(values || []),
+    ...(nextValues || []),
+  ])
   if (merged.length <= HISTORY_LIMIT) {
     return merged
   }
@@ -67,7 +73,10 @@ const runtimeDefaults = {
   lastRefillSource: null,
 }
 
-const normalizeSettings = (data = {}, previousState = DEFAULT_AUTOPLAY_STATE) => {
+const normalizeSettings = (
+  data = {},
+  previousState = DEFAULT_AUTOPLAY_STATE,
+) => {
   const feedback = ensureUniqueFeedback(
     data.positiveTrackIds ?? previousState.positiveTrackIds,
     data.negativeTrackIds ?? previousState.negativeTrackIds,
@@ -77,15 +86,15 @@ const normalizeSettings = (data = {}, previousState = DEFAULT_AUTOPLAY_STATE) =>
     enabled:
       typeof data.enabled === 'boolean'
         ? data.enabled
-        : previousState.enabled ?? DEFAULT_AUTOPLAY_STATE.enabled,
+        : (previousState.enabled ?? DEFAULT_AUTOPLAY_STATE.enabled),
     mode:
       typeof data.mode === 'string' && data.mode.trim()
         ? data.mode.trim().toLowerCase()
-        : previousState.mode ?? DEFAULT_AUTOPLAY_STATE.mode,
+        : (previousState.mode ?? DEFAULT_AUTOPLAY_STATE.mode),
     textPrompt:
       typeof data.textPrompt === 'string'
         ? data.textPrompt
-        : previousState.textPrompt ?? DEFAULT_AUTOPLAY_STATE.textPrompt,
+        : (previousState.textPrompt ?? DEFAULT_AUTOPLAY_STATE.textPrompt),
     excludePlaylistIds: uniqueNonEmptyStrings(
       Array.isArray(data.excludePlaylistIds)
         ? data.excludePlaylistIds
@@ -94,7 +103,7 @@ const normalizeSettings = (data = {}, previousState = DEFAULT_AUTOPLAY_STATE) =>
     batchSize:
       Number.isFinite(Number(data.batchSize)) && Number(data.batchSize) > 0
         ? Number(data.batchSize)
-        : previousState.batchSize ?? DEFAULT_AUTOPLAY_STATE.batchSize,
+        : (previousState.batchSize ?? DEFAULT_AUTOPLAY_STATE.batchSize),
     diversityOverride:
       data.diversityOverride === null || data.diversityOverride === undefined
         ? null
@@ -102,11 +111,11 @@ const normalizeSettings = (data = {}, previousState = DEFAULT_AUTOPLAY_STATE) =>
     loaded:
       typeof data.loaded === 'boolean'
         ? data.loaded
-        : previousState.loaded ?? DEFAULT_AUTOPLAY_STATE.loaded,
+        : (previousState.loaded ?? DEFAULT_AUTOPLAY_STATE.loaded),
     fetching:
       typeof data.fetching === 'boolean'
         ? data.fetching
-        : previousState.fetching ?? DEFAULT_AUTOPLAY_STATE.fetching,
+        : (previousState.fetching ?? DEFAULT_AUTOPLAY_STATE.fetching),
     playedTrackIds: appendHistory(
       [],
       Array.isArray(data.playedTrackIds)
@@ -124,7 +133,8 @@ const normalizeSettings = (data = {}, previousState = DEFAULT_AUTOPLAY_STATE) =>
     lastRefillSource:
       typeof data.lastRefillSource === 'string' && data.lastRefillSource.trim()
         ? data.lastRefillSource
-        : previousState.lastRefillSource ?? DEFAULT_AUTOPLAY_STATE.lastRefillSource,
+        : (previousState.lastRefillSource ??
+          DEFAULT_AUTOPLAY_STATE.lastRefillSource),
   }
 }
 
