@@ -31,6 +31,7 @@ var autoPlayAllowedModes = map[string]struct{}{
 }
 
 type autoPlaySettings struct {
+	Enabled            bool     `json:"enabled"`
 	Mode               string   `json:"mode"`
 	TextPrompt         string   `json:"textPrompt,omitempty"`
 	ExcludePlaylistIDs []string `json:"excludePlaylistIds"`

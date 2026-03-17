@@ -1,6 +1,12 @@
 import React, { useCallback, useMemo, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
-import { useGetList, useGetOne, useTranslate } from 'react-admin'
+import {
+  useDataProvider,
+  useGetList,
+  useGetOne,
+  useNotify,
+  useTranslate,
+} from 'react-admin'
 import { GlobalHotKeys } from 'react-hotkeys'
 import IconButton from '@material-ui/core/IconButton'
 import {
@@ -14,13 +20,20 @@ import {
   useMediaQuery,
 } from '@material-ui/core'
 import { RiSaveLine } from 'react-icons/ri'
+import AutorenewIcon from '@material-ui/icons/Autorenew'
 import TuneIcon from '@material-ui/icons/Tune'
 import { LoveButton, useToggleLove } from '../common'
-import { openSaveQueueDialog, setStreamingOverride } from '../actions'
+import {
+  openSaveQueueDialog,
+  setAutoPlayEnabled,
+  setStreamingOverride,
+  syncAutoPlaySettings,
+} from '../actions'
 import { keyMap } from '../hotkeys'
 import { makeStyles } from '@material-ui/core/styles'
 import { BITRATE_CHOICES, DEFAULT_SHARE_BITRATE } from '../consts'
 import { DEFAULT_STREAMING_OVERRIDE } from './streamingOverrideUtils'
+import { normalizeAutoPlaySettings } from '../autoplay/runtime'
 
 const STREAM_PROFILE_DEFAULT = '__default__'
 
@@ -82,9 +95,12 @@ const useStyles = makeStyles((theme) => ({
 const PlayerToolbar = ({ id, isRadio }) => {
   const dispatch = useDispatch()
   const translate = useTranslate()
+  const notify = useNotify()
+  const dataProvider = useDataProvider()
   const streamingOverride = useSelector(
     (state) => state.settings?.streamingOverride || DEFAULT_STREAMING_OVERRIDE,
   )
+  const autoplay = useSelector((state) => state.autoplay || { enabled: false })
   const { data, loading } = useGetOne('song', id, { enabled: !!id && !isRadio })
   const { data: transcodingData = {}, loading: loadingTranscodings } =
     useGetList(
@@ -144,6 +160,31 @@ const PlayerToolbar = ({ id, isRadio }) => {
     },
     [dispatch],
   )
+
+  const handleAutoPlayToggle = useCallback(async () => {
+    const previousSettings = normalizeAutoPlaySettings({
+      enabled: Boolean(autoplay.enabled),
+      mode: autoplay.mode,
+      textPrompt: autoplay.textPrompt,
+      excludePlaylistIds: autoplay.excludePlaylistIds,
+      batchSize: autoplay.batchSize,
+      diversityOverride: autoplay.diversityOverride,
+    })
+    const nextEnabled = !previousSettings.enabled
+    dispatch(setAutoPlayEnabled(nextEnabled))
+
+    try {
+      const { data } = await dataProvider.updateAutoPlaySettings({
+        ...previousSettings,
+        enabled: nextEnabled,
+      })
+      dispatch(syncAutoPlaySettings(data))
+      notify('pages.autoplay.settings.saved', { type: 'info' })
+    } catch (e) {
+      dispatch(syncAutoPlaySettings(previousSettings))
+      notify('pages.autoplay.settings.serverError', { type: 'warning' })
+    }
+  }, [autoplay, dataProvider, dispatch, notify])
 
   const openStreamSettings = useCallback((e) => {
     e.stopPropagation()
@@ -244,6 +285,24 @@ const PlayerToolbar = ({ id, isRadio }) => {
       className={buttonClass}
     >
       <RiSaveLine className={!isDesktop ? classes.mobileIcon : undefined} />
+    </IconButton>
+  )
+
+  const autoplayButton = (
+    <IconButton
+      size={isDesktop ? 'small' : undefined}
+      onClick={handleAutoPlayToggle}
+      data-testid="autoplay-toggle-button"
+      className={buttonClass}
+      color={autoplay.enabled ? 'primary' : 'default'}
+      title={translate('player.autoplayToggleText')}
+      aria-label={translate(
+        autoplay.enabled
+          ? 'player.autoplayEnabledText'
+          : 'player.autoplayDisabledText',
+      )}
+    >
+      <AutorenewIcon className={!isDesktop ? classes.mobileIcon : undefined} />
     </IconButton>
   )
 
@@ -348,12 +407,14 @@ const PlayerToolbar = ({ id, isRadio }) => {
       {isDesktop ? (
         <li className={`${listItemClass} item`}>
           {saveQueueButton}
+          {autoplayButton}
           {streamSettingsButton}
           {loveButton}
         </li>
       ) : (
         <>
           <li className={`${listItemClass} item`}>{saveQueueButton}</li>
+          <li className={`${listItemClass} item`}>{autoplayButton}</li>
           <li className={`${listItemClass} item`}>{streamSettingsButton}</li>
           <li className={`${listItemClass} item`}>{loveButton}</li>
         </>

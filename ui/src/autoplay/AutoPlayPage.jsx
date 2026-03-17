@@ -28,8 +28,16 @@ import ThumbUpAltOutlinedIcon from '@material-ui/icons/ThumbUpAltOutlined'
 import ThumbDownAltOutlinedIcon from '@material-ui/icons/ThumbDownAltOutlined'
 import ClearIcon from '@material-ui/icons/Clear'
 import AutoPlaySettingsPanel from './AutoPlaySettingsPanel'
-import { addTracks, playTracks, clearQueue } from '../actions'
-import { computeFeedback } from './feedbackUtils'
+import {
+  addTracks,
+  clearQueue,
+  markAutoPlayTracksRequested,
+  playTracks,
+  resetAutoPlayRuntime,
+  setAutoPlayEnabled,
+  syncAutoPlaySettings,
+  toggleAutoPlayFeedback,
+} from '../actions'
 import {
   formatRecommendationError,
   healthMessageForMode,
@@ -37,8 +45,10 @@ import {
   sanitizeRecommendationWarning,
   useRecommendationHealth,
 } from '../recommendationHealth'
+import { normalizeAutoPlaySettings, refillAutoPlayQueue } from './runtime'
 
 const DEFAULT_SETTINGS = {
+  enabled: false,
   mode: 'recent',
   textPrompt: '',
   excludePlaylistIds: [],
@@ -152,6 +162,7 @@ const AutoPlayPage = () => {
   const dataProvider = useDataProvider()
   const dispatch = useDispatch()
   const player = useSelector((state) => state.player)
+  const autoplay = useSelector((state) => state.autoplay)
   const { health: recommendationHealth, loading: recommendationHealthLoading } =
     useRecommendationHealth(dataProvider)
 
@@ -166,14 +177,6 @@ const AutoPlayPage = () => {
   const [sessionOptions, setSessionOptions] = useState(DEFAULT_SETTINGS)
   const [fetching, setFetching] = useState(false)
   const fetchingRef = useRef(false)
-  const [sessionActive, setSessionActive] = useState(false)
-  const [positiveTrackIds, setPositiveTrackIds] = useState([])
-  const [negativeTrackIds, setNegativeTrackIds] = useState([])
-
-  const playedIdsRef = useRef(new Set())
-  const requestedIdsRef = useRef(new Set())
-  const positiveRef = useRef([])
-  const negativeRef = useRef([])
 
   const [seedQuery, setSeedQuery] = useState('')
   const [seedLoading, setSeedLoading] = useState(false)
@@ -191,19 +194,14 @@ const AutoPlayPage = () => {
         if (!mounted) {
           return
         }
-        const normalized = {
-          mode: data?.mode || DEFAULT_SETTINGS.mode,
-          textPrompt: data?.textPrompt || '',
-          excludePlaylistIds: data?.excludePlaylistIds || [],
-          batchSize: DEFAULT_SETTINGS.batchSize,
-          diversityOverride:
-            data?.diversityOverride === undefined
-              ? null
-              : data?.diversityOverride,
-        }
+        const normalized = normalizeAutoPlaySettings({
+          ...DEFAULT_SETTINGS,
+          ...data,
+        })
         setSettingsDraft(normalized)
         setSessionOptions(normalized)
         setSavedSettings(normalized)
+        dispatch(syncAutoPlaySettings(normalized))
       })
       .catch((error) => {
         if (mounted) {
@@ -241,7 +239,7 @@ const AutoPlayPage = () => {
     return () => {
       mounted = false
     }
-  }, [dataProvider])
+  }, [dataProvider, dispatch])
 
   const handleTabChange = (_, value) => {
     setTab(value)
@@ -256,24 +254,14 @@ const AutoPlayPage = () => {
   }
 
   const resetFeedback = () => {
-    setPositiveTrackIds([])
-    setNegativeTrackIds([])
-    playedIdsRef.current = new Set()
-    requestedIdsRef.current = new Set()
+    dispatch(resetAutoPlayRuntime())
   }
-
-  useEffect(() => {
-    positiveRef.current = positiveTrackIds
-  }, [positiveTrackIds])
-
-  useEffect(() => {
-    negativeRef.current = negativeTrackIds
-  }, [negativeTrackIds])
 
   const handleSaveSettings = () => {
     setSavingSettings(true)
     const payload = {
       ...settingsDraft,
+      enabled: Boolean(autoplay?.enabled),
       diversityOverride:
         settingsDraft.diversityOverride === null ||
         settingsDraft.diversityOverride === ''
@@ -284,19 +272,14 @@ const AutoPlayPage = () => {
     dataProvider
       .updateAutoPlaySettings(payload)
       .then(({ data }) => {
-        const normalized = {
-          mode: data?.mode || DEFAULT_SETTINGS.mode,
-          textPrompt: data?.textPrompt || '',
-          excludePlaylistIds: data?.excludePlaylistIds || [],
-          batchSize: DEFAULT_SETTINGS.batchSize,
-          diversityOverride:
-            data?.diversityOverride === undefined
-              ? null
-              : data?.diversityOverride,
-        }
+        const normalized = normalizeAutoPlaySettings({
+          ...DEFAULT_SETTINGS,
+          ...data,
+        })
         setSettingsDraft(normalized)
         setSessionOptions((prev) => ({ ...prev, ...normalized }))
         setSavedSettings(normalized)
+        dispatch(syncAutoPlaySettings(normalized))
         notify('pages.autoplay.settings.saved', { type: 'info' })
       })
       .catch(() => {
@@ -340,16 +323,16 @@ const AutoPlayPage = () => {
 
   const buildExcludeIds = useCallback(() => {
     const combined = new Set([
-      ...Array.from(playedIdsRef.current),
-      ...Array.from(requestedIdsRef.current),
-      ...negativeTrackIds,
+      ...(autoplay?.playedTrackIds || []),
+      ...(autoplay?.requestedTrackIds || []),
+      ...(autoplay?.negativeTrackIds || []),
     ])
     return Array.from(combined)
-  }, [negativeTrackIds])
+  }, [autoplay])
 
   const ensureUniquePositive = useCallback(() => {
-    return Array.from(new Set(positiveTrackIds))
-  }, [positiveTrackIds])
+    return Array.from(new Set(autoplay?.positiveTrackIds || []))
+  }, [autoplay])
 
   const fetchRecommendations = useCallback(
     async (options = {}) => {
@@ -378,7 +361,7 @@ const AutoPlayPage = () => {
         excludeTrackIds,
         excludePlaylistIds,
         positiveTrackIds: positiveIds,
-        negativeTrackIds,
+        negativeTrackIds: autoplay?.negativeTrackIds || [],
       }
       if (
         sessionOptions.diversityOverride !== null &&
@@ -464,8 +447,8 @@ const AutoPlayPage = () => {
             return
           }
           if (
-            requestedIdsRef.current.has(track.id) ||
-            playedIdsRef.current.has(track.id)
+            autoplay?.requestedTrackIds?.includes(track.id) ||
+            autoplay?.playedTrackIds?.includes(track.id)
           ) {
             return
           }
@@ -476,12 +459,12 @@ const AutoPlayPage = () => {
           notify('pages.autoplay.notifications.noNew', { type: 'warning' })
           return
         }
-        newIds.forEach((id) => requestedIdsRef.current.add(id))
         if (player.queue.length === 0) {
           dispatch(playTracks(trackMap, newIds, newIds[0]))
         } else {
           dispatch(addTracks(trackMap, newIds))
         }
+        dispatch(markAutoPlayTracksRequested(newIds, `start:${mode}`))
         if (Array.isArray(data?.warnings) && data.warnings.length > 0) {
           data.warnings.forEach((warning) =>
             notify(sanitizeRecommendationWarning(warning, translate), {
@@ -489,7 +472,16 @@ const AutoPlayPage = () => {
             }),
           )
         }
-        setSessionActive(true)
+        dispatch(setAutoPlayEnabled(true))
+        dataProvider
+          .updateAutoPlaySettings({
+            ...normalizeAutoPlaySettings(sessionOptions),
+            enabled: true,
+          })
+          .then(({ data: updated }) => dispatch(syncAutoPlaySettings(updated)))
+          .catch(() => {
+            notify('pages.autoplay.settings.serverError', { type: 'warning' })
+          })
       } catch (error) {
         notify(
           formatRecommendationError(
@@ -509,13 +501,13 @@ const AutoPlayPage = () => {
       dataProvider,
       notify,
       selectedSeed,
-      negativeTrackIds,
       ensureUniquePositive,
       buildExcludeIds,
       player.queue.length,
       dispatch,
       recommendationHealth,
       translate,
+      autoplay,
     ],
   )
 
@@ -528,48 +520,21 @@ const AutoPlayPage = () => {
   }
 
   const handleFetchMore = () => {
-    fetchRecommendations({ mode: sessionOptions.mode })
+    refillAutoPlayQueue({
+      autoplay,
+      dataProvider,
+      dispatch,
+      notify,
+      player,
+      silent: false,
+      source: 'page',
+      translate,
+    })
   }
 
   const handleClearQueue = () => {
     dispatch(clearQueue())
-    resetFeedback()
-    setSessionActive(false)
   }
-
-  const remainingQueue = useMemo(() => {
-    if (player.queue.length === 0) {
-      return 0
-    }
-    const currentUuid = player.current?.uuid
-    const currentIndex = player.queue.findIndex(
-      (item) => item.uuid === currentUuid,
-    )
-    if (currentIndex === -1) {
-      return player.queue.length
-    }
-    return player.queue.length - currentIndex - 1
-  }, [player])
-
-  useEffect(() => {
-    const trackId = player.current?.trackId || player.current?.song?.id
-    if (trackId) {
-      playedIdsRef.current.add(trackId)
-    }
-  }, [player])
-
-  useEffect(() => {
-    if (!sessionActive) {
-      return
-    }
-    const bufferThreshold = Math.max(
-      3,
-      Math.floor((sessionOptions.batchSize || DEFAULT_SETTINGS.batchSize) / 2),
-    )
-    if (remainingQueue <= bufferThreshold && !fetchingRef.current) {
-      fetchRecommendations({ mode: sessionOptions.mode })
-    }
-  }, [sessionActive, remainingQueue, fetchRecommendations, sessionOptions])
 
   const modeOptions = useMemo(
     () =>
@@ -597,18 +562,12 @@ const AutoPlayPage = () => {
     translate,
   )
 
-  const toggleFeedback = useCallback((trackId, direction) => {
-    const { positive, negative } = computeFeedback(
-      positiveRef.current,
-      negativeRef.current,
-      trackId,
-      direction,
-    )
-    setPositiveTrackIds(positive)
-    setNegativeTrackIds(negative)
-    positiveRef.current = positive
-    negativeRef.current = negative
-  }, [])
+  const toggleFeedback = useCallback(
+    (trackId, direction) => {
+      dispatch(toggleAutoPlayFeedback(trackId, direction))
+    },
+    [dispatch],
+  )
 
   return (
     <Box className={classes.root}>
@@ -858,10 +817,10 @@ const AutoPlayPage = () => {
                       : resolvedId.toString().trim()
                   const isPositive =
                     normalizedId !== '' &&
-                    positiveTrackIds.includes(normalizedId)
+                    autoplay?.positiveTrackIds?.includes(normalizedId)
                   const isNegative =
                     normalizedId !== '' &&
-                    negativeTrackIds.includes(normalizedId)
+                    autoplay?.negativeTrackIds?.includes(normalizedId)
                   const disabledFeedback = normalizedId === ''
 
                   return (

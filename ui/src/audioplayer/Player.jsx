@@ -19,9 +19,11 @@ import AudioTitle from './AudioTitle'
 import {
   clearQueue,
   currentPlaying,
+  markAutoPlayTrackPlayed,
   refreshQueue,
   setPlayMode,
   setTranscodingProfile,
+  syncAutoPlaySettings,
   setVolume,
   syncQueue,
 } from '../actions'
@@ -40,6 +42,11 @@ import {
   toStreamQuery,
 } from './streamingOverrideUtils'
 import { detectBrowserProfile, decisionService } from '../transcode'
+import {
+  getQueueItemTrackId,
+  getRemainingQueue,
+  refillAutoPlayQueue,
+} from '../autoplay/runtime'
 
 const Player = () => {
   const theme = useCurrentTheme()
@@ -47,6 +54,7 @@ const Player = () => {
   const playerTheme = theme.player?.theme || 'dark'
   const dataProvider = useDataProvider()
   const playerState = useSelector((state) => state.player)
+  const autoplayState = useSelector((state) => state.autoplay)
   const dispatch = useDispatch()
   const [startTime, setStartTime] = useState(null)
   const [scrobbled, setScrobbled] = useState(false)
@@ -99,6 +107,28 @@ const Player = () => {
     })
   }, [dispatch])
 
+  useEffect(() => {
+    let active = true
+    if (typeof dataProvider?.getAutoPlaySettings !== 'function') {
+      return () => {
+        active = false
+      }
+    }
+
+    dataProvider
+      .getAutoPlaySettings()
+      .then(({ data }) => {
+        if (active) {
+          dispatch(syncAutoPlaySettings(data))
+        }
+      })
+      .catch(() => {})
+
+    return () => {
+      active = false
+    }
+  }, [dataProvider, dispatch])
+
   // Pre-fetch transcode decisions for next 2-3 songs when queue or position changes
   useEffect(() => {
     if (!playerState.queue.length) return
@@ -119,6 +149,10 @@ const Player = () => {
   const currentTrackId = currentTrack.trackId
   const currentTrackUuid = currentTrack.uuid
   const isRadio = Boolean(currentTrack.isRadio)
+  const remainingQueue = useMemo(
+    () => getRemainingQueue(playerState),
+    [playerState],
+  )
   const classes = useStyle({
     isRadio,
     visible,
@@ -438,6 +472,50 @@ const Player = () => {
     (info) => dispatch(currentPlaying(info)),
     [dispatch],
   )
+
+  useEffect(() => {
+    if (!currentTrackId || isRadio) {
+      return
+    }
+    dispatch(markAutoPlayTrackPlayed(currentTrackId))
+  }, [currentTrackId, isRadio, dispatch])
+
+  useEffect(() => {
+    const queueHasPlayableTracks = playerState.queue.some(
+      (item) => !item.isRadio && getQueueItemTrackId(item),
+    )
+    if (
+      !autoplayState?.enabled ||
+      autoplayState?.fetching ||
+      !queueHasPlayableTracks ||
+      isRadio
+    ) {
+      return
+    }
+
+    const bufferThreshold = Math.max(
+      3,
+      Math.floor((autoplayState.batchSize || 5) / 2),
+    )
+    if (remainingQueue > bufferThreshold) {
+      return
+    }
+
+    refillAutoPlayQueue({
+      autoplay: autoplayState,
+      dataProvider,
+      dispatch,
+      player: playerState,
+      source: 'player',
+    })
+  }, [
+    autoplayState,
+    dataProvider,
+    dispatch,
+    isRadio,
+    playerState,
+    remainingQueue,
+  ])
 
   const onAudioEnded = useCallback(
     (currentPlayId, audioLists, info) => {

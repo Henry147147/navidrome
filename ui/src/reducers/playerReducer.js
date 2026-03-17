@@ -12,6 +12,7 @@ import {
   PLAYER_SYNC_QUEUE,
   PLAYER_SET_MODE,
   PLAYER_REFRESH_QUEUE,
+  PLAYER_APPEND_SONGS,
 } from '../actions'
 import config from '../config'
 
@@ -133,6 +134,14 @@ const reduceAddTracks = (state, { data }) => {
   return { ...state, queue, clear: false }
 }
 
+const reduceAppendSongs = (state, { data }) => {
+  const queue = state.queue
+  ;(data || []).forEach((song) => {
+    queue.push(mapToAudioLists(song))
+  })
+  return { ...state, queue, clear: false }
+}
+
 const reducePlayNext = (state, { data }) => {
   const newQueue = []
   const current = state.current || {}
@@ -219,6 +228,8 @@ export const playerReducer = (previousState = initialState, payload) => {
       return reduceSetTrack(previousState, payload)
     case PLAYER_ADD_TRACKS:
       return reduceAddTracks(previousState, payload)
+    case PLAYER_APPEND_SONGS:
+      return reduceAppendSongs(previousState, payload)
     case PLAYER_PLAY_NEXT:
       return reducePlayNext(previousState, payload)
     case PLAYER_SET_VOLUME:

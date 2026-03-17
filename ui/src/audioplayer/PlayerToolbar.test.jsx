@@ -1,10 +1,27 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { useMediaQuery } from '@material-ui/core'
-import { useGetList, useGetOne, useTranslate } from 'react-admin'
+import {
+  useDataProvider,
+  useGetList,
+  useGetOne,
+  useNotify,
+  useTranslate,
+} from 'react-admin'
 import { useDispatch, useSelector } from 'react-redux'
 import { useToggleLove } from '../common'
-import { openSaveQueueDialog, setStreamingOverride } from '../actions'
+import {
+  openSaveQueueDialog,
+  setAutoPlayEnabled,
+  setStreamingOverride,
+  syncAutoPlaySettings,
+} from '../actions'
 import PlayerToolbar from './PlayerToolbar'
 
 vi.mock('@material-ui/core', async () => {
@@ -16,8 +33,10 @@ vi.mock('@material-ui/core', async () => {
 })
 
 vi.mock('react-admin', () => ({
+  useDataProvider: vi.fn(),
   useGetOne: vi.fn(),
   useGetList: vi.fn(),
+  useNotify: vi.fn(),
   useTranslate: vi.fn(),
 }))
 
@@ -37,7 +56,9 @@ vi.mock('../common', () => ({
 
 vi.mock('../actions', () => ({
   openSaveQueueDialog: vi.fn(),
+  setAutoPlayEnabled: vi.fn(),
   setStreamingOverride: vi.fn(),
+  syncAutoPlaySettings: vi.fn(),
 }))
 
 vi.mock('react-hotkeys', () => ({
@@ -62,9 +83,21 @@ const transcodings = {
 describe('<PlayerToolbar />', () => {
   const mockToggleLove = vi.fn()
   const mockDispatch = vi.fn()
+  const mockNotify = vi.fn()
+  const mockDataProvider = {
+    updateAutoPlaySettings: vi.fn(),
+  }
   const mockSongData = { id: 'song-1', name: 'Test Song', starred: false }
 
   const defaultStoreState = {
+    autoplay: {
+      enabled: false,
+      mode: 'recent',
+      textPrompt: '',
+      excludePlaylistIds: [],
+      batchSize: 5,
+      diversityOverride: null,
+    },
     settings: {
       streamingOverride: {
         mode: 'default',
@@ -83,12 +116,32 @@ describe('<PlayerToolbar />', () => {
     useToggleLove.mockReturnValue([mockToggleLove, false])
     useDispatch.mockReturnValue(mockDispatch)
     useSelector.mockImplementation((selector) => selector(defaultStoreState))
+    useDataProvider.mockReturnValue(mockDataProvider)
+    useNotify.mockReturnValue(mockNotify)
     useTranslate.mockReturnValue((key) => key)
     openSaveQueueDialog.mockReturnValue({ type: 'OPEN_SAVE_QUEUE_DIALOG' })
+    setAutoPlayEnabled.mockImplementation((enabled) => ({
+      type: 'SET_AUTOPLAY_ENABLED',
+      data: { enabled },
+    }))
     setStreamingOverride.mockImplementation((payload) => ({
       type: 'SET_STREAMING_OVERRIDE',
       data: payload,
     }))
+    syncAutoPlaySettings.mockImplementation((payload) => ({
+      type: 'SYNC_AUTOPLAY_SETTINGS',
+      data: payload,
+    }))
+    mockDataProvider.updateAutoPlaySettings.mockResolvedValue({
+      data: {
+        enabled: true,
+        mode: 'recent',
+        textPrompt: '',
+        excludePlaylistIds: [],
+        batchSize: 5,
+        diversityOverride: null,
+      },
+    })
   })
 
   afterEach(cleanup)
@@ -98,16 +151,43 @@ describe('<PlayerToolbar />', () => {
       useMediaQuery.mockReturnValue(true)
     })
 
-    it('renders desktop toolbar with save, stream settings, and love buttons', () => {
+    it('renders desktop toolbar with save, autoplay, stream settings, and love buttons', () => {
       render(<PlayerToolbar id="song-1" />)
 
       const listItems = screen.getAllByRole('listitem')
       expect(listItems).toHaveLength(1)
 
       expect(screen.getByTestId('save-queue-button')).toBeInTheDocument()
+      expect(screen.getByTestId('autoplay-toggle-button')).toBeInTheDocument()
       expect(screen.getByTestId('stream-settings-button')).toBeInTheDocument()
       expect(screen.getByTestId('love-button')).toBeInTheDocument()
       expect(listItems[0].className).toContain('toolbar')
+    })
+
+    it('persists autoplay toggle changes', async () => {
+      render(<PlayerToolbar id="song-1" />)
+
+      fireEvent.click(screen.getByTestId('autoplay-toggle-button'))
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'SET_AUTOPLAY_ENABLED',
+        data: { enabled: true },
+      })
+
+      await waitFor(() => {
+        expect(mockDataProvider.updateAutoPlaySettings).toHaveBeenCalledWith({
+          enabled: true,
+          mode: 'recent',
+          textPrompt: '',
+          excludePlaylistIds: [],
+          batchSize: 5,
+          diversityOverride: null,
+        })
+      })
+
+      expect(mockNotify).toHaveBeenCalledWith('pages.autoplay.settings.saved', {
+        type: 'info',
+      })
     })
 
     it('opens save queue dialog when save button is clicked', () => {
@@ -138,6 +218,7 @@ describe('<PlayerToolbar />', () => {
     it('dispatches default override when selecting Default profile', () => {
       useSelector.mockImplementation((selector) =>
         selector({
+          autoplay: defaultStoreState.autoplay,
           settings: {
             streamingOverride: {
               mode: 'override',
@@ -191,6 +272,7 @@ describe('<PlayerToolbar />', () => {
     it('preserves force toggle setting when selecting another profile', () => {
       useSelector.mockImplementation((selector) =>
         selector({
+          autoplay: defaultStoreState.autoplay,
           settings: {
             streamingOverride: {
               mode: 'override',
@@ -224,6 +306,7 @@ describe('<PlayerToolbar />', () => {
     it('dispatches updated bitrate when changing bitrate select', () => {
       useSelector.mockImplementation((selector) =>
         selector({
+          autoplay: defaultStoreState.autoplay,
           settings: {
             streamingOverride: {
               mode: 'override',
@@ -257,6 +340,7 @@ describe('<PlayerToolbar />', () => {
     it('dispatches force toggle changes', () => {
       useSelector.mockImplementation((selector) =>
         selector({
+          autoplay: defaultStoreState.autoplay,
           settings: {
             streamingOverride: {
               mode: 'override',
@@ -295,8 +379,9 @@ describe('<PlayerToolbar />', () => {
       render(<PlayerToolbar id="song-1" />)
 
       const listItems = screen.getAllByRole('listitem')
-      expect(listItems).toHaveLength(3)
+      expect(listItems).toHaveLength(4)
       expect(screen.getByTestId('save-queue-button')).toBeInTheDocument()
+      expect(screen.getByTestId('autoplay-toggle-button')).toBeInTheDocument()
       expect(screen.getByTestId('stream-settings-button')).toBeInTheDocument()
       expect(screen.getByTestId('love-button')).toBeInTheDocument()
       expect(listItems[0].className).toContain('mobileListItem')

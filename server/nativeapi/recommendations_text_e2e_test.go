@@ -59,6 +59,7 @@ func (r *staticPlaylistTrackRepo) GetAll(...model.QueryOptions) (model.PlaylistT
 
 type textRecommendationHarness struct {
 	ds     *tests.MockDataStore
+	native *Router
 	router http.Handler
 	user   model.User
 	rec    *captureRecommendationClient
@@ -138,6 +139,7 @@ func newTextRecommendationHarness(t *testing.T, rec *captureRecommendationClient
 
 	return textRecommendationHarness{
 		ds:     ds,
+		native: nativeRouter,
 		router: server.JWTVerifier(nativeRouter),
 		user:   user,
 		rec:    rec,

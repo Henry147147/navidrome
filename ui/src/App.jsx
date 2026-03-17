@@ -34,6 +34,7 @@ import {
   downloadMenuDialogReducer,
   shareDialogReducer,
   transcodingReducer,
+  autoplayReducer,
 } from './reducers'
 import createAdminStore from './store/createAdminStore'
 import { i18nProvider } from './i18n'
@@ -74,6 +75,7 @@ const adminStore = createAdminStore({
     settings: settingsReducer,
     replayGain: replayGainReducer,
     transcoding: transcodingReducer,
+    autoplay: autoplayReducer,
   },
 })
 
